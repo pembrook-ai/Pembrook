@@ -1,0 +1,26 @@
+/// SafeClaw Email Skill — skeleton for Phase 3.
+///
+/// Runs inside a Docker sandbox.
+/// Sends emails via SMTP or SendGrid API.
+/// All send_email actions require HITL approval.
+///
+/// Tools exposed:
+///   - email.send(to, subject, body, cc?, bcc?, attachments?)
+///   - email.draft(to, subject, body)   — saves draft, no HITL required
+///
+/// Docker image: safeclaw-skill-email:latest
+/// atSign: @skill_email (placeholder)
+
+name: safeclaw_skill_email
+description: Email skill for SafeClaw.
+publish_to: none
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+
+dependencies:
+  http: ^1.2.1
+  logging: ^1.2.0
+  mailer: ^6.0.0

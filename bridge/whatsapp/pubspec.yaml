@@ -1,0 +1,34 @@
+name: safeclaw_bridge_whatsapp
+description: >-
+  SafeClaw bridge — routes WhatsApp messages to/from the @agent atSign
+  via the atNetwork (zero open ports, E2E encrypted).
+  
+  ARCHITECTURE:
+    WhatsApp Cloud API webhook → bridge → atRpc → @agent → @bridge_whatsapp
+    
+  The bridge runs as a long-lived process that:
+    1. Receives WhatsApp webhook events (HTTP POST on 127.0.0.1 only).
+    2. Authenticates the message sender against an @owner-controlled allowList.
+    3. Forwards the message as an AtRpc call to @agent.
+    4. Receives the @agent response and sends it back via WhatsApp.
+
+  atSign: @bridge_whatsapp (placeholder)
+  Namespace: safeclaw
+
+publish_to: none
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+
+dependencies:
+  at_client: ^3.11.0
+  at_cli_commons: ^3.0.1
+  at_commons: ^5.7.0
+  http: ^1.2.1
+  shelf: ^1.4.0
+  shelf_router: ^1.1.0
+  logging: ^1.2.0
+  uuid: ^4.0.0
+  args: ^2.5.0

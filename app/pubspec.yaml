@@ -1,0 +1,42 @@
+name: safeclaw_app
+description: >-
+  SafeClaw — Flutter companion app for the secure AI personal agent.
+  Communicates with the @agent atSign exclusively via AtRpc (zero open ports,
+  E2E encrypted, no cloud intermediary reads content).
+
+publish_to: none
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+  flutter: '>=3.22.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  at_client_flutter: ^1.0.2
+  at_client: ^3.11.0
+  at_commons: ^5.7.0
+  at_auth: ^3.0.1
+
+  # UI / utilities
+  uuid: ^4.0.0
+  path_provider: ^2.1.0
+  intl: ^0.20.2
+  provider: ^6.0.0
+  go_router: ^14.0.0
+  flutter_markdown: ^0.7.0
+
+  # Storage
+  shared_preferences: ^2.0.0
+
+dependency_overrides: {}
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

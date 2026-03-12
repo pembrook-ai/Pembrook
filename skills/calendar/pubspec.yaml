@@ -1,0 +1,28 @@
+/// SafeClaw Calendar Skill — skeleton for Phase 3.
+///
+/// Runs inside a Docker sandbox (--network=none).
+/// Communicates with the agent via STDIN/STDOUT JSON line protocol.
+/// Accesses Google Calendar via an OAuth token stored as an AtKey
+/// on @owner's atServer (never inside the container).
+///
+/// Tools exposed:
+///   - calendar.list_events(start, end, calendarId?)
+///   - calendar.create_event(title, start, end, description, attendees?)
+///   - calendar.delete_event(eventId)
+///
+/// Docker image: safeclaw-skill-calendar:latest
+/// atSign: @skill_cal (placeholder)
+/// Namespace: safeclaw
+
+name: safeclaw_skill_calendar
+description: Google Calendar skill for SafeClaw.
+publish_to: none
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+
+dependencies:
+  http: ^1.2.1
+  logging: ^1.2.0

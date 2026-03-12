@@ -1,0 +1,29 @@
+/// SafeClaw Database MCP Server — skeleton for Phase 4.
+///
+/// Exposes database query tools to the agent via the atNetwork (AtRpc).
+/// Connects to a local SQLite, Postgres, or MySQL database.
+///
+/// Tool list (Phase 4):
+///   - db.query(sql, params)      — read-only SELECT queries
+///   - db.schema(table?)          — list tables / columns
+///   - db.execute(sql, params)    — write queries (HITL required)
+///
+/// atSign: @mcp_db (placeholder)
+/// Namespace: safeclaw
+
+name: safeclaw_mcp_database
+description: Database MCP server for SafeClaw.
+publish_to: none
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+
+dependencies:
+  at_client: ^3.11.0
+  at_cli_commons: ^3.0.1
+  at_commons: ^5.7.0
+  logging: ^1.2.0
+  args: ^2.5.0
+  sqlite3: ^2.4.0

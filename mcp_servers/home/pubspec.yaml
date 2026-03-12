@@ -1,0 +1,29 @@
+/// SafeClaw Home Automation MCP Server — skeleton for Phase 4.
+///
+/// Exposes home automation tools to the agent via the atNetwork (AtRpc).
+/// Integrates with Home Assistant REST API on the local network.
+///
+/// Tool list (Phase 4):
+///   - homeassistant.get_state(entity_id)
+///   - homeassistant.call_service(domain, service, entity_id, data)
+///   - homeassistant.list_entities(domain?)
+///
+/// atSign: @mcp_home (placeholder)
+/// Namespace: safeclaw
+
+name: safeclaw_mcp_home
+description: Home Automation MCP server for SafeClaw.
+publish_to: none
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+
+dependencies:
+  at_client: ^3.11.0
+  at_cli_commons: ^3.0.1
+  at_commons: ^5.7.0
+  http: ^1.2.1
+  logging: ^1.2.0
+  args: ^2.5.0

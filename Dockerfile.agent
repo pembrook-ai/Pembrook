@@ -1,0 +1,66 @@
+## SafeClaw — multi-stage Docker build for the agent binary.
+##
+## STAGES:
+##   1. build   — Dart SDK, fetches deps, compiles to native binary.
+##   2. runtime — Minimal Debian image with just the binary + Docker CLI.
+##
+## The compiled binary is ~10 MB and has no Dart runtime dependency.
+##
+## BUILD:
+##   docker build -f Dockerfile.agent -t safeclaw-agent:latest .
+##
+## RUN (the agent manages its own containers for skills):
+##   docker run --rm \
+##     -v /var/run/docker.sock:/var/run/docker.sock \
+##     -v /path/to/keys:/keys:ro \
+##     safeclaw-agent:latest \
+##     --atsign @agent --key-file /keys/@agent_key.atKeys
+
+# ──────────────────────────────────────────────────────────────
+# Stage 1: compile
+# ──────────────────────────────────────────────────────────────
+FROM dart:3.6-sdk AS build
+
+WORKDIR /src/agent
+
+# Copy pubspec first for layer caching
+COPY agent/pubspec.yaml agent/pubspec.lock* ./
+RUN dart pub get
+
+# Copy source
+COPY agent/ .
+
+# Compile to self-contained native binary
+RUN dart compile exe bin/main.dart -o /app/safeclaw-agent
+
+# ──────────────────────────────────────────────────────────────
+# Stage 2: runtime
+# ──────────────────────────────────────────────────────────────
+FROM debian:bookworm-slim AS runtime
+
+# Install Docker CLI so the agent can spawn sandboxed skill containers.
+# The Docker daemon socket is bind-mounted at runtime (not inside this image).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    gnupg \
+    && install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg \
+       | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && chmod a+r /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+       https://download.docker.com/linux/debian \
+       $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+       > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends docker-ce-cli \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user for the agent process
+RUN useradd -m -u 1001 safeclaw
+USER safeclaw
+WORKDIR /home/safeclaw
+
+COPY --from=build --chown=safeclaw /app/safeclaw-agent /usr/local/bin/safeclaw-agent
+
+ENTRYPOINT ["/usr/local/bin/safeclaw-agent"]

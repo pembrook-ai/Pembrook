@@ -1,0 +1,58 @@
+# Dart / Flutter generated files
+.dart_tool/
+.packages
+pubspec.lock
+build/
+*.g.dart
+*.freezed.dart
+
+# Flutter
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+
+# Hive database (local secondary storage — never commit)
+.hive/
+*.hive
+*.lock
+
+# atKeys files — NEVER commit these (they contain private keys)
+*.atKeys
+keys/
+
+# Environment / secrets
+.env
+.env.*
+*.secret
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Docker volumes (if mounted locally)
+docker-volumes/
+ollama-data/
+
+# Compiled agent binary
+agent/bin/safeclaw-agent
+agent/safeclaw-agent
+
+# Test coverage
+coverage/
+lcov.info
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/

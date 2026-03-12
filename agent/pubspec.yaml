@@ -1,0 +1,37 @@
+name: safeclaw_agent
+description: SafeClaw AI agent daemon — Gateway, Orchestrator, LLM Router, and all supporting services.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+
+dependencies:
+  # atPlatform core
+  at_client: ^3.11.0
+  at_cli_commons: ^3.0.1
+  at_commons: ^5.7.0
+  at_chops: ^3.0.0
+
+  # HTTP (for Ollama and external LLM APIs)
+  http: ^1.2.1
+
+  # Utilities
+  uuid: ^4.0.0
+  args: ^2.5.0
+
+  # Logging
+  logging: ^1.2.0
+
+  # JSON / configuration
+  yaml: ^3.1.2
+
+  # Cron expression parsing (Phase 5)
+  cron: ^0.5.1
+
+  # Cryptographic hashing (Phase 2: SHA-256 audit integrity)
+  crypto: ^3.0.0
+
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.24.0

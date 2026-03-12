@@ -1,0 +1,27 @@
+/// SafeClaw Web Search Skill — skeleton for Phase 3.
+///
+/// Runs inside a Docker sandbox.
+/// Uses SearXNG (self-hosted) or Brave Search API for privacy-preserving search.
+/// The SearXNG instance URL / Brave API key is passed via payload
+/// (read from @agent's AtKeys — never hard-coded in the image).
+///
+/// Tools exposed:
+///   - search.query(q, engines?, num_results?)
+///   - search.get_page(url)  — fetch and extract text from a URL
+///
+/// Docker image: safeclaw-skill-web-search:latest
+/// atSign: @skill_search (placeholder)
+
+name: safeclaw_skill_web_search
+description: Privacy-preserving web search skill for SafeClaw.
+publish_to: none
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+
+dependencies:
+  http: ^1.2.1
+  html: ^0.15.0
+  logging: ^1.2.0

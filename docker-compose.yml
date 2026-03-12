@@ -1,0 +1,97 @@
+## SafeClaw — docker-compose.yml
+##
+## Services:
+##   ollama   — local LLM (llama3.2 or mistral)
+##   agent    — SafeClaw agent process
+##
+## ENVIRONMENT VARIABLES:
+##   Set in .env (never committed — see .gitignore):
+##     AGENT_AT_SIGN=@agent
+##     AGENT_KEYS_PATH=/path/to/@agent_key.atKeys
+##     OLLAMA_MODEL=llama3.2
+##
+## USAGE:
+##   # First run — pull model (takes a while):
+##   docker compose run --rm ollama ollama pull llama3.2
+##
+##   # Start all services:
+##   docker compose up -d
+##
+##   # Tail logs:
+##   docker compose logs -f agent
+##
+##   # Stop:
+##   docker compose down
+##
+## SECURITY NOTES:
+##   - Ollama is bound to 127.0.0.1 ONLY — not accessible from outside host.
+##   - The agent container has access to Docker socket ONLY to spawn
+##     sandboxed skill containers. All skill containers run with
+##     --network=none --memory=256m --cpus=0.5 --cap-drop=ALL.
+##   - No ports are opened for the agent itself (zero open ports).
+##   - atSign keys are mounted read-only.
+
+name: safeclaw
+
+services:
+  # ── Ollama — local LLM ──────────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: safeclaw-ollama
+    restart: unless-stopped
+    # Bind to loopback only — never expose to external network
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # GPU support (remove if no GPU):
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ── SafeClaw Agent ──────────────────────────────────────────────────────────
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    image: safeclaw-agent:latest
+    container_name: safeclaw-agent
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    command:
+      - "--atsign"
+      - "${AGENT_AT_SIGN:-@agent}"
+      - "--key-file"
+      - "/keys/agent.atKeys"
+    volumes:
+      # atSign keys — read-only
+      - "${AGENT_KEYS_PATH:-./keys}:/keys:ro"
+      # Docker socket — allows agent to spawn sandboxed skill containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      OLLAMA_BASE_URL: "http://ollama:11434"
+    networks:
+      - safeclaw_internal
+    # The agent opens NO inbound ports — it only makes outbound atNetwork connections
+    # and Docker API calls.
+
+volumes:
+  ollama_data:
+    driver: local
+
+networks:
+  safeclaw_internal:
+    driver: bridge
+    internal: false  # agent needs outbound internet for atServer connections
