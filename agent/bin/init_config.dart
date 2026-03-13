@@ -153,7 +153,6 @@ void main(List<String> args) async {
 
     final cliBase =
         await CLIBase.fromCommandLineArgs(cliArgs, namespace: kNamespace);
-    await cliBase.init();
     final atClient = cliBase.atClient;
 
     stdout.writeln('Authenticated as ${atClient.getCurrentAtSign()}');
