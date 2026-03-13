@@ -1,22 +1,21 @@
 /// AuthScreen — atSign onboarding and login.
 ///
-/// Supports all four at_client_flutter auth workflows:
-///   1. QR Code / CRAM      → first-time activation on new device
-///   2. .atKeys file upload → cross-device key transfer
-///   3. APKAM activation    → app-level key management (recommended)
-///   4. PKAM (legacy)       → direct private key authentication
+/// Supports all four at_client_flutter auth workflows (per ATPLATFORM_GUIDELINES.md):
+///   1. Login from Keychain  → returning user, keys already on this device
+///   2. Activate new atSign  → first-time registration via Registrar (CRAM, no QR code)
+///   3. APKAM enrollment     → app-level key management for a new device
+///   4. Import .atKeys file  → cross-device key transfer via exported key file
+///
+/// NOTE: QR code activation is NOT supported — it belongs to the deprecated
+///   at_onboarding_flutter package. Use the Registrar (CRAM) flow instead.
 ///
 /// After successful auth:
 ///   - AtClientManager.setCurrentAtSign() is called.
 ///   - RpcService is initialised with the authenticated AtClient.
 ///   - Route pushed to /home.
 
-import 'package:at_client_flutter/at_client_flutter.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 
-import '../services/rpc_service.dart';
 import 'walkthrough.dart';
 
 class AuthScreen extends StatelessWidget {
@@ -53,33 +52,38 @@ class AuthScreen extends StatelessWidget {
               ),
               const Spacer(),
 
-              // ── Auth workflow buttons ────────────────────────────────────
+              // ── Auth workflow buttons (per ATPLATFORM_GUIDELINES.md) ────
+              // 1. Returning user — keys already stored on this device.
+              _AuthButton(
+                icon: Icons.lock_open,
+                label: 'Login from Keychain',
+                subtitle: 'Use an atSign already on this device',
+                onTap: () => _startAuth(context, AuthWorkflow.keychain),
+              ),
+              const SizedBox(height: 12),
+              // 2. First-time activation of a brand-new atSign via registrar.
+              _AuthButton(
+                icon: Icons.person_add,
+                label: 'Activate new atSign',
+                subtitle: 'First-time setup via my.atsign.com',
+                onTap: () => _startAuth(context, AuthWorkflow.registrar),
+              ),
+              const SizedBox(height: 12),
+              // 3. Enrol this app on a new device (requires approval on
+              //    an already-authorised device).
               _AuthButton(
                 icon: Icons.phonelink_setup,
-                label: 'Activate with QR Code',
-                subtitle: 'First-time setup on a new device',
-                onTap: () => _startAuth(context, AuthWorkflow.qrCode),
-              ),
-              const SizedBox(height: 12),
-              _AuthButton(
-                icon: Icons.upload_file,
-                label: 'Upload .atKeys file',
-                subtitle: 'Use an exported key file',
-                onTap: () => _startAuth(context, AuthWorkflow.atKeysFile),
-              ),
-              const SizedBox(height: 12),
-              _AuthButton(
-                icon: Icons.vpn_key,
-                label: 'APKAM Activation',
-                subtitle: 'App-level key management (recommended)',
+                label: 'APKAM — new device enrolment',
+                subtitle: 'Approve this device from another authorised device',
                 onTap: () => _startAuth(context, AuthWorkflow.apkam),
               ),
               const SizedBox(height: 12),
+              // 4. Import a previously exported .atKeys backup file.
               _AuthButton(
-                icon: Icons.key,
-                label: 'PKAM (Legacy)',
-                subtitle: 'Direct private key authentication',
-                onTap: () => _startAuth(context, AuthWorkflow.pkam),
+                icon: Icons.upload_file,
+                label: 'Import .atKeys file',
+                subtitle: 'Use an exported key file backup',
+                onTap: () => _startAuth(context, AuthWorkflow.atKeysFile),
               ),
 
               const Spacer(),

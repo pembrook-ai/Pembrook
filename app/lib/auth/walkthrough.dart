@@ -2,10 +2,10 @@
 ///
 /// SUPPORTED WORKFLOWS (AuthWorkflow enum):
 ///
-///   qrCode    → AtOnboardingRequest + CramDialog (initial CRAM activation)
-///   atKeysFile → AtKeysFileDialog (import .atKeys file)
-///   apkam     → ApkamActivationDialog (app-level key management)
-///   pkam      → PkamDialog (legacy PKAM with private key)
+///   keychain   → Login from Keychain (returning user, keys on this device)
+///   registrar  → Activate new atSign via Registrar CRAM (no QR code)
+///   atKeysFile → Import .atKeys backup file
+///   apkam      → APKAM enrolment for a new device
 ///
 /// After any successful auth:
 ///   1. AtClientManager.getInstance().setCurrentAtSign() is called.
@@ -13,6 +13,7 @@
 ///   3. Navigation is pushed to /home.
 ///
 /// Uses at_client_flutter 1.0.x static .show() dialog API.
+/// QR code activation is NOT offered — see ATPLATFORM_GUIDELINES.md.
 
 import 'dart:io';
 
@@ -25,7 +26,7 @@ import 'package:provider/provider.dart';
 
 import '../services/rpc_service.dart';
 
-enum AuthWorkflow { qrCode, atKeysFile, apkam, pkam }
+enum AuthWorkflow { keychain, registrar, atKeysFile, apkam }
 
 class AuthWalkthrough extends StatefulWidget {
   final AuthWorkflow workflow;
@@ -86,14 +87,14 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
 
   String _workflowTitle() {
     switch (widget.workflow) {
-      case AuthWorkflow.qrCode:
-        return 'QR Code Activation';
+      case AuthWorkflow.keychain:
+        return 'Login from Keychain';
+      case AuthWorkflow.registrar:
+        return 'Activate new atSign';
       case AuthWorkflow.atKeysFile:
-        return '.atKeys File Upload';
+        return 'Import .atKeys File';
       case AuthWorkflow.apkam:
-        return 'APKAM Activation';
-      case AuthWorkflow.pkam:
-        return 'PKAM Login';
+        return 'APKAM — New Device Enrolment';
     }
   }
 
@@ -116,8 +117,11 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
 
   Future<void> _runWorkflow() async {
     switch (widget.workflow) {
-      case AuthWorkflow.qrCode:
-        await _cramFlow();
+      case AuthWorkflow.keychain:
+        await _keychainFlow();
+        break;
+      case AuthWorkflow.registrar:
+        await _registrarFlow();
         break;
       case AuthWorkflow.atKeysFile:
         await _atKeysFileFlow();
@@ -125,17 +129,15 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
       case AuthWorkflow.apkam:
         await _apkamFlow();
         break;
-      case AuthWorkflow.pkam:
-        await _pkamFlow();
-        break;
     }
   }
 
   // ══════════════════════════════════════════════════════
-  //  CRAM (QR Code activation)
+  //  Registrar CRAM (activate a brand-new atSign)
+  //  Reference: ATPLATFORM_GUIDELINES.md workflow 2
   // ══════════════════════════════════════════════════════
 
-  Future<void> _cramFlow() async {
+  Future<void> _registrarFlow() async {
     if (!mounted) return;
     // Step 1: Let the user enter / select their atSign.
     final authRequest = await AtSignSelectionDialog.show(context);
@@ -240,10 +242,11 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
   }
 
   // ══════════════════════════════════════════════════════
-  //  PKAM (legacy keychain)
+  //  Keychain login (returning user)
+  //  Reference: ATPLATFORM_GUIDELINES.md workflow 1
   // ══════════════════════════════════════════════════════
 
-  Future<void> _pkamFlow() async {
+  Future<void> _keychainFlow() async {
     if (!mounted) return;
     final keychainStorage = KeychainStorage();
     final atSigns = await keychainStorage.getAllAtsigns();

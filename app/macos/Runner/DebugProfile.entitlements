@@ -6,7 +6,13 @@
 	<true/>
 	<key>com.apple.security.cs.allow-jit</key>
 	<true/>
+	<!-- Outbound TCP – required for atPlatform (root.atsign.org:64) -->
+	<key>com.apple.security.network.client</key>
+	<true/>
 	<key>com.apple.security.network.server</key>
+	<true/>
+	<!-- File picker – allow user to open .atKeys files -->
+	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
 </dict>
 </plist>
