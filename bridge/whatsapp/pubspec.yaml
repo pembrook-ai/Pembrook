@@ -26,6 +26,7 @@ dependencies:
   at_client: ^3.11.0
   at_cli_commons: ^3.0.1
   at_commons: ^5.7.0
+  crypto: ^3.0.3
   http: ^1.2.1
   shelf: ^1.4.0
   shelf_router: ^1.1.0

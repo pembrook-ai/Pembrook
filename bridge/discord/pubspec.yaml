@@ -1,0 +1,25 @@
+name: safeclaw_bridge_discord
+description: >-
+  SafeClaw bridge — routes Discord Bot messages to/from the @agent atSign
+  via the atNetwork (zero open ports, E2E encrypted).
+
+  Uses Discord Gateway WebSocket API.
+  atSign: @bridge_discord
+  Namespace: safeclaw
+
+publish_to: none
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+
+dependencies:
+  at_client: ^3.11.0
+  at_cli_commons: ^3.0.1
+  at_commons: ^5.7.0
+  http: ^1.2.1
+  web_socket_channel: ^2.4.0
+  logging: ^1.2.0
+  uuid: ^4.0.0
+  args: ^2.5.0

@@ -1,0 +1,27 @@
+name: safeclaw_bridge_slack
+description: >-
+  SafeClaw bridge — routes Slack Bot messages to/from the @agent atSign
+  via the atNetwork (zero open ports, E2E encrypted).
+
+  Uses Slack Events API with HMAC-SHA256 request verification.
+  atSign: @bridge_slack
+  Namespace: safeclaw
+
+publish_to: none
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+
+dependencies:
+  at_client: ^3.11.0
+  at_cli_commons: ^3.0.1
+  at_commons: ^5.7.0
+  http: ^1.2.1
+  shelf: ^1.4.0
+  shelf_router: ^1.1.0
+  crypto: ^3.0.3
+  logging: ^1.2.0
+  uuid: ^4.0.0
+  args: ^2.5.0
