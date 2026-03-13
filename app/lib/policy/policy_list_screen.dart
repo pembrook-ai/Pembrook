@@ -41,8 +41,7 @@ class _PolicyListScreenState extends State<PolicyListScreen> {
     }
   }
 
-  String get _ownerAtSign =>
-      _atClient?.getCurrentAtSign() ?? '@owner';
+  String get _ownerAtSign => _atClient?.getCurrentAtSign() ?? '@owner';
 
   @override
   void initState() {
@@ -165,8 +164,7 @@ class _PolicyListScreenState extends State<PolicyListScreen> {
   Future<void> _openEditor({PolicySummary? existing}) async {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) =>
-            PolicyEditorScreen(policyId: existing?.policyId),
+        builder: (_) => PolicyEditorScreen(policyId: existing?.policyId),
       ),
     );
     if (result == true) {
@@ -285,7 +283,8 @@ class _PolicyCard extends StatelessWidget {
       child: ListTile(
         onTap: onTap,
         leading: CircleAvatar(
-          backgroundColor: _typeColor(policy.policyType, cs).withValues(alpha: 0.15),
+          backgroundColor:
+              _typeColor(policy.policyType, cs).withValues(alpha: 0.15),
           child: Icon(
             _typeIcon(policy.policyType),
             size: 20,
@@ -366,8 +365,7 @@ class PolicySummary {
       policyType: json['policyType'] as String? ?? 'identity',
       priority: json['priority'] as int? ?? 100,
       ruleCount: rules,
-      updatedAt:
-          DateTime.tryParse(json['updatedAt'] as String? ?? ''),
+      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
       rawJson: jsonEncode(json),
     );
   }

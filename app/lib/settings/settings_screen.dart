@@ -207,7 +207,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.hub_outlined),
             title: const Text('Bridges'),
-            subtitle: const Text('Configure WhatsApp, Telegram, Discord, Slack'),
+            subtitle:
+                const Text('Configure WhatsApp, Telegram, Discord, Slack'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/bridges'),
           ),

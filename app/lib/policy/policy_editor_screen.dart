@@ -69,8 +69,7 @@ class _PolicyEditorScreenState extends State<PolicyEditorScreen> {
     }
   }
 
-  String get _ownerAtSign =>
-      _atClient?.getCurrentAtSign() ?? '@owner';
+  String get _ownerAtSign => _atClient?.getCurrentAtSign() ?? '@owner';
 
   @override
   void initState() {
@@ -548,8 +547,7 @@ class _JsonPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pretty =
-        const JsonEncoder.withIndent('  ').convert(jsonMap);
+    final pretty = const JsonEncoder.withIndent('  ').convert(jsonMap);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: SelectableText(

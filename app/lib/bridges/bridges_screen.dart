@@ -210,15 +210,13 @@ class _BridgeCardState extends State<_BridgeCard> {
     }
   }
 
-  String get _ownerAtSign =>
-      _atClient?.getCurrentAtSign() ?? '@owner';
+  String get _ownerAtSign => _atClient?.getCurrentAtSign() ?? '@owner';
 
   @override
   void initState() {
     super.initState();
     _controllers = {
-      for (final f in widget.bridge.fields)
-        f.key: TextEditingController(),
+      for (final f in widget.bridge.fields) f.key: TextEditingController(),
     };
     _loadConfig();
   }
@@ -235,8 +233,7 @@ class _BridgeCardState extends State<_BridgeCard> {
   //  ATKEY HELPERS
   // ────────────────────────────────────────────────────────────────────────
 
-  AtKey _makeKey() =>
-      (AtKey.shared(
+  AtKey _makeKey() => (AtKey.shared(
         'bridge.${widget.bridge.id}.config',
         namespace: _namespace,
         sharedBy: _ownerAtSign,
@@ -263,8 +260,7 @@ class _BridgeCardState extends State<_BridgeCard> {
           _controllers[f.key]?.text = json[f.key] as String? ?? '';
         }
         // Configured = at least one non-empty field
-        _configured =
-            json.values.any((v) => v is String && v.isNotEmpty);
+        _configured = json.values.any((v) => v is String && v.isNotEmpty);
       }
     } catch (_) {
       // Key doesn't exist yet — that's fine
@@ -298,8 +294,7 @@ class _BridgeCardState extends State<_BridgeCard> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('${widget.bridge.name} config saved')),
+          SnackBar(content: Text('${widget.bridge.name} config saved')),
         );
       }
     } catch (e) {
@@ -326,8 +321,7 @@ class _BridgeCardState extends State<_BridgeCard> {
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(
-                backgroundColor:
-                    Theme.of(context).colorScheme.error),
+                backgroundColor: Theme.of(context).colorScheme.error),
             child: const Text('Clear'),
           ),
         ],
@@ -345,8 +339,7 @@ class _BridgeCardState extends State<_BridgeCard> {
       setState(() => _configured = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('${widget.bridge.name} tokens cleared')),
+          SnackBar(content: Text('${widget.bridge.name} tokens cleared')),
         );
       }
     } catch (e) {
@@ -386,9 +379,7 @@ class _BridgeCardState extends State<_BridgeCard> {
                 : Text(
                     _configured ? 'Configured ✓' : 'Not configured',
                     style: TextStyle(
-                      color: _configured
-                          ? Colors.green.shade600
-                          : cs.outline,
+                      color: _configured ? Colors.green.shade600 : cs.outline,
                     ),
                   ),
             trailing: Row(
@@ -402,9 +393,7 @@ class _BridgeCardState extends State<_BridgeCard> {
                     onPressed: _clearConfig,
                   ),
                 Icon(
-                  _expanded
-                      ? Icons.expand_less
-                      : Icons.expand_more,
+                  _expanded ? Icons.expand_less : Icons.expand_more,
                   color: cs.outline,
                 ),
               ],
@@ -433,8 +422,7 @@ class _BridgeCardState extends State<_BridgeCard> {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       TextButton(
-                        onPressed: () =>
-                            setState(() => _expanded = false),
+                        onPressed: () => setState(() => _expanded = false),
                         child: const Text('Cancel'),
                       ),
                       const SizedBox(width: 8),
@@ -443,8 +431,8 @@ class _BridgeCardState extends State<_BridgeCard> {
                         child: _saving
                             ? const SizedBox.square(
                                 dimension: 16,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Text('Save'),
                       ),
@@ -503,8 +491,7 @@ class _SecretFieldState extends State<_SecretField> {
                         _obscure ? Icons.visibility : Icons.visibility_off,
                         size: 20),
                     tooltip: _obscure ? 'Show' : 'Hide',
-                    onPressed: () =>
-                        setState(() => _obscure = !_obscure),
+                    onPressed: () => setState(() => _obscure = !_obscure),
                   ),
                   IconButton(
                     icon: const Icon(Icons.copy, size: 20),
@@ -513,8 +500,7 @@ class _SecretFieldState extends State<_SecretField> {
                       Clipboard.setData(
                           ClipboardData(text: widget.controller.text));
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Copied to clipboard')),
+                        const SnackBar(content: Text('Copied to clipboard')),
                       );
                     },
                   ),
