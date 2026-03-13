@@ -76,6 +76,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // On wide screens (desktop/tablet) the AppShell NavigationRail handles
+    // navigation — no drawer needed.  On narrow screens keep the drawer.
+    final wide = MediaQuery.of(context).size.width >= 600;
     return Scaffold(
       appBar: AppBar(
         title: const Text('SafeClaw'),
@@ -87,9 +90,32 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
-      drawer: _buildDrawer(context),
+      drawer: wide ? null : _buildDrawer(context),
       body: Column(
         children: [
+          // ── Agent config warning ───────────────────────────
+          Consumer<RpcService>(
+            builder: (context, rpc, _) {
+              if (rpc.agentAtSign == '@agent') {
+                return MaterialBanner(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                  content: const Text(
+                    'Agent atSign not configured. '
+                    'Go to Settings and set your agent atSign.',
+                  ),
+                  leading:
+                      const Icon(Icons.warning_amber, color: Colors.orange),
+                  actions: [
+                    TextButton(
+                      onPressed: () => context.go('/settings'),
+                      child: const Text('Settings'),
+                    ),
+                  ],
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
           Expanded(child: _buildMessages()),
           if (_streamBuffer.isNotEmpty) _StreamingBubble(text: _streamBuffer),
           _buildInput(),

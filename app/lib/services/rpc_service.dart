@@ -1,27 +1,30 @@
 /// RpcService — Flutter app side of the AtRpc communication with @agent.
 ///
-/// USAGE:
-///   final rpcService = context.read<RpcService>();
-///   final response = await rpcService.call(
-///     command: 'chat',
-///     conversationId: _conversationId,
-///     payload: {'message': userInput},
-///   );
+/// Uses [AtRpcClient] from at_client — the same protocol the agent's Gateway
+/// uses on the server side.  Key format:
+///   request.<reqId>.<domainNS>.<rpcsNS>.<baseNS>  → to @agent
+///   success.<reqId>.<domainNS>.<rpcsNS>.<baseNS>  ← from @agent
+///
+/// AtRpc namespaces (must match agent/lib/gateway/gateway.dart exactly):
+///   baseNameSpace   = 'safeclaw'
+///   rpcsNameSpace   = '__rpcs'   (AtRpc default)
+///   domainNameSpace = 'safeclaw'
+///
+/// Agent atSign: read from SharedPreferences key 'agentAtSign'.
+///   Set once in SettingsScreen.  Call [updateAgentAtSign] after saving
+///   there so the client is recreated immediately without a restart.
 ///
 /// Streaming:
-///   rpcService.streamChunks — a Stream<String> that yields incremental
-///   response tokens from 'safeclaw.stream.*' notifications.
-///
-/// All calls are encrypted by the atClient SDK — the agent's atServer
-/// decrypts on the other end. No plaintext on any server.
-///
-/// Agent atSign: @agent (placeholder — set via SettingsScreen).
+///   [streamChunks] — a Stream<String> yielding incremental tokens sent by
+///   the Orchestrator as 'safeclaw.stream.<reqId>.safeclaw' notifications.
+///   The final full response still arrives via the normal AtRpc reply.
 
 import 'dart:async';
 import 'dart:convert';
 
 import 'package:at_client/at_client.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class RpcCallResult {
   final bool success;
@@ -39,21 +42,44 @@ class RpcCallResult {
 
 class RpcService extends ChangeNotifier {
   AtClient? _atClient;
+  AtRpcClient? _rpcClient;
   StreamSubscription<AtNotification>? _streamSubscription;
 
-  static const String _agentAtSign = '@agent'; // placeholder
-  static const String _namespace = 'safeclaw';
+  String _agentAtSign = '@agent';
 
-  // Stream of incremental text chunks from the agent.
+  static const String _baseNS = 'safeclaw';
+  static const String _rpcsNS = '__rpcs';
+  static const String _domainNS = 'safeclaw';
+
+  /// How long to wait for an agent response before giving up.
+  static const Duration _callTimeout = Duration(seconds: 90);
+
+  // Stream of incremental text chunks from the agent (streaming mode).
   final StreamController<String> _streamChunkController =
       StreamController<String>.broadcast();
 
   Stream<String> get streamChunks => _streamChunkController.stream;
   bool get isAuthenticated => _atClient != null;
+  String get agentAtSign => _agentAtSign;
 
-  void initialise(AtClient atClient) {
+  /// Called by auth walkthrough after a successful login.
+  Future<void> initialise(AtClient atClient) async {
     _atClient = atClient;
+    await _loadAgentAtSign();
+    _initRpcClient();
     _subscribeToStream();
+    notifyListeners();
+  }
+
+  /// Called by SettingsScreen when the user saves a new agent atSign.
+  /// Recreates the AtRpcClient so calls immediately use the new address.
+  Future<void> updateAgentAtSign(String newAtSign) async {
+    final trimmed = newAtSign.trim();
+    if (trimmed == _agentAtSign) return;
+    _agentAtSign = trimmed;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('agentAtSign', trimmed);
+    _initRpcClient();
     notifyListeners();
   }
 
@@ -61,66 +87,42 @@ class RpcService extends ChangeNotifier {
   //  CALL
   // ──────────────────────────────────────────────────────────
 
-  /// Send a command to the @agent and wait for its response.
+  /// Send a command to @agent and wait for its response.
   Future<RpcCallResult> call({
     required String command,
     required String conversationId,
     Map<String, dynamic> payload = const {},
   }) async {
-    if (_atClient == null) {
+    if (_rpcClient == null) {
       return const RpcCallResult(
         success: false,
         response: '',
         conversationId: '',
-        error: 'Not authenticated',
+        error: 'Not authenticated — please log in',
       );
     }
 
-    final reqId = DateTime.now().millisecondsSinceEpoch;
-    final envelope = jsonEncode({
-      'command': command,
-      'conversationId': conversationId,
-      'platform': _platformName(),
-      'reqId': reqId,
-      ...payload,
-    });
-
-    // Send request as a notification to @agent
-    final requestKey = (AtKey.shared(
-      'safeclaw.cmd.$reqId',
-      namespace: _namespace,
-      sharedBy: _atClient!.getCurrentAtSign() ?? '',
-    )..sharedWith(_agentAtSign))
-        .build()
-      ..metadata = (Metadata()
-        ..ttl = 60000 // 1 min TTL
-        ..ttr = -1);
-
     try {
-      await _atClient!.notificationService.notify(
-        NotificationParams.forUpdate(requestKey, value: envelope),
-      );
+      final result = await _rpcClient!.call({
+        'command': command,
+        'conversationId': conversationId,
+        'platform': _platformName(),
+        ...payload,
+      }).timeout(_callTimeout);
 
-      // Wait for response on 'safeclaw.cmd.response.$reqId'
-      final response = await _waitForResponse(
-          'safeclaw\\.cmd\\.response\\.$reqId',
-          timeout: const Duration(seconds: 60));
-
-      if (response == null) {
-        return RpcCallResult(
-          success: false,
-          response: '',
-          conversationId: conversationId,
-          error: 'Request timed out',
-        );
-      }
-
-      final map = jsonDecode(response) as Map<String, dynamic>;
       return RpcCallResult(
-        success: map['success'] as bool? ?? false,
-        response: map['response'] as String? ?? '',
-        conversationId: map['conversationId'] as String? ?? conversationId,
-        error: map['error'] as String?,
+        success: result['success'] as bool? ?? true,
+        response: result['response'] as String? ?? '',
+        conversationId: result['conversationId'] as String? ?? conversationId,
+        error: result['error'] as String?,
+      );
+    } on TimeoutException {
+      return RpcCallResult(
+        success: false,
+        response: '',
+        conversationId: conversationId,
+        error: 'Request timed out after '
+            '${_callTimeout.inSeconds}s — is the agent running?',
       );
     } catch (e) {
       return RpcCallResult(
@@ -133,61 +135,73 @@ class RpcService extends ChangeNotifier {
   }
 
   // ──────────────────────────────────────────────────────────
-  //  STREAMING SUBSCRIPTION
+  //  HELPERS
   // ──────────────────────────────────────────────────────────
+
+  Future<void> _loadAgentAtSign() async {
+    final prefs = await SharedPreferences.getInstance();
+    _agentAtSign = prefs.getString('agentAtSign') ?? '@agent';
+  }
+
+  void _initRpcClient() {
+    if (_atClient == null) return;
+    _rpcClient = AtRpcClient(
+      serverAtsign: _agentAtSign,
+      atClient: _atClient!,
+      baseNameSpace: _baseNS,
+      rpcsNameSpace: _rpcsNS,
+      domainNameSpace: _domainNS,
+    );
+  }
 
   void _subscribeToStream() {
     _streamSubscription?.cancel();
     _streamSubscription = _atClient!.notificationService
         .subscribe(regex: r'safeclaw\.stream\..*', shouldDecrypt: true)
         .listen((notification) {
-      if (notification.value != null) {
-        try {
-          final map = jsonDecode(notification.value!) as Map<String, dynamic>;
-          final chunk = map['chunk'] as String? ?? '';
-          if (chunk.isNotEmpty) {
-            _streamChunkController.add(chunk);
-          }
-        } catch (_) {}
-      }
+      if (notification.value == null) return;
+      try {
+        // The orchestrator sends stream chunks as plain text, not JSON.
+        // Handle both: plain string and {"chunk": "..."} JSON envelope.
+        final value = notification.value!;
+        String chunk;
+        if (value.startsWith('{')) {
+          final map = _tryDecode(value);
+          chunk = map?['chunk'] as String? ?? value;
+        } else {
+          chunk = value;
+        }
+        if (chunk.isNotEmpty) _streamChunkController.add(chunk);
+      } catch (_) {}
     });
   }
 
-  Future<String?> _waitForResponse(String keyPattern,
-      {required Duration timeout}) async {
-    final completer = Completer<String?>();
-    StreamSubscription<AtNotification>? sub;
-    Timer? timer;
-
-    sub = _atClient!.notificationService
-        .subscribe(regex: keyPattern, shouldDecrypt: true)
-        .listen((notification) {
-      if (!completer.isCompleted && notification.value != null) {
-        completer.complete(notification.value);
-      }
-    });
-
-    timer = Timer(timeout, () {
-      if (!completer.isCompleted) completer.complete(null);
-    });
-
-    final result = await completer.future;
-    await sub.cancel();
-    timer.cancel();
-    return result;
+  Map<String, dynamic>? _tryDecode(String s) {
+    try {
+      final decoded = jsonDecode(s);
+      if (decoded is Map<String, dynamic>) return decoded;
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   String _platformName() {
     if (kIsWeb) return 'web';
-    try {
-      // Platform is not available on web
-      if (defaultTargetPlatform == TargetPlatform.iOS) return 'ios';
-      if (defaultTargetPlatform == TargetPlatform.android) return 'android';
-      if (defaultTargetPlatform == TargetPlatform.macOS) return 'macos';
-      if (defaultTargetPlatform == TargetPlatform.windows) return 'windows';
-      if (defaultTargetPlatform == TargetPlatform.linux) return 'linux';
-    } catch (_) {}
-    return 'unknown';
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+        return 'ios';
+      case TargetPlatform.android:
+        return 'android';
+      case TargetPlatform.macOS:
+        return 'macos';
+      case TargetPlatform.windows:
+        return 'windows';
+      case TargetPlatform.linux:
+        return 'linux';
+      default:
+        return 'unknown';
+    }
   }
 
   @override

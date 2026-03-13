@@ -13,14 +13,18 @@
 /// Routing (go_router):
 ///   /           → SplashScreen (checks auth state)
 ///   /auth       → AuthScreen (onboarding / key upload)
-///   /home       → ChatScreen (main chat UI)
-///   /history    → HistoryScreen (conversations)
-///   /audit      → AuditScreen (audit log viewer)
-///   /settings   → SettingsScreen (preferences + policy)
-///   /skills     → SkillsScreen (installed skills)
-///   /hitl       → HitlScreen (pending HITL approvals)
-///   /policy     → PolicyListScreen (policy rule manager)
-///   /bridges    → BridgesScreen (messaging bridge config)
+///   /home       → ChatScreen (main chat UI)           ┐
+///   /audit      → AuditScreen (audit log viewer)      │ wrapped in
+///   /settings   → SettingsScreen (preferences)        │ ShellRoute →
+///   /skills     → SkillsScreen (installed skills)     │ AppShell
+///   /hitl       → HitlScreen (pending HITL approvals) │ (NavigationRail
+///   /policy     → PolicyListScreen (policy manager)   │  on desktop,
+///   /bridges    → BridgesScreen (bridge config)       ┘  Drawer on mobile)
+///
+/// Desktop navigation:
+///   AppShell shows a persistent NavigationRail (width ≥ 600) so users
+///   can move between sections without a physical/gesture back button.
+///   On narrow screens the existing hamburger Drawer is used instead.
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -52,36 +56,143 @@ final _router = GoRouter(
       path: '/auth',
       builder: (context, state) => const AuthScreen(),
     ),
-    GoRoute(
-      path: '/home',
-      builder: (context, state) => const ChatScreen(),
-    ),
-    GoRoute(
-      path: '/audit',
-      builder: (context, state) => const AuditScreen(),
-    ),
-    GoRoute(
-      path: '/settings',
-      builder: (context, state) => const SettingsScreen(),
-    ),
-    GoRoute(
-      path: '/skills',
-      builder: (context, state) => const SkillsScreen(),
-    ),
-    GoRoute(
-      path: '/hitl',
-      builder: (context, state) => const HitlScreen(),
-    ),
-    GoRoute(
-      path: '/policy',
-      builder: (context, state) => const PolicyListScreen(),
-    ),
-    GoRoute(
-      path: '/bridges',
-      builder: (context, state) => const BridgesScreen(),
+    // ── Main app shell — persistent NavigationRail on desktop ─────────────
+    ShellRoute(
+      builder: (context, state, child) =>
+          AppShell(location: state.uri.path, child: child),
+      routes: [
+        GoRoute(
+          path: '/home',
+          builder: (context, state) => const ChatScreen(),
+        ),
+        GoRoute(
+          path: '/audit',
+          builder: (context, state) => const AuditScreen(),
+        ),
+        GoRoute(
+          path: '/settings',
+          builder: (context, state) => const SettingsScreen(),
+        ),
+        GoRoute(
+          path: '/skills',
+          builder: (context, state) => const SkillsScreen(),
+        ),
+        GoRoute(
+          path: '/hitl',
+          builder: (context, state) => const HitlScreen(),
+        ),
+        GoRoute(
+          path: '/policy',
+          builder: (context, state) => const PolicyListScreen(),
+        ),
+        GoRoute(
+          path: '/bridges',
+          builder: (context, state) => const BridgesScreen(),
+        ),
+      ],
     ),
   ],
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AppShell — persistent navigation wrapper.
+//
+// Wide screens (≥ 600 px):
+//   Renders a NavigationRail on the left so the user can always switch
+//   between sections without needing a physical or gesture back button.
+//   The child (current route) fills the remaining width.
+//
+// Narrow screens (< 600 px):
+//   Returns the child unchanged.  ChatScreen provides a Drawer; other
+//   screens rely on the OS back button / gesture (mobile).
+// ─────────────────────────────────────────────────────────────────────────────
+
+class AppShell extends StatelessWidget {
+  const AppShell({super.key, required this.location, required this.child});
+
+  final String location;
+  final Widget child;
+
+  // Ordered list of top-level destinations shown in the NavigationRail.
+  static const _dests = [
+    (
+      icon: Icons.chat_outlined,
+      activeIcon: Icons.chat,
+      label: 'Chat',
+      route: '/home'
+    ),
+    (
+      icon: Icons.article_outlined,
+      activeIcon: Icons.article,
+      label: 'Audit',
+      route: '/audit'
+    ),
+    (
+      icon: Icons.extension_outlined,
+      activeIcon: Icons.extension,
+      label: 'Skills',
+      route: '/skills'
+    ),
+    (
+      icon: Icons.pending_actions_outlined,
+      activeIcon: Icons.pending_actions,
+      label: 'Approvals',
+      route: '/hitl'
+    ),
+    (
+      icon: Icons.settings_outlined,
+      activeIcon: Icons.settings,
+      label: 'Settings',
+      route: '/settings'
+    ),
+  ];
+
+  int get _selectedIndex {
+    // /policy and /bridges are accessed from Settings — highlight Settings.
+    if (location.startsWith('/policy') || location.startsWith('/bridges')) {
+      return 4;
+    }
+    for (var i = 0; i < _dests.length; i++) {
+      if (location.startsWith(_dests[i].route)) return i;
+    }
+    return 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.of(context).size.width >= 600;
+    if (!wide) return child;
+
+    return Scaffold(
+      body: Row(
+        children: [
+          NavigationRail(
+            selectedIndex: _selectedIndex,
+            labelType: NavigationRailLabelType.all,
+            leading: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Icon(
+                Icons.security,
+                size: 32,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            destinations: _dests
+                .map((d) => NavigationRailDestination(
+                      icon: Icon(d.icon),
+                      selectedIcon: Icon(d.activeIcon),
+                      label: Text(d.label),
+                    ))
+                .toList(),
+            onDestinationSelected: (i) => context.go(_dests[i].route),
+          ),
+          const VerticalDivider(width: 1, thickness: 1),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+}
 
 class SafeClawApp extends StatelessWidget {
   const SafeClawApp({super.key});

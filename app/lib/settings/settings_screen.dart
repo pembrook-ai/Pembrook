@@ -9,7 +9,10 @@ import 'dart:convert';
 import 'package:at_client/at_client.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../services/rpc_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -123,6 +126,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       } catch (_) {
         // AtKey write failure is non-fatal; SharedPreferences still saved.
       }
+    }
+
+    // 3. Notify RpcService so it recreates the AtRpcClient immediately.
+    if (mounted) {
+      await context
+          .read<RpcService>()
+          .updateAgentAtSign(_agentAtSignCtrl.text.trim());
     }
 
     if (!mounted) return;

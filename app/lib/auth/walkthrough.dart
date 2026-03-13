@@ -305,7 +305,7 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
     if (!mounted) return;
     final atClient = AtClientManager.getInstance().atClient;
     // ignore: use_build_context_synchronously
-    context.read<RpcService>().initialise(atClient);
+    await context.read<RpcService>().initialise(atClient);
     // ignore: use_build_context_synchronously
     context.go('/home');
   }
