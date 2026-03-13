@@ -1,0 +1,55 @@
+## SafeClaw — .dockerignore
+##
+## Excludes files that should never enter the Docker build context.
+## KEY RULE: .dart_tool/ must be excluded so COPY agent/ . never overwrites
+## the container's freshly-generated .dart_tool/package_config.json (which
+## has correct container paths) with the host's version (host Mac paths).
+
+# ── Dart / pub ─────────────────────────────────────────────────────────────
+**/.dart_tool/
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/build/
+
+# ── Flutter specifics (app build artifacts — not needed for agent) ──────────
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+
+# ── Keys — NEVER put in build context ──────────────────────────────────────
+*.atKeys
+keys/
+~/.atsign/
+
+# ── Secrets ─────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Entire sub-projects not needed to build the agent ──────────────────────
+app/
+bridge/
+skills/
+mcp_servers/
+# agent/ is included (needed for the build)
+
+# ── IDE / OS ─────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+**/.DS_Store
+*.iml
+
+# ── Git ──────────────────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── Logs / temp ──────────────────────────────────────────────────────────────
+*.log
+tmp/
+temp/
+coverage/
+lcov.info
+
+# ── Compiled agent binary (built inside Docker — not from host) ─────────────
+agent/bin/safeclaw-agent
+agent/safeclaw-agent

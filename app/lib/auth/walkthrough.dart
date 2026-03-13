@@ -24,6 +24,8 @@ import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
+import '../services/data_service.dart';
+
 import '../services/rpc_service.dart';
 
 enum AuthWorkflow { keychain, registrar, atKeysFile, apkam }
@@ -306,6 +308,8 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
     final atClient = AtClientManager.getInstance().atClient;
     // ignore: use_build_context_synchronously
     await context.read<RpcService>().initialise(atClient);
+    // ignore: use_build_context_synchronously
+    await context.read<DataService>().initialise(atClient);
     // ignore: use_build_context_synchronously
     context.go('/home');
   }

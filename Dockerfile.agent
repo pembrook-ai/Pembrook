@@ -23,14 +23,20 @@ FROM dart:3.6-sdk AS build
 
 WORKDIR /src/agent
 
-# Copy pubspec first for layer caching
+# Copy pubspec first for layer caching — this lets Docker cache the
+# pub-get layer separately from the source code.
 COPY agent/pubspec.yaml agent/pubspec.lock* ./
 RUN dart pub get
 
-# Copy source
+# Copy the full source tree.
+# NOTE: .dart_tool/ is excluded by .dockerignore so the freshly-generated
+# package_config.json (with container paths) is never overwritten.
+# The extra 'dart pub get' below is a belt-and-suspenders guard in case
+# the .dockerignore is ever accidentally removed.
 COPY agent/ .
+RUN rm -rf .dart_tool && dart pub get
 
-# Compile to self-contained native binary
+# Compile to a self-contained native binary (~10 MB, no Dart runtime needed).
 RUN dart compile exe bin/main.dart -o /app/safeclaw-agent
 
 # ──────────────────────────────────────────────────────────────

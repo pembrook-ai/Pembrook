@@ -1,22 +1,26 @@
-/// DataService — reads AtKeys from @agent / @owner for the Flutter UI.
+/// DataService — reads and writes AtKeys from @owner's atServer for the Flutter UI.
 ///
 /// Provides:
-///   - Conversation history list
-///   - Audit log entries
-///   - Installed skills list
+///   - Audit log entries    (read from @owner — written there by the agent)
 ///   - Pending HITL requests
-///   - User preferences
+///   - Installed skills     (read/write — owner declares skills, shared w/ @agent)
 ///
-/// All reads use useRemoteAtServer = true so they always reflect the
-/// latest server state (no stale cache).
+/// SKILL KEY PATTERN (on @owner's atServer, sharedWith @agent):
+///   skill_meta.<skillId>.safeclaw@<owner>  →  JSON-encoded SkillData
 ///
-/// This service is used by AuditScreen, SkillsScreen, HitlScreen.
+/// Agent atSign: loaded from SharedPreferences 'agentAtSign' (same source as
+/// RpcService so they stay in sync when the user updates Settings).
 
 import 'dart:async';
 import 'dart:convert';
 
 import 'package:at_client/at_client.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Models
+// ─────────────────────────────────────────────────────────────────────────────
 
 class HitlItem {
   final String actionId;
@@ -66,22 +70,88 @@ class AuditItem {
       );
 }
 
+/// A skill registered by the owner and shared with the agent.
+class SkillData {
+  final String skillId;
+
+  /// The skill's own atSign (or @agent with a skill sub-namespace).
+  final String skillAtSign;
+
+  final String description;
+  final String version;
+  final double trustScore;
+  final bool enabled;
+
+  /// Optional key-value pairs passed to the skill at invocation time.
+  /// Examples: {'smtp_host': 'smtp.example.com', 'from_address': '...'}
+  final Map<String, String> config;
+
+  const SkillData({
+    required this.skillId,
+    required this.skillAtSign,
+    this.description = '',
+    this.version = '1.0.0',
+    this.trustScore = 0.0,
+    this.enabled = true,
+    this.config = const {},
+  });
+
+  SkillData copyWith({bool? enabled}) => SkillData(
+        skillId: skillId,
+        skillAtSign: skillAtSign,
+        description: description,
+        version: version,
+        trustScore: trustScore,
+        enabled: enabled ?? this.enabled,
+        config: config,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'skillId': skillId,
+        'skillAtSign': skillAtSign,
+        'description': description,
+        'version': version,
+        'trustScore': trustScore,
+        'enabled': enabled,
+        'config': config,
+      };
+
+  factory SkillData.fromJson(Map<String, dynamic> json) => SkillData(
+        skillId: json['skillId'] as String? ?? '',
+        skillAtSign: json['skillAtSign'] as String? ?? '',
+        description: json['description'] as String? ?? '',
+        version: json['version'] as String? ?? '1.0.0',
+        trustScore: (json['trustScore'] as num?)?.toDouble() ?? 0.0,
+        enabled: json['enabled'] as bool? ?? true,
+        config: (json['config'] as Map<String, dynamic>? ?? {})
+            .map((k, v) => MapEntry(k, v.toString())),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  DataService
+// ─────────────────────────────────────────────────────────────────────────────
+
 class DataService extends ChangeNotifier {
   AtClient? _atClient;
+  String _agentAtSign = '@agent';
   static const String _namespace = 'safeclaw';
-  static const String _agentAtSign = '@agent'; // placeholder
 
   List<HitlItem> _pendingHitl = [];
   List<AuditItem> _auditEntries = [];
+  List<SkillData> _skills = [];
   bool _loading = false;
 
   List<HitlItem> get pendingHitl => _pendingHitl;
   List<AuditItem> get auditEntries => _auditEntries;
+  List<SkillData> get skills => _skills;
   bool get loading => _loading;
 
-  void initialise(AtClient atClient) {
+  Future<void> initialise(AtClient atClient) async {
     _atClient = atClient;
-    refresh();
+    final prefs = await SharedPreferences.getInstance();
+    _agentAtSign = prefs.getString('agentAtSign') ?? '@agent';
+    await refresh();
   }
 
   Future<void> refresh() async {
@@ -92,6 +162,7 @@ class DataService extends ChangeNotifier {
     await Future.wait([
       _loadAuditEntries(),
       _loadPendingHitl(),
+      _loadSkills(),
     ]);
 
     _loading = false;
@@ -170,5 +241,68 @@ class DataService extends ChangeNotifier {
       items.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       _auditEntries = items;
     } catch (_) {}
+  }
+
+  // ──────────────────────────────────────────────────────────
+  //  SKILLS
+  // ──────────────────────────────────────────────────────────
+
+  AtKey _skillKey(String skillId) => (AtKey.shared(
+        'skill_meta.$skillId',
+        namespace: _namespace,
+        sharedBy: _atClient!.getCurrentAtSign() ?? '',
+      )..sharedWith(_agentAtSign))
+          .build()
+        ..metadata = (Metadata()..ttr = -1);
+
+  Future<void> _loadSkills() async {
+    if (_atClient == null) return;
+    try {
+      final keys = await _atClient!.getKeys(regex: r'skill_meta\.');
+      final items = <SkillData>[];
+      for (final keyStr in keys) {
+        try {
+          final atKey = AtKey.fromString(keyStr);
+          final v = await _atClient!.get(atKey,
+              getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
+          if (v.value != null) {
+            final data = jsonDecode(v.value as String) as Map<String, dynamic>;
+            items.add(SkillData.fromJson(data));
+          }
+        } catch (_) {}
+      }
+      items.sort((a, b) => a.skillId.compareTo(b.skillId));
+      _skills = items;
+    } catch (_) {
+      _skills = [];
+    }
+  }
+
+  /// Register or update a skill. Stored on @owner's atServer, sharedWith @agent.
+  Future<void> saveSkill(SkillData skill) async {
+    if (_atClient == null) return;
+    await _atClient!.put(
+      _skillKey(skill.skillId),
+      jsonEncode(skill.toJson()),
+      putRequestOptions: PutRequestOptions()..useRemoteAtServer = true,
+    );
+    // Update local list immediately.
+    final idx = _skills.indexWhere((s) => s.skillId == skill.skillId);
+    if (idx >= 0) {
+      _skills[idx] = skill;
+    } else {
+      _skills
+        ..add(skill)
+        ..sort((a, b) => a.skillId.compareTo(b.skillId));
+    }
+    notifyListeners();
+  }
+
+  /// Remove a skill registration.
+  Future<void> removeSkill(String skillId) async {
+    if (_atClient == null) return;
+    await _atClient!.delete(_skillKey(skillId));
+    _skills.removeWhere((s) => s.skillId == skillId);
+    notifyListeners();
   }
 }

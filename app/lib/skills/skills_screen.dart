@@ -1,9 +1,19 @@
 /// SkillsScreen — displays and manages installed skills.
 ///
-/// Lists skills read from AtKeys via DataService.
-/// Phase 3: add install / uninstall buttons with HITL.
+/// Reads live data from DataService (which stores skill registrations as
+/// AtKeys on @owner's atServer, sharedWith @agent).
+///
+/// Features:
+///   - Live list with trust-score bar
+///   - FAB → Add Skill dialog (skillId, skillAtSign, description, version)
+///   - Enable / disable toggle per skill
+///   - Delete (unregister) per skill
+///   - Pull-to-refresh
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../services/data_service.dart';
 
 class SkillsScreen extends StatelessWidget {
   const SkillsScreen({super.key});
@@ -14,104 +24,310 @@ class SkillsScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Installed Skills'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: 'Install skill',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content:
-                      Text('Skill installation via App — coming in Phase 3'),
-                ),
-              );
-            },
+          Consumer<DataService>(
+            builder: (context, ds, _) => IconButton(
+              icon: ds.loading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
+              tooltip: 'Refresh',
+              onPressed: ds.loading ? null : () => ds.refresh(),
+            ),
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: const [
-          _SkillTile(
-            skillId: 'calendar',
-            atSign: '@skill_cal',
-            description: 'Google Calendar read/write via OAuth bridge.',
-            trustScore: 0.9,
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddSkillDialog(context),
+        tooltip: 'Register skill',
+        child: const Icon(Icons.add),
+      ),
+      body: Consumer<DataService>(
+        builder: (context, ds, _) {
+          if (ds.loading && ds.skills.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (ds.skills.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.extension_off_outlined,
+                      size: 64,
+                      color: Theme.of(context).colorScheme.outlineVariant),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No skills registered.',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Tap + to add one.'),
+                ],
+              ),
+            );
+          }
+          return RefreshIndicator(
+            onRefresh: () => ds.refresh(),
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+              itemCount: ds.skills.length,
+              itemBuilder: (context, index) {
+                final skill = ds.skills[index];
+                return _SkillCard(skill: skill);
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showAddSkillDialog(BuildContext context) async {
+    final formKey = GlobalKey<FormState>();
+    final idCtrl = TextEditingController();
+    final atSignCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final versionCtrl = TextEditingController(text: '1.0.0');
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Register Skill'),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: idCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Skill ID',
+                    hintText: 'e.g. calendar',
+                    prefixIcon: Icon(Icons.extension),
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: atSignCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Skill atSign',
+                    hintText: 'e.g. @skill_calendar',
+                    prefixIcon: Icon(Icons.alternate_email),
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: descCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Description',
+                    prefixIcon: Icon(Icons.notes),
+                  ),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: versionCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Version',
+                    prefixIcon: Icon(Icons.tag),
+                  ),
+                ),
+              ],
+            ),
           ),
-          _SkillTile(
-            skillId: 'email',
-            atSign: '@skill_email',
-            description: 'Send emails via sendgrid or SMTP bridge (HITL).',
-            trustScore: 0.85,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
           ),
-          _SkillTile(
-            skillId: 'web_search',
-            atSign: '@skill_search',
-            description: 'SearXNG or Brave Search privacy-preserving search.',
-            trustScore: 0.8,
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(ctx, true);
+              }
+            },
+            child: const Text('Register'),
           ),
         ],
       ),
     );
+
+    if (result == true && context.mounted) {
+      final skill = SkillData(
+        skillId: idCtrl.text.trim(),
+        skillAtSign: atSignCtrl.text.trim(),
+        description: descCtrl.text.trim(),
+        version:
+            versionCtrl.text.trim().isEmpty ? '1.0.0' : versionCtrl.text.trim(),
+      );
+      try {
+        await context.read<DataService>().saveSkill(skill);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Skill "${skill.skillId}" registered.')),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to register skill: $e')),
+          );
+        }
+      }
+    }
   }
 }
 
-class _SkillTile extends StatelessWidget {
-  final String skillId;
-  final String atSign;
-  final String description;
-  final double trustScore;
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const _SkillTile({
-    required this.skillId,
-    required this.atSign,
-    required this.description,
-    required this.trustScore,
-  });
+class _SkillCard extends StatelessWidget {
+  final SkillData skill;
+  const _SkillCard({required this.skill});
 
   @override
   Widget build(BuildContext context) {
+    final ds = context.read<DataService>();
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          child: Text(
-            skillId[0].toUpperCase(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        child: ListTile(
+          leading: CircleAvatar(
+            backgroundColor: skill.enabled
+                ? Theme.of(context).colorScheme.primaryContainer
+                : Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: Text(
+              skill.skillId.isNotEmpty ? skill.skillId[0].toUpperCase() : '?',
+              style: TextStyle(
+                color: skill.enabled
+                    ? Theme.of(context).colorScheme.onPrimaryContainer
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          title: Text(
+            skill.skillId,
             style: TextStyle(
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-                fontWeight: FontWeight.bold),
+              fontWeight: FontWeight.bold,
+              color: skill.enabled ? null : Theme.of(context).disabledColor,
+            ),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                skill.skillAtSign,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontSize: 12,
+                ),
+              ),
+              if (skill.description.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(skill.description),
+                ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Text('Trust: ', style: TextStyle(fontSize: 12)),
+                  _TrustBar(score: skill.trustScore),
+                  Text(
+                    ' ${(skill.trustScore * 100).toInt()}%',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  const Spacer(),
+                  Text(
+                    'v${skill.version}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          isThreeLine: true,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Switch(
+                value: skill.enabled,
+                onChanged: (val) => ds.saveSkill(skill.copyWith(enabled: val)),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Remove skill',
+                color: Theme.of(context).colorScheme.error,
+                onPressed: () => _confirmDelete(context, ds),
+              ),
+            ],
           ),
         ),
-        title:
-            Text(skillId, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(atSign,
-                style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontSize: 12)),
-            Text(description),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Text('Trust: ', style: TextStyle(fontSize: 12)),
-                _TrustBar(score: trustScore),
-                Text(' ${(trustScore * 100).toInt()}%',
-                    style: const TextStyle(fontSize: 12)),
-              ],
-            ),
-          ],
-        ),
-        isThreeLine: true,
       ),
     );
   }
+
+  Future<void> _confirmDelete(BuildContext context, DataService ds) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove Skill?'),
+        content: Text(
+          'Remove "${skill.skillId}" from the agent\'s skill registry? '
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true && context.mounted) {
+      try {
+        await ds.removeSkill(skill.skillId);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Skill "${skill.skillId}" removed.')),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to remove: $e')),
+          );
+        }
+      }
+    }
+  }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _TrustBar extends StatelessWidget {
   final double score;
-
   const _TrustBar({required this.score});
 
   @override
