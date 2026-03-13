@@ -55,11 +55,11 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 30s
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || wget -qO- http://localhost:11434/api/tags > /dev/null"]
+      interval: 15s
       timeout: 10s
-      retries: 5
-      start_period: 30s
+      retries: 10
+      start_period: 120s
 
   # ── SafeClaw Agent ──────────────────────────────────────────────────────────
   agent:
