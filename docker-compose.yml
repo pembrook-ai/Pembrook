@@ -55,11 +55,12 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || wget -qO- http://localhost:11434/api/tags > /dev/null"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 120s
+      # Uses bash TCP built-in — works without curl or wget in the image.
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/11434' 2>/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   # ── SafeClaw Agent ──────────────────────────────────────────────────────────
   agent:
@@ -71,7 +72,9 @@ services:
     restart: unless-stopped
     depends_on:
       ollama:
-        condition: service_healthy
+        # service_started (not service_healthy) — agent handles Ollama not yet
+        # being ready by retrying at request time.  Avoids startup deadlock.
+        condition: service_started
     command:
       - "--atsign"
       - "${AGENT_AT_SIGN:-@agent}"

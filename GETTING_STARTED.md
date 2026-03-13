@@ -353,22 +353,23 @@ A default "deny all" rule sits at the bottom.
 
 ### Agent fails to start — "container safeclaw-ollama is unhealthy"
 
-Ollama takes longer to start in CPU mode than the default healthcheck allows.  
-The compose file allows 120 seconds for Ollama to become ready. If it still fails:
+The agent no longer waits for Ollama to be healthy before starting — it retries the Ollama connection at request time. If you see this error it means you're on an older version of `docker-compose.yml`.
+
+If Ollama itself won't start at all:
 
 ```bash
 # Check what Ollama is actually doing:
 docker compose logs ollama
 
-# Manually test if Ollama is responding:
-curl http://localhost:11434/api/tags
+# Manually test if the port is open:
+bash -c 'echo > /dev/tcp/localhost/11434' && echo "up" || echo "not ready"
 
 # Force a fresh start:
 docker compose down && docker compose up -d
 ```
 
-If Ollama consistently fails to start, check available RAM — `llama3.2` (3B) needs ~4 GB free.  
-Switch to a smaller model if needed: edit `OLLAMA_MODEL=llama3.2:1b` in `.env`.
+If Ollama consistently fails, check available RAM — `llama3.2` (3B) needs ~4 GB free.  
+Switch to a smaller model: edit `OLLAMA_MODEL=llama3.2:1b` in `.env`.
 
 ### Agent fails to start — "AllowList is empty"
 
