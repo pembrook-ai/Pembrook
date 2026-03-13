@@ -286,7 +286,7 @@ INIT_ARGS=(
 [[ -n "$ALLOWED_USERS_EXTRA" ]] && INIT_ARGS+=("--allowed-users" "$ALLOWED_USERS_EXTRA")
 
 cd "$PROJECT_ROOT/agent"
-dart pub get --quiet
+dart pub get
 
 echo -e "${CYAN}Running:${NC} dart run bin/init_config.dart ${INIT_ARGS[*]}"
 echo ""
