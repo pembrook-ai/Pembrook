@@ -37,7 +37,7 @@ COPY agent/ .
 RUN rm -rf .dart_tool && dart pub get
 
 # Compile to a self-contained native binary (~10 MB, no Dart runtime needed).
-RUN dart compile exe bin/main.dart -o /app/safeclaw-agent
+RUN mkdir -p /app && dart compile exe bin/main.dart -o /app/safeclaw-agent
 
 # ──────────────────────────────────────────────────────────────
 # Stage 2: runtime
