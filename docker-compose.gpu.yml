@@ -1,0 +1,26 @@
+## SafeClaw — docker-compose.gpu.yml
+##
+## GPU override for Linux hosts with an NVIDIA GPU + nvidia-container-toolkit.
+##
+## USAGE (merge with base compose):
+##   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+##
+## PREREQUISITES (Linux only):
+##   1. NVIDIA driver installed   (nvidia-smi should work)
+##   2. nvidia-container-toolkit  https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+##   3. Docker daemon configured  (sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker)
+##
+## macOS / Windows: do NOT use this file — there is no NVIDIA passthrough.
+##   Ollama runs in CPU mode on those platforms.
+
+name: safeclaw
+
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

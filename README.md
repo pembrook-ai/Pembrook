@@ -272,16 +272,45 @@ Orchestrator identifies skill need
 
 ```bash
 # 1. Provision atSigns at my.atsign.com and save .atKeys files to ~/.atsign/keys/
-# 2. Set AGENT_ATSIGN and OWNER_ATSIGN in .env (never commit this file)
+# 2. Configure the agent (run once, or when settings change):
+dart run agent/bin/init_config.dart \
+  --atsign @youragent \
+  --key-file ~/.atsign/keys/@youragent_key.atKeys \
+  --owner @you \
+  --ollama-model llama3.2 \
+  --allowed-users @you
+
+# 3. Pull the Ollama model:
+docker compose run --rm ollama ollama pull llama3.2
+
+# 4. Start (CPU — works on macOS, Windows, Linux):
 docker compose up -d
+
+# 4a. Start (GPU — Linux + NVIDIA only, requires nvidia-container-toolkit):
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+
+# Tail agent logs:
+docker compose logs -f agent
 ```
+
+> **GPU setup (Linux + NVIDIA):** Install [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html), then run:
+> ```bash
+> sudo nvidia-ctk runtime configure --runtime=docker
+> sudo systemctl restart docker
+> ```
+> Then use the `docker-compose.gpu.yml` override above. macOS and Windows use CPU mode automatically.
 
 ### Cloud VPS (zero open ports)
 
 ```bash
 # Same as local — no security group inbound rules needed.
 # SSH access: use NoPorts instead of opening port 22.
+
+# CPU:
 docker compose up -d
+
+# GPU (if VPS has NVIDIA — see GPU setup note above):
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
 ### Verify zero open ports

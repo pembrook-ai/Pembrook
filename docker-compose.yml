@@ -1,15 +1,21 @@
 ## SafeClaw — docker-compose.yml
 ##
 ## Services:
-##   ollama   — local LLM (llama3.2 or any Ollama-compatible model)
+##   ollama   — local LLM (llama3.2 or any Ollama-compatible model, CPU mode)
 ##   agent    — SafeClaw agent daemon
 ##   (optional, uncomment when ready)
 ##   bridge_whatsapp / bridge_telegram / bridge_discord / bridge_slack
 ##
 ## QUICK START:
+##   CPU (macOS / Windows / Linux):
+##     docker compose up -d
+##
+##   GPU (Linux + NVIDIA only — requires nvidia-container-toolkit):
+##     docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+##
 ##   1. Run the setup wizard:      bash scripts/setup.sh
 ##   2. Pull the Ollama model:     docker compose run --rm ollama ollama pull ${OLLAMA_MODEL:-llama3.2}
-##   3. Start all services:        docker compose up -d
+##   3. Start all services:        docker compose up -d          (or GPU variant above)
 ##   4. Tail agent logs:           docker compose logs -f agent
 ##   5. Stop:                      docker compose down
 ##
@@ -48,14 +54,6 @@ services:
       - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    # GPU support — remove the deploy block if you have no NVIDIA GPU:
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
       interval: 30s

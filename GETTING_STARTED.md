@@ -160,12 +160,25 @@ docker compose run --rm ollama ollama pull llama3.2
 
 ### Start all services:
 
+**CPU (macOS, Windows, Linux — works everywhere):**
 ```bash
 docker compose up -d
 ```
 
+**GPU — Linux + NVIDIA only** (requires [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)):
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+> **First-time GPU setup on Linux:**
+> ```bash
+> sudo nvidia-ctk runtime configure --runtime=docker
+> sudo systemctl restart docker
+> ```
+> macOS and Windows use CPU mode automatically — no extra steps.
+
 This starts:
-- **ollama** — local LLM server (no internet required for inference)
+- **ollama** — local LLM server (CPU by default; GPU if using the override)
 - **agent** — SafeClaw daemon (outbound only to atPlatform, no open ports)
 
 ### Watch the logs:
@@ -451,7 +464,8 @@ safeClaw/
 ├── keys/                   ← not used; .atKeys files live in ~/.atsign/keys/
 ├── scripts/
 │   └── setup.sh            ← interactive setup wizard
-├── docker-compose.yml
+├── docker-compose.yml      ← CPU mode (works everywhere)
+├── docker-compose.gpu.yml  ← GPU override (Linux + NVIDIA only)
 ├── .env.example
 └── GETTING_STARTED.md      ← this file
 ```
