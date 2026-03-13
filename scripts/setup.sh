@@ -18,9 +18,9 @@
 #       @agent  — the backend daemon  (minimum)
 #       @owner  — the Flutter app / CLI  (minimum)
 #       @bridges — all bridge processes share this one (needed for WhatsApp / Telegram / Discord / Slack)
-#   • .atKeys files for each atSign placed in the ./keys/ directory
-#       e.g.  keys/@myagent_key.atKeys
-#             keys/@myowner_key.atKeys
+#   • .atKeys files in ~/.atsign/keys/ (the standard atSign location)
+#       e.g.  ~/.atsign/keys/@myagent_key.atKeys
+#             ~/.atsign/keys/@myowner_key.atKeys
 #
 # Re-running this script is safe — it overwrites the .env and AtKeys with
 # whatever new values you provide.
@@ -30,7 +30,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$PROJECT_ROOT/.env"
-KEYS_DIR="$PROJECT_ROOT/keys"
+KEYS_DIR="${HOME}/.atsign/keys"
 NON_INTERACTIVE=false
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ if [[ "$DART_MAJOR" -lt 3 ]] || ( [[ "$DART_MAJOR" -eq 3 ]] && [[ "$DART_MINOR" 
 fi
 success "Dart $DART_VERSION"
 
-# Ensure keys/ directory exists
+# Ensure standard atSign keys directory exists
 mkdir -p "$KEYS_DIR"
 
 # ── Step 2: Collect atSign configuration ─────────────────────────────────────
@@ -126,7 +126,7 @@ echo "you need a THIRD atSign:"
 echo "  • @bridges — all four bridge processes share this one atSign"
 echo ""
 echo "Register free atSigns at: https://my.atsign.com/dashboard"
-echo "Then download the .atKeys files and place them in: $KEYS_DIR/"
+echo "Then download the .atKeys files and place them in: ~/.atsign/keys/"
 echo ""
 
 prompt_or_env() {
@@ -212,8 +212,10 @@ AGENT_AT_SIGN=$AGENT_AT_SIGN
 OWNER_AT_SIGN=$OWNER_AT_SIGN
 $([ -n "$BRIDGES_AT_SIGN" ] && echo "BRIDGES_AT_SIGN=$BRIDGES_AT_SIGN" || echo "# BRIDGES_AT_SIGN=")
 
-# ── Key file names (files must be in ./keys/ directory on the host) ─────────
-# docker-compose mounts ./keys → /keys inside every container.
+# ── Keys directory and file names ───────────────────────────────────────────
+# docker-compose mounts this directory read-only as /keys inside containers.
+# Default: ~/.atsign/keys  (the standard atSign key location)
+KEYS_DIR=$KEYS_DIR
 AGENT_KEY_FILE=$AGENT_KEY_FILE
 $([ -n "$BRIDGES_KEY_FILE" ] && echo "BRIDGES_KEY_FILE=$BRIDGES_KEY_FILE" || echo "# BRIDGES_KEY_FILE=")
 
@@ -235,24 +237,24 @@ EOF
 
 success ".env written to $ENV_FILE"
 
-# ── Step 4: Copy .atKeys files into ./keys/ ───────────────────────────────────
+# ── Step 4: Verify .atKeys files are in ~/.atsign/keys/ ────────────────────────
 header "Step 4: Verifying keys directory"
 
-# If the atKeys file is already in ./keys, nothing to do.
+# If the atKeys file is already in ~/.atsign/keys, nothing to do.
 # If it's elsewhere, offer to copy.
 copy_if_needed() {
   local src="$1"
   local dest_dir="$KEYS_DIR"
   local dest="$dest_dir/$(basename "$src")"
   if [[ "$src" == "$dest" ]]; then
-    success "Key already in keys/: $(basename "$src")"
+    success "Key already in ~/.atsign/keys/: $(basename "$src")"
     return
   fi
   if [[ "$NON_INTERACTIVE" == "true" ]]; then
     cp "$src" "$dest"
-    success "Copied $(basename "$src") → keys/"
+    success "Copied $(basename "$src") → ~/.atsign/keys/"
   else
-    read -rp "$(echo -e "${CYAN}Copy $(basename "$src") to keys/? [Y/n]${NC}: ")" yn
+    read -rp "$(echo -e "${CYAN}Copy $(basename "$src") to ~/.atsign/keys/? [Y/n]${NC}: ")" yn
     case "${yn,,}" in
       n|no) info "Skipped. Make sure $dest exists before running docker compose." ;;
       *)

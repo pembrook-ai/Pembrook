@@ -65,16 +65,15 @@ You will have files like:
 @mybridges_key.atKeys   ← only if you want bridges
 ```
 
-Copy these into the `keys/` directory in the project root:
+Place them in `~/.atsign/keys/` — the standard location used by all atSign apps:
 ```
-safeClaw/
-  keys/
-    @myagent_key.atKeys
-    @myowner_key.atKeys
-    @mybridges_key.atKeys
+~/.atsign/keys/
+  @myagent_key.atKeys
+  @myowner_key.atKeys
+  @mybridges_key.atKeys
 ```
 
-> **Security:** The `keys/` directory is in `.gitignore` and is never committed.  
+> **Security:** `~/.atsign/keys/` is your home directory and is never committed to git.  
 > It is mounted **read-only** into Docker containers.
 
 ---
@@ -84,8 +83,8 @@ safeClaw/
 ```bash
 git clone https://github.com/cconstab/safeClaw.git
 cd safeClaw
-mkdir -p keys
-# Place your .atKeys files in keys/
+mkdir -p ~/.atsign/keys
+# Place your .atKeys files in ~/.atsign/keys/
 ```
 
 ---
@@ -104,9 +103,9 @@ You will be asked:
 |---|---|
 | Agent atSign | `@myagent` |
 | Owner atSign | `@myowner` |
-| Agent .atKeys file path | `./keys/@myagent_key.atKeys` |
+| Agent .atKeys file path | `~/.atsign/keys/@myagent_key.atKeys` |
 | Bridges atSign (optional) | `@mybridges` |
-| Bridges .atKeys file path | `./keys/@mybridges_key.atKeys` |
+| Bridges .atKeys file path | `~/.atsign/keys/@mybridges_key.atKeys` |
 | Ollama model | `llama3.2` |
 | Extra allowed atSigns | *(leave blank)* |
 
@@ -120,9 +119,9 @@ The wizard will:
 ```bash
 AGENT_AT_SIGN=@myagent \
 OWNER_AT_SIGN=@myowner \
-AGENT_KEYS_PATH=./keys/@myagent_key.atKeys \
+AGENT_KEYS_PATH=~/.atsign/keys/@myagent_key.atKeys \
 BRIDGES_AT_SIGN=@mybridges \
-BRIDGES_KEYS_PATH=./keys/@mybridges_key.atKeys \
+BRIDGES_KEYS_PATH=~/.atsign/keys/@mybridges_key.atKeys \
 bash scripts/setup.sh --non-interactive
 ```
 
@@ -138,7 +137,7 @@ cd agent
 dart pub get
 dart run bin/init_config.dart \
   --atsign @myagent \
-  --key-file ../keys/@myagent_key.atKeys \
+  --key-file ~/.atsign/keys/@myagent_key.atKeys \
   --owner @myowner \
   --bridges-atsign @mybridges \
   --ollama-model llama3.2 \
@@ -224,7 +223,7 @@ From the terminal, you can also run a quick end-to-end check:
 cd agent
 dart run bin/init_config.dart \
   --atsign @myagent \
-  --key-file ../keys/@myagent_key.atKeys \
+  --key-file ~/.atsign/keys/@myagent_key.atKeys \
   --owner @myowner \
   --verbose
 ```
@@ -295,7 +294,7 @@ To allow other atSigns, update the `settings.allowed_users` AtKey on the agent:
 cd agent
 dart run bin/init_config.dart \
   --atsign @myagent \
-  --key-file ../keys/@myagent_key.atKeys \
+  --key-file ~/.atsign/keys/@myagent_key.atKeys \
   --owner @myowner \
   --allowed-users @myowner,@mybridges,@alice,@bob
 ```
@@ -349,8 +348,8 @@ Fix: run the setup wizard again, or add `ALLOWED_USERS=@myowner` to `.env` and r
 The `.atKeys` file path is wrong or the file is corrupted.  
 Check:
 ```bash
-cat keys/@myagent_key.atKeys | head -5    # should be valid JSON
-ls -la keys/                              # verify file exists and is readable
+cat ~/.atsign/keys/@myagent_key.atKeys | head -5   # should be valid JSON
+ls -la ~/.atsign/keys/                             # verify files exist and are readable
 ```
 
 ### "sharedWith must be different from sharedBy" crash
@@ -449,7 +448,7 @@ safeClaw/
 │   └── slack/              ← Slack Events API bridge
 ├── skills/                 ← Skill runners (web_search, email, calendar)
 ├── mcp_servers/            ← MCP server integrations
-├── keys/                   ← .atKeys files (gitignored)
+├── keys/                   ← not used; .atKeys files live in ~/.atsign/keys/
 ├── scripts/
 │   └── setup.sh            ← interactive setup wizard
 ├── docker-compose.yml

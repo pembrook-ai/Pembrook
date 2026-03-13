@@ -24,7 +24,7 @@
 ##     BRIDGES_KEY_FILE   — bridges .atKeys filename
 ##     OLLAMA_MODEL       — model name (default: llama3.2)
 ##
-## Keys directory: ./keys/
+## Keys directory: ~/.atsign/keys/  (default; set KEYS_DIR in .env to override)
 ##   All .atKeys files must be in this directory on the host.
 ##   The directory is mounted read-only as /keys inside every container.
 ##
@@ -80,8 +80,8 @@ services:
       - "--key-file"
       - "/keys/${AGENT_KEY_FILE:-agent.atKeys}"
     volumes:
-      # All atSign keys — read-only.  Place .atKeys files in ./keys/ on host.
-      - "./keys:/keys:ro"
+      # atSign keys — read-only.  Default: ~/.atsign/keys (set KEYS_DIR in .env to override).
+      - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
       # Docker socket — allows agent to spawn sandboxed skill containers.
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
@@ -111,7 +111,7 @@ services:
   #     - "--agent-atsign"
   #     - "${AGENT_AT_SIGN:-@agent}"
   #   volumes:
-  #     - "./keys:/keys:ro"
+  #     - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
   #   environment:
   #     WHATSAPP_ACCESS_TOKEN: "${WHATSAPP_ACCESS_TOKEN:-}"
   #     WHATSAPP_PHONE_NUMBER_ID: "${WHATSAPP_PHONE_NUMBER_ID:-}"
@@ -137,7 +137,7 @@ services:
   #     - "--agent-atsign"
   #     - "${AGENT_AT_SIGN:-@agent}"
   #   volumes:
-  #     - "./keys:/keys:ro"
+  #     - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
   #   environment:
   #     TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
   #   networks:
@@ -158,7 +158,7 @@ services:
   #     - "--agent-atsign"
   #     - "${AGENT_AT_SIGN:-@agent}"
   #   volumes:
-  #     - "./keys:/keys:ro"
+  #     - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
   #   environment:
   #     DISCORD_TOKEN: "${DISCORD_TOKEN:-}"
   #   networks:
@@ -179,7 +179,7 @@ services:
   #     - "--agent-atsign"
   #     - "${AGENT_AT_SIGN:-@agent}"
   #   volumes:
-  #     - "./keys:/keys:ro"
+  #     - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
   #   environment:
   #     SLACK_SIGNING_SECRET: "${SLACK_SIGNING_SECRET:-}"
   #     SLACK_BOT_TOKEN: "${SLACK_BOT_TOKEN:-}"

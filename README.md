@@ -271,7 +271,7 @@ Orchestrator identifies skill need
 ### Local (Docker Compose)
 
 ```bash
-# 1. Provision atSigns at my.atsign.com and save .atKeys files to ./keys/
+# 1. Provision atSigns at my.atsign.com and save .atKeys files to ~/.atsign/keys/
 # 2. Set AGENT_ATSIGN and OWNER_ATSIGN in .env (never commit this file)
 docker compose up -d
 ```

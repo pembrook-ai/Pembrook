@@ -19,7 +19,7 @@ build/
 
 # atKeys files — NEVER commit these (they contain private keys)
 *.atKeys
-keys/
+# keys/ no longer lives in the repo — keys are stored in ~/.atsign/keys
 
 # Environment / secrets
 .env
