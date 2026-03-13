@@ -8,6 +8,7 @@ import 'dart:convert';
 
 import 'package:at_client/at_client.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -191,6 +192,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (v) => setState(() => _streamingEnabled = v),
           ),
           const SizedBox(height: 24),
+
+          // ── Access & Integrations ───────────────────────────
+          const _SectionHeader('Access & Integrations'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.policy_outlined),
+            title: const Text('Policy Rules'),
+            subtitle: const Text('Manage allow/deny rules for agent actions'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/policy'),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.hub_outlined),
+            title: const Text('Bridges'),
+            subtitle: const Text('Configure WhatsApp, Telegram, Discord, Slack'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/bridges'),
+          ),
+          const SizedBox(height: 16),
 
           // ── Account ──────────────────────────────────────────
           _SectionHeader('Account'),

@@ -19,14 +19,17 @@
 ///   /settings   → SettingsScreen (preferences + policy)
 ///   /skills     → SkillsScreen (installed skills)
 ///   /hitl       → HitlScreen (pending HITL approvals)
-
+///   /policy     → PolicyListScreen (policy rule manager)
+///   /bridges    → BridgesScreen (messaging bridge config)
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import 'auth/auth_screen.dart';
+import 'bridges/bridges_screen.dart';
 import 'chat/chat_screen.dart';
 import 'audit/audit_screen.dart';
+import 'policy/policy_list_screen.dart';
 import 'settings/settings_screen.dart';
 import 'skills/skills_screen.dart';
 import 'hitl/hitl_screen.dart';
@@ -68,6 +71,14 @@ final _router = GoRouter(
     GoRoute(
       path: '/hitl',
       builder: (context, state) => const HitlScreen(),
+    ),
+    GoRoute(
+      path: '/policy',
+      builder: (context, state) => const PolicyListScreen(),
+    ),
+    GoRoute(
+      path: '/bridges',
+      builder: (context, state) => const BridgesScreen(),
     ),
   ],
 );
