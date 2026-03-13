@@ -1,23 +1,26 @@
 ## SafeClaw — docker-compose.yml
 ##
 ## Services:
-##   ollama   — local LLM (llama3.2 or any Ollama-compatible model, CPU mode)
+##   ollama   — bundled LLM (opt-in via --profile bundled-ollama)
 ##   agent    — SafeClaw agent daemon
 ##   (optional, uncomment when ready)
 ##   bridge_whatsapp / bridge_telegram / bridge_discord / bridge_slack
 ##
 ## QUICK START:
-##   CPU (macOS / Windows / Linux):
-##     docker compose up -d
 ##
-##   GPU (Linux + NVIDIA only — requires nvidia-container-toolkit):
-##     docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+##   Option A — use your host's running Ollama (recommended, simplest):
+##     1. Start Ollama on your host:  ollama serve
+##     2. Pull a model:               ollama pull llama3.2
+##     3. Start the agent:            docker compose up -d
 ##
-##   1. Run the setup wizard:      bash scripts/setup.sh
-##   2. Pull the Ollama model:     docker compose run --rm ollama ollama pull ${OLLAMA_MODEL:-llama3.2}
-##   3. Start all services:        docker compose up -d          (or GPU variant above)
-##   4. Tail agent logs:           docker compose logs -f agent
-##   5. Stop:                      docker compose down
+##   Option B — bundled Ollama (runs Ollama inside Docker, CPU):
+##     docker compose --profile bundled-ollama up -d
+##
+##   Option C — bundled Ollama with GPU (Linux + NVIDIA only):
+##     docker compose --profile bundled-ollama -f docker-compose.yml -f docker-compose.gpu.yml up -d
+##
+##   Tail agent logs:   docker compose logs -f agent
+##   Stop:              docker compose down
 ##
 ## ENVIRONMENT VARIABLES (set in .env — never committed):
 ##   Required:
@@ -26,6 +29,8 @@
 ##     OWNER_AT_SIGN      — owner atSign,  e.g.  @myowner
 ##     ALLOWED_USERS      — comma-separated list: @myowner,@mybridges
 ##   Optional:
+##     OLLAMA_BASE_URL    — default: http://host.docker.internal:11434 (host Ollama)
+##                          set to http://ollama:11434 when using --profile bundled-ollama
 ##     BRIDGES_AT_SIGN    — atSign shared by all bridge processes
 ##     BRIDGES_KEY_FILE   — bridges .atKeys filename
 ##     OLLAMA_MODEL       — model name (default: llama3.2)
@@ -35,7 +40,6 @@
 ##   The directory is mounted read-only as /keys inside every container.
 ##
 ## SECURITY NOTES:
-##   - Ollama is bound to 127.0.0.1 ONLY — only accessible from localhost.
 ##   - The agent container accesses Docker socket ONLY to spawn sandboxed
 ##     skill containers (--network=none --memory=256m --cpus=0.5 --cap-drop=ALL).
 ##   - No inbound ports are opened for the agent (zero open ports).
@@ -44,18 +48,19 @@
 name: safeclaw
 
 services:
-  # ── Ollama — local LLM ──────────────────────────────────────────────────────
+  # ── Ollama — bundled LLM (optional — use --profile bundled-ollama) ──────────
+  # By default the agent talks to Ollama running on the HOST at port 11434.
+  # Only enable this service if you want Ollama managed by Docker Compose.
   ollama:
     image: ollama/ollama:latest
     container_name: safeclaw-ollama
     restart: unless-stopped
-    # Bind to loopback only — never expose to external network
+    profiles: [bundled-ollama]
     ports:
       - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
-      # Uses bash TCP built-in — works without curl or wget in the image.
       test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/11434' 2>/dev/null"]
       interval: 10s
       timeout: 5s
@@ -70,11 +75,8 @@ services:
     image: safeclaw-agent:latest
     container_name: safeclaw-agent
     restart: unless-stopped
-    depends_on:
-      ollama:
-        # service_started (not service_healthy) — agent handles Ollama not yet
-        # being ready by retrying at request time.  Avoids startup deadlock.
-        condition: service_started
+    # No depends_on — agent retries the Ollama connection at request time.
+    # Works whether Ollama runs on the host or via --profile bundled-ollama.
     command:
       - "--atsign"
       - "${AGENT_AT_SIGN:-@agent}"
@@ -86,12 +88,19 @@ services:
       # Docker socket — allows agent to spawn sandboxed skill containers.
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      OLLAMA_BASE_URL: "http://ollama:11434"
+      # Default: host's Ollama via host.docker.internal (macOS/Windows/Linux).
+      # Override in .env with OLLAMA_BASE_URL=http://ollama:11434 when using
+      # --profile bundled-ollama.
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
       OWNER_AT_SIGN: "${OWNER_AT_SIGN:-}"
       ALLOWED_USERS: "${ALLOWED_USERS:-}"
       # Optional: pass external LLM API keys from the host .env
       # OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       # ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+    # host.docker.internal resolves natively on macOS/Windows (Docker Desktop)
+    # and via the extra_hosts entry below on Linux (Docker Engine).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - safeclaw_internal
     # The agent opens NO inbound ports — outbound atNetwork + Docker API only.

@@ -28,7 +28,7 @@ All communication is end-to-end encrypted via the [atPlatform](https://atsign.co
 | Dart SDK | ≥ 3.6 | [dart.dev/get-dart](https://dart.dev/get-dart) |
 | Docker + Compose | Docker Desktop 4.x or Engine + Compose plugin v2 | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
 | Flutter SDK | ≥ 3.29 | [flutter.dev/install](https://flutter.dev/install) (for building the app) |
-| Ollama | any | Bundled in `docker-compose.yml` — no separate install needed |
+| Ollama | any | [ollama.com](https://ollama.com) — install on host **or** use bundled Docker option |
 | atSigns | 2–3 | Free at [my.atsign.com](https://my.atsign.com/dashboard) |
 
 ---
@@ -148,38 +148,53 @@ dart run bin/init_config.dart \
 
 ## 5. Start the Backend
 
-### First run — pull the Ollama model (this downloads several GB):
+SafeClaw needs Ollama for LLM inference. There are two options:
+
+### Option A — Host Ollama (recommended)
+
+Install Ollama on your machine from [ollama.com](https://ollama.com), then:
 
 ```bash
-docker compose run --rm ollama ollama pull llama3.2
+# Pull a model:
+ollama pull llama3.2
+
+# Start Ollama (if not already running as a service):
+ollama serve
 ```
 
-> Use a quantised model if RAM is limited:  
-> `ollama pull llama3.2:1b` (1 billion params, ~1 GB)  
-> `ollama pull phi4-mini` (3.8 billion params, ~2.5 GB)
+> **Linux only:** Ollama defaults to `127.0.0.1`. The agent container reaches your host via `host.docker.internal`, so Ollama must listen on all interfaces:
+> ```bash
+> OLLAMA_HOST=0.0.0.0 ollama serve
+> # Or permanently via systemd:
+> sudo systemctl edit ollama   # add: [Service]\nEnvironment="OLLAMA_HOST=0.0.0.0"
+> ```
+> macOS and Windows Docker Desktop route `host.docker.internal` transparently — no change needed.
 
-### Start all services:
+Then start the agent:
 
-**CPU (macOS, Windows, Linux — works everywhere):**
 ```bash
 docker compose up -d
 ```
 
-**GPU — Linux + NVIDIA only** (requires [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)):
+### Option B — Bundled Ollama (Ollama inside Docker)
+
+No host install needed, but slower to start and uses more RAM.
+
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# Pull the model first:
+docker compose --profile bundled-ollama run --rm ollama ollama pull llama3.2
+
+# Start with bundled Ollama (CPU):
+docker compose --profile bundled-ollama up -d
+
+# GPU — Linux + NVIDIA only:
+docker compose --profile bundled-ollama -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
-> **First-time GPU setup on Linux:**
-> ```bash
-> sudo nvidia-ctk runtime configure --runtime=docker
-> sudo systemctl restart docker
-> ```
-> macOS and Windows use CPU mode automatically — no extra steps.
+> Add `OLLAMA_BASE_URL=http://ollama:11434` to your `.env` when using the bundled option.
 
-This starts:
-- **ollama** — local LLM server (CPU by default; GPU if using the override)
-- **agent** — SafeClaw daemon (outbound only to atPlatform, no open ports)
+> Use a smaller model if RAM is limited:  
+> `ollama pull llama3.2:1b` (~1 GB) or `ollama pull phi4-mini` (~2.5 GB)
 
 ### Watch the logs:
 
@@ -399,14 +414,24 @@ Each role **must** be a different atSign. Re-run `setup.sh` with distinct atSign
 
 ### Ollama returns 404 or times out
 
-The Ollama service needs the model to be pulled first:
+**Using host Ollama (default):** make sure Ollama is running and reachable:
 ```bash
-docker compose run --rm ollama ollama pull llama3.2
+curl http://localhost:11434/api/tags          # from host — should return JSON
+curl http://host.docker.internal:11434/api/tags  # from inside a container
+```
+On Linux, if the second command fails, Ollama is only listening on loopback:
+```bash
+OLLAMA_HOST=0.0.0.0 ollama serve
 ```
 
+**Using bundled Ollama:** the model must be pulled first:
+```bash
+docker compose --profile bundled-ollama run --rm ollama ollama pull llama3.2
+```
 Check available models:
 ```bash
-docker compose exec ollama ollama list
+docker compose exec ollama ollama list    # bundled
+ollama list                               # host
 ```
 
 ### AllowList change not taking effect
