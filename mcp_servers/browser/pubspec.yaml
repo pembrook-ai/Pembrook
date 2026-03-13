@@ -1,17 +1,18 @@
-/// SafeClaw Browser MCP Server — skeleton for Phase 4.
-///
-/// Exposes web browsing tools to the agent via the atNetwork (AtRpc).
-/// Uses Playwright (via process spawn) for headless browsing.
-///
-/// Tool list (Phase 4):
-///   - browser.fetch(url)             — fetch page HTML
-///   - browser.screenshot(url)        — take screenshot (base64 PNG)
-///   - browser.extract_text(url)      — extract readable text
-///   - browser.click(selector)        — click element (HITL required)
-///   - browser.fill_form(fields)      — fill and submit form (HITL required)
-///
-/// atSign: @mcp_browser (placeholder)
-/// Namespace: safeclaw
+# SafeClaw Browser MCP Server — Phase 4.
+#
+# Exposes web browsing tools to the agent via the atNetwork (AtRpc).
+# Uses http+html for fetch/extract_text.
+# Full browser automation requires a Playwright sidecar process.
+#
+# Tools:
+#   - browser.fetch(url)             — fetch page HTML
+#   - browser.extract_text(url)      — extract readable text
+#   - browser.screenshot(url)        — screenshot via Playwright sidecar
+#   - browser.click(selector)        — click element (HITL required)
+#   - browser.fill_form(fields)      — fill and submit form (HITL required)
+#
+# atSign: @mcp_browser (placeholder)
+# Namespace: safeclaw
 
 name: safeclaw_mcp_browser
 description: Web browser MCP server for SafeClaw.
