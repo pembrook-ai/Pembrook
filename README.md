@@ -2,7 +2,9 @@
 
 A privacy-first, zero-trust AI agent built on the [atPlatform](https://docs.atsign.com/core). SafeClaw eliminates the entire class of network-exposure and supply-chain vulnerabilities that plagued OpenClaw, replacing them with cryptographic identity, E2E encryption, and skill sandboxing — all with **zero open inbound ports** on any component.
 
-See [ATPLATFORM_GUIDELINES.md](ATPLATFORM_GUIDELINES.md) for the complete atPlatform SDK reference.
+See [ATPLATFORM_GUIDELINES.md](ATPLATFORM_GUIDELINES.md) for the complete atPlatform SDK reference.  
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for internal design, data-flow, component contracts, and implementation decisions.  
+See [GETTING_STARTED.md](GETTING_STARTED.md) for full setup instructions including chat history, skills, MCP servers, and bridges.
 
 ---
 

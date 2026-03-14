@@ -27,12 +27,12 @@
 ##     AGENT_AT_SIGN      — agent atSign,  e.g.  @myagent
 ##     AGENT_KEY_FILE     — filename only,  e.g.  @myagent_key.atKeys
 ##     OWNER_AT_SIGN      — owner atSign,  e.g.  @myowner
-##     ALLOWED_USERS      — comma-separated list: @myowner,@mybridges
+##     ALLOWED_USERS      — comma-separated list: @myowner,@myservices
 ##   Optional:
 ##     OLLAMA_BASE_URL    — default: http://host.docker.internal:11434 (host Ollama)
 ##                          set to http://ollama:11434 when using --profile bundled-ollama
-##     BRIDGES_AT_SIGN    — atSign shared by all bridge processes
-##     BRIDGES_KEY_FILE   — bridges .atKeys filename
+##     SERVICES_AT_SIGN   — atSign shared by all bridges AND all MCP servers
+##     SERVICES_KEY_FILE  — services .atKeys filename
 ##     OLLAMA_MODEL       — model name (default: llama3.2)
 ##
 ## Keys directory: ~/.atsign/keys/  (default; set KEYS_DIR in .env to override)
@@ -106,7 +106,8 @@ services:
     # The agent opens NO inbound ports — outbound atNetwork + Docker API only.
 
   # ── WhatsApp Bridge (optional) ───────────────────────────────────────────────
-  # Uncomment and set BRIDGES_AT_SIGN + BRIDGES_KEY_FILE in .env to enable.
+  # Uncomment and set SERVICES_AT_SIGN + SERVICES_KEY_FILE in .env to enable.
+  # Also set AGENT_AT_SIGN in .env so the bridge knows which atSign to call.
   # bridge_whatsapp:
   #   build:
   #     context: .
@@ -115,14 +116,13 @@ services:
   #   restart: unless-stopped
   #   command:
   #     - "--atsign"
-  #     - "${BRIDGES_AT_SIGN:-@bridges}"
+  #     - "${SERVICES_AT_SIGN:-@services}"
   #     - "--key-file"
-  #     - "/keys/${BRIDGES_KEY_FILE:-bridges.atKeys}"
-  #     - "--agent-atsign"
-  #     - "${AGENT_AT_SIGN:-@agent}"
+  #     - "/keys/${SERVICES_KEY_FILE:-services.atKeys}"
   #   volumes:
   #     - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
   #   environment:
+  #     AGENT_AT_SIGN: "${AGENT_AT_SIGN:-@agent}"
   #     WHATSAPP_ACCESS_TOKEN: "${WHATSAPP_ACCESS_TOKEN:-}"
   #     WHATSAPP_PHONE_NUMBER_ID: "${WHATSAPP_PHONE_NUMBER_ID:-}"
   #     WHATSAPP_WEBHOOK_VERIFY_TOKEN: "${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}"
@@ -141,14 +141,13 @@ services:
   #   restart: unless-stopped
   #   command:
   #     - "--atsign"
-  #     - "${BRIDGES_AT_SIGN:-@bridges}"
+  #     - "${SERVICES_AT_SIGN:-@services}"
   #     - "--key-file"
-  #     - "/keys/${BRIDGES_KEY_FILE:-bridges.atKeys}"
-  #     - "--agent-atsign"
-  #     - "${AGENT_AT_SIGN:-@agent}"
+  #     - "/keys/${SERVICES_KEY_FILE:-services.atKeys}"
   #   volumes:
   #     - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
   #   environment:
+  #     AGENT_AT_SIGN: "${AGENT_AT_SIGN:-@agent}"
   #     TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
   #   networks:
   #     - safeclaw_internal
@@ -162,14 +161,13 @@ services:
   #   restart: unless-stopped
   #   command:
   #     - "--atsign"
-  #     - "${BRIDGES_AT_SIGN:-@bridges}"
+  #     - "${SERVICES_AT_SIGN:-@services}"
   #     - "--key-file"
-  #     - "/keys/${BRIDGES_KEY_FILE:-bridges.atKeys}"
-  #     - "--agent-atsign"
-  #     - "${AGENT_AT_SIGN:-@agent}"
+  #     - "/keys/${SERVICES_KEY_FILE:-services.atKeys}"
   #   volumes:
   #     - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
   #   environment:
+  #     AGENT_AT_SIGN: "${AGENT_AT_SIGN:-@agent}"
   #     DISCORD_TOKEN: "${DISCORD_TOKEN:-}"
   #   networks:
   #     - safeclaw_internal
@@ -183,18 +181,61 @@ services:
   #   restart: unless-stopped
   #   command:
   #     - "--atsign"
-  #     - "${BRIDGES_AT_SIGN:-@bridges}"
+  #     - "${SERVICES_AT_SIGN:-@services}"
   #     - "--key-file"
-  #     - "/keys/${BRIDGES_KEY_FILE:-bridges.atKeys}"
-  #     - "--agent-atsign"
-  #     - "${AGENT_AT_SIGN:-@agent}"
+  #     - "/keys/${SERVICES_KEY_FILE:-services.atKeys}"
   #   volumes:
   #     - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
   #   environment:
+  #     AGENT_AT_SIGN: "${AGENT_AT_SIGN:-@agent}"
   #     SLACK_SIGNING_SECRET: "${SLACK_SIGNING_SECRET:-}"
   #     SLACK_BOT_TOKEN: "${SLACK_BOT_TOKEN:-}"
   #   ports:
   #     - "127.0.0.1:8081:8081"   # webhook listener
+  #   networks:
+  #     - safeclaw_internal
+
+  # ── MCP Home Automation Server (optional) ─────────────────────────────────
+  # Proxies requests to a local Home Assistant instance.
+  # Shares SERVICES_AT_SIGN with bridges (same third atSign, no extra atSign needed).
+  # mcp_home:
+  #   build:
+  #     context: .
+  #     dockerfile: mcp_servers/home/Dockerfile
+  #   container_name: safeclaw-mcp-home
+  #   restart: unless-stopped
+  #   command:
+  #     - "--atsign"
+  #     - "${SERVICES_AT_SIGN:-@services}"
+  #     - "--key-file"
+  #     - "/keys/${SERVICES_KEY_FILE:-services.atKeys}"
+  #   volumes:
+  #     - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
+  #   environment:
+  #     HA_BASE_URL: "${HA_BASE_URL:-http://homeassistant.local:8123}"
+  #     HA_TOKEN: "${HA_TOKEN:-}"
+  #   networks:
+  #     - safeclaw_internal
+
+  # ── MCP Database Server (optional) ────────────────────────────────────────
+  # Exposes SQL query tools over a local SQLite database.
+  # Shares SERVICES_AT_SIGN with bridges (same third atSign, no extra atSign needed).
+  # mcp_database:
+  #   build:
+  #     context: .
+  #     dockerfile: mcp_servers/database/Dockerfile
+  #   container_name: safeclaw-mcp-database
+  #   restart: unless-stopped
+  #   command:
+  #     - "--atsign"
+  #     - "${SERVICES_AT_SIGN:-@services}"
+  #     - "--key-file"
+  #     - "/keys/${SERVICES_KEY_FILE:-services.atKeys}"
+  #   volumes:
+  #     - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
+  #     - "${DB_PATH:-./data}:/data"
+  #   environment:
+  #     DB_PATH: "${DB_PATH:-/data/safeclaw.db}"
   #   networks:
   #     - safeclaw_internal
 

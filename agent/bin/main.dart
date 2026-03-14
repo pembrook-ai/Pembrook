@@ -186,6 +186,7 @@ Ensure you have:
     orchestrator: orchestrator,
     policyEngine: policyEngine,
     auditService: auditService,
+    skillRegistry: skillRegistry,
   );
 
   // Register signal handlers for graceful shutdown
@@ -211,8 +212,10 @@ Ensure you have:
 
   log.info('SafeClaw agent is running. Listening for commands via atPlatform.');
   final ownerForLog = Platform.environment['OWNER_AT_SIGN'] ??
-      Platform.environment['ALLOWED_USERS'] ?? '(see ALLOWED_USERS env var)';
-  log.info('Agent: ${atClient.getCurrentAtSign()} — allowed senders: $ownerForLog');
+      Platform.environment['ALLOWED_USERS'] ??
+      '(see ALLOWED_USERS env var)';
+  log.info(
+      'Agent: ${atClient.getCurrentAtSign()} — allowed senders: $ownerForLog');
 
   // Keep process alive — gateway handles all work via notification subscriptions
   await Future.delayed(Duration(days: 365 * 10));

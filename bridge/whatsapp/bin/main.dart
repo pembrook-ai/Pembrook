@@ -36,7 +36,8 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:uuid/uuid.dart';
 
 const _namespace = 'safeclaw';
-const _agentAtSign = '@agent'; // replace with provisioned atSign
+String _agentAtSign =
+    '@agent'; // overridden at startup from AGENT_AT_SIGN env var
 const _platform = 'whatsapp';
 const _requestTimeout = Duration(seconds: 60);
 final _log = Logger('bridge_whatsapp');
@@ -63,7 +64,16 @@ void main(List<String> args) async {
   }
 
   final atClient = cli.atClient;
-  _log.info('WhatsApp bridge started as ${atClient.getCurrentAtSign()}');
+  // CLIBase sets Logger.root.level = Level.SHOUT internally — restore.
+  Logger.root.level = Level.INFO;
+  // Read the agent atSign from env (set in docker-compose or .env).
+  _agentAtSign = Platform.environment['AGENT_AT_SIGN'] ?? '@agent';
+  if (_agentAtSign == '@agent') {
+    _log.warning(
+        'AGENT_AT_SIGN env var not set — messages will go to @agent (placeholder)');
+  }
+  _log.info(
+      'WhatsApp bridge started as ${atClient.getCurrentAtSign()} → agent: $_agentAtSign');
 
   // Load config from environment or AtKeys
   final config = await _loadConfig(atClient);

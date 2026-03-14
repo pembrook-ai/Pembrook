@@ -49,6 +49,8 @@ void main(List<String> args) async {
   }
 
   final atClient = cli.atClient;
+  // CLIBase sets Logger.root.level = Level.SHOUT internally — restore.
+  Logger.root.level = Level.INFO;
   _log.info(
     'Home MCP server started as ${atClient.getCurrentAtSign()}',
   );

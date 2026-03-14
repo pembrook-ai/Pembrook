@@ -32,6 +32,7 @@ import 'package:provider/provider.dart';
 import 'auth/auth_screen.dart';
 import 'bridges/bridges_screen.dart';
 import 'chat/chat_screen.dart';
+import 'chat/chat_history_screen.dart';
 import 'audit/audit_screen.dart';
 import 'policy/policy_list_screen.dart';
 import 'settings/settings_screen.dart';
@@ -88,6 +89,10 @@ final _router = GoRouter(
         GoRoute(
           path: '/bridges',
           builder: (context, state) => const BridgesScreen(),
+        ),
+        GoRoute(
+          path: '/history',
+          builder: (context, state) => const ChatHistoryScreen(),
         ),
       ],
     ),
@@ -203,6 +208,7 @@ class SafeClawApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => RpcService()),
         ChangeNotifierProvider(create: (_) => DataService()),
+        ChangeNotifierProvider(create: (_) => ConversationStore()),
       ],
       child: MaterialApp.router(
         title: 'SafeClaw',

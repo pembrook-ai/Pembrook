@@ -4,7 +4,7 @@
 ///   - Implements an AtRpc server on @agent's atSign
 ///   - allowList controls which atSigns can send commands:
 ///       @owner (direct Flutter app / CLI)
-///       @bridges (messaging bridge relay atSign — all bridges share one)
+///       @services (shared atSign for messaging bridges + MCP servers)
 ///       Any additional atSigns stored in `settings.allowed_users.safeclaw`
 ///   - Zero open ports: connects OUTBOUND to atPlatform and listens on
 ///     the encrypted notification channel
@@ -19,7 +19,7 @@
 ///
 /// AllowList persistence:
 ///   AtKey: settings.allowed_users.safeclaw@agent  →  JSON array of atSigns
-///   Env var fallback: ALLOWED_USERS=@owner,@bridges (comma-separated)
+///   Env var fallback: ALLOWED_USERS=@owner,@services (comma-separated)
 ///   Owner atSign from: settings.owner_atsign.safeclaw@agent OR OWNER_AT_SIGN env var
 ///
 /// Multi-instance horizontal scaling:
@@ -35,6 +35,7 @@ import 'package:logging/logging.dart';
 import '../core/orchestrator.dart';
 import '../core/policy_engine.dart';
 import '../services/audit_service.dart';
+import '../skills/registry.dart';
 import 'gateway_callbacks.dart';
 
 /// AtKey name for the JSON array of permitted atSigns.
@@ -52,6 +53,10 @@ class Gateway {
   final PolicyEngine policyEngine;
   final AuditService auditService;
 
+  /// Optional SkillRegistry — passed through to GatewayCallbacks for
+  /// _sys.skill.* management commands sent by the Flutter app.
+  final SkillRegistry? skillRegistry;
+
   /// Live, mutable allowList.  AtRpc holds a reference to this exact Set
   /// object, so mutations made by the refresh timer are visible immediately
   /// without restarting the AtRpc server.
@@ -67,6 +72,7 @@ class Gateway {
     required this.orchestrator,
     required this.policyEngine,
     required this.auditService,
+    this.skillRegistry,
   });
 
   // ── AllowList helpers ─────────────────────────────────────────────────────
@@ -111,7 +117,7 @@ class Gateway {
       // Not yet written — fall through.
     }
 
-    // 3. Env-var fallback: ALLOWED_USERS=@owner,@bridges
+    // 3. Env-var fallback: ALLOWED_USERS=@owner,@services
     final envUsers = Platform.environment['ALLOWED_USERS'] ?? '';
     if (envUsers.isNotEmpty) {
       updated.addAll(
@@ -155,6 +161,7 @@ class Gateway {
       orchestrator: orchestrator,
       policyEngine: policyEngine,
       auditService: auditService,
+      skillRegistry: skillRegistry,
     );
 
     // AtRpc server — listens for incoming RPC requests on the notification

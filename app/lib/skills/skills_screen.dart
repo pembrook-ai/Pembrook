@@ -3,17 +3,21 @@
 /// Reads live data from DataService (which stores skill registrations as
 /// AtKeys on @owner's atServer, sharedWith @agent).
 ///
+/// Skills are ALSO synced to the agent via RpcService using the special
+/// _sys.skill.* management commands so the agent can actually invoke them.
+///
 /// Features:
 ///   - Live list with trust-score bar
 ///   - FAB → Add Skill dialog (skillId, skillAtSign, description, version)
-///   - Enable / disable toggle per skill
-///   - Delete (unregister) per skill
+///   - Enable / disable toggle per skill  (re-syncs to agent)
+///   - Delete (unregister) per skill      (removes from agent registry)
 ///   - Pull-to-refresh
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/data_service.dart';
+import '../services/rpc_service.dart';
 
 class SkillsScreen extends StatelessWidget {
   const SkillsScreen({super.key});
@@ -170,6 +174,8 @@ class SkillsScreen extends StatelessWidget {
       );
       try {
         await context.read<DataService>().saveSkill(skill);
+        // Sync to agent via RPC so the agent can actually invoke the skill.
+        await _syncSkillToAgent(context, skill);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Skill "${skill.skillId}" registered.')),
@@ -182,6 +188,40 @@ class SkillsScreen extends StatelessWidget {
           );
         }
       }
+    }
+  }
+
+  /// Send _sys.skill.install to the agent so it writes a SkillMetadata entry
+  /// into its own registry.  The RPC is best-effort — if the agent is offline
+  /// the local DataService entry is still saved and will be re-synced next time.
+  static Future<void> _syncSkillToAgent(
+      BuildContext context, SkillData skill) async {
+    if (!context.mounted) return;
+    final rpc = context.read<RpcService>();
+    try {
+      await rpc.call(
+        command: '_sys.skill.install',
+        conversationId: 'sys',
+        payload: skill.toJson(),
+      );
+    } catch (_) {
+      // Non-fatal: agent might be offline.
+    }
+  }
+
+  /// Send _sys.skill.uninstall to the agent.  Best-effort.
+  static Future<void> _removeSkillFromAgent(
+      BuildContext context, String skillId) async {
+    if (!context.mounted) return;
+    final rpc = context.read<RpcService>();
+    try {
+      await rpc.call(
+        command: '_sys.skill.uninstall',
+        conversationId: 'sys',
+        payload: {'skillId': skillId},
+      );
+    } catch (_) {
+      // Non-fatal.
     }
   }
 }
@@ -264,7 +304,14 @@ class _SkillCard extends StatelessWidget {
             children: [
               Switch(
                 value: skill.enabled,
-                onChanged: (val) => ds.saveSkill(skill.copyWith(enabled: val)),
+                onChanged: (val) async {
+                  final updated = skill.copyWith(enabled: val);
+                  await ds.saveSkill(updated);
+                  // Re-sync to agent (carrier of the 'enabled' flag).
+                  if (context.mounted) {
+                    await SkillsScreen._syncSkillToAgent(context, updated);
+                  }
+                },
               ),
               IconButton(
                 icon: const Icon(Icons.delete_outline),
@@ -308,6 +355,10 @@ class _SkillCard extends StatelessWidget {
     if (ok == true && context.mounted) {
       try {
         await ds.removeSkill(skill.skillId);
+        // Remove from agent registry too.
+        if (context.mounted) {
+          await SkillsScreen._removeSkillFromAgent(context, skill.skillId);
+        }
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Skill "${skill.skillId}" removed.')),

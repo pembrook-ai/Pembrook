@@ -14,10 +14,13 @@ All communication is end-to-end encrypted via the [atPlatform](https://atsign.co
 5. [Start the Backend](#5-start-the-backend)
 6. [Connect the Flutter App](#6-connect-the-flutter-app)
 7. [Verify It Works](#7-verify-it-works)
-8. [Enable Bridges (Optional)](#8-enable-bridges-optional)
-9. [Allow Additional Users](#9-allow-additional-users)
-10. [Managing Policies](#10-managing-policies)
-11. [Troubleshooting](#11-troubleshooting)
+8. [Chat History](#8-chat-history)
+9. [Register & Sync Skills](#9-register--sync-skills)
+10. [Enable MCP Servers (Optional)](#10-enable-mcp-servers-optional)
+11. [Enable Bridges (Optional)](#11-enable-bridges-optional)
+12. [Allow Additional Users](#12-allow-additional-users)
+13. [Managing Policies](#13-managing-policies)
+14. [Troubleshooting](#14-troubleshooting)
 
 ---
 
@@ -36,7 +39,7 @@ All communication is end-to-end encrypted via the [atPlatform](https://atsign.co
 ## 2. Register your atSigns
 
 SafeClaw uses [atSigns](https://atsign.com) as cryptographic identities.  
-You need **at minimum 2 atSigns**, and **3 if you want messaging bridges**.
+You need **at minimum 2 atSigns**, and **never more than 3** — even for a fully loaded system with all bridges and all MCP servers.
 
 ### Why multiple atSigns?
 
@@ -45,12 +48,14 @@ A single atSign cannot send a notification to itself — so the agent and the en
 
 | atSign role | Purpose | Minimum |
 |---|---|---|
-| `@agent` | The daemon process on your server | **Required** |
+| `@agent` | The agent daemon on your server | **Required** |
 | `@owner` | Your personal identity — Flutter app, CLI | **Required** |
-| `@bridges` | Shared by all 4 bridge processes (WhatsApp / Telegram / Discord / Slack) | Only if using bridges |
+| `@services` | **All** bridges (WhatsApp / Telegram / Discord / Slack) **and all** MCP servers share this one atSign | Only if using bridges or MCP servers |
 
-> **Good news:** all four bridge processes can share ONE atSign — routing is UUID-based so there is no cross-contamination.  
-> A single `@bridges` atSign is all you need, even if you run all four bridges simultaneously.
+> **One third atSign covers everything.** Bridges and MCP servers each filter by command prefix, so multiple services sharing the same atSign don't interfere with each other.  
+> You do **not** need separate atSigns per bridge or per MCP server.
+
+> **Can `@agent` be reused for bridges or MCP servers?** No. Bridges send messages *to* `@agent`, and the agent sends requests *to* MCP servers — the atPlatform forbids a sender and recipient being the same atSign. `@agent` must be its own distinct identity.
 
 ### Steps
 
@@ -62,7 +67,7 @@ You will have files like:
 ```
 @myagent_key.atKeys
 @myowner_key.atKeys
-@mybridges_key.atKeys   ← only if you want bridges
+@myservices_key.atKeys   ← only if you want bridges or MCP servers
 ```
 
 Place them in `~/.atsign/keys/` — the standard location used by all atSign apps:
@@ -70,7 +75,7 @@ Place them in `~/.atsign/keys/` — the standard location used by all atSign app
 ~/.atsign/keys/
   @myagent_key.atKeys
   @myowner_key.atKeys
-  @mybridges_key.atKeys
+  @myservices_key.atKeys
 ```
 
 > **Security:** `~/.atsign/keys/` is your home directory and is never committed to git.  
@@ -104,8 +109,8 @@ You will be asked:
 | Agent atSign | `@myagent` |
 | Owner atSign | `@myowner` |
 | Agent .atKeys file path | `~/.atsign/keys/@myagent_key.atKeys` |
-| Bridges atSign (optional) | `@mybridges` |
-| Bridges .atKeys file path | `~/.atsign/keys/@mybridges_key.atKeys` |
+| Services atSign (optional) | `@myservices` |
+| Services .atKeys file path | `~/.atsign/keys/@myservices_key.atKeys` |
 | Ollama model | `llama3.2` |
 | Extra allowed atSigns | *(leave blank)* |
 
@@ -120,8 +125,8 @@ The wizard will:
 AGENT_AT_SIGN=@myagent \
 OWNER_AT_SIGN=@myowner \
 AGENT_KEYS_PATH=~/.atsign/keys/@myagent_key.atKeys \
-BRIDGES_AT_SIGN=@mybridges \
-BRIDGES_KEYS_PATH=~/.atsign/keys/@mybridges_key.atKeys \
+SERVICES_AT_SIGN=@myservices \
+SERVICES_KEYS_PATH=~/.atsign/keys/@myservices_key.atKeys \
 bash scripts/setup.sh --non-interactive
 ```
 
@@ -139,7 +144,7 @@ dart run bin/init_config.dart \
   --atsign @myagent \
   --key-file ~/.atsign/keys/@myagent_key.atKeys \
   --owner @myowner \
-  --bridges-atsign @mybridges \
+  --services-atsign @myservices \
   --ollama-model llama3.2 \
   --verbose
 ```
@@ -204,7 +209,7 @@ docker compose logs -f agent
 
 You should see output like:
 ```
-[INFO] Gateway  — AllowList refreshed: [@myowner, @mybridges]
+[INFO] Gateway  — AllowList refreshed: [@myowner, @myservices]
 [INFO] Gateway  — Gateway started on @myagent namespace=safeclaw...
 [INFO] Heartbeat — SafeClaw agent is running.
 ```
@@ -260,10 +265,161 @@ If it exits cleanly, authentication and AtKey writing both work.
 
 ---
 
-## 8. Enable Bridges (Optional)
+## 8. Chat History
+
+The app stores every conversation locally so you can browse, restore, or delete past sessions.
+
+### How it works
+
+- Each conversation is assigned a unique ID when it begins.
+- Messages are auto-saved to device storage (SharedPreferences) after every exchange.
+- Up to **100 conversations** are retained; the oldest are pruned automatically.
+
+### Using Chat History
+
+| Action | How |
+|---|---|
+| Start a new conversation | Tap **➕** in the top-right of the Chat screen |
+| Browse past conversations | Tap **🕐** (history icon) in the top-right |
+| Restore a conversation | Open History → tap any session |
+| Delete a conversation | Open History → swipe left on a session, or tap the delete icon |
+
+> Past conversations are read-only when restored — you can review context but replies start a new session.
+
+---
+
+## 9. Register & Sync Skills
+
+Skills extend the agent with external capabilities (e.g. web search, calendar, email).  
+They are registered in the Flutter app and automatically synced to the running agent via an encrypted RPC channel.
+
+### What is a Skill?
+
+A skill is an atSign process (`@skill_calendar`, `@skill_search`, etc.) that the agent can dispatch tasks to.  
+The agent only calls skills whose atSigns are in its `SkillRegistry`.
+
+### Register a skill
+
+1. Open the **Skills** tab in the app
+2. Tap the **➕** FAB
+3. Fill in:
+   | Field | Example | Notes |
+   |---|---|---|
+   | Skill ID | `calendar` | Short unique slug |
+   | Skill atSign | `@skill_calendar` | The atSign of the skill process |
+   | Description | `Manages calendar events` | Shown in the agent's tool list |
+   | Version | `1.0.0` | Semantic version |
+4. Tap **Save**
+
+What happens behind the scenes:
+1. The app writes the skill metadata to an AtKey on `@owner`'s atServer (for audit)
+2. The app sends a `_sys.skill.install` RPC command to `@agent`
+3. The agent registers the skill in its `SkillRegistry` — it can now dispatch tasks to `@skill_calendar`
+
+### Enable / disable a skill
+
+Toggle the switch next to any skill in the list.  
+The change is immediately synced to the agent via `_sys.skill.install` with `enabled: false/true`.
+
+### Remove a skill
+
+Tap the delete icon on any skill.  
+The app sends `_sys.skill.uninstall` to the agent, which removes it from the live `SkillRegistry`.
+
+### `_sys.skill.*` RPC commands (reference)
+
+| Command | Payload | Effect |
+|---|---|---|
+| `_sys.skill.install` | `{skillId, skillAtSign, description, version, enabled, trustScore}` | Add or update skill in registry |
+| `_sys.skill.uninstall` | `{skillId}` | Remove skill from registry |
+| `_sys.skill.list` | *(empty)* | Returns array of all registered skills |
+
+> These commands are only accepted from atSigns in the agent's `allowList` (your `@owner` atSign).
+
+---
+
+## 10. Enable MCP Servers (Optional)
+
+MCP (Model Context Protocol) servers give the agent access to external resources — home automation, databases, web browsing — over the atPlatform using dedicated atSigns.
+
+### Available MCP servers
+
+| Server | atSign role | Purpose |
+|---|---|---|
+| `home` | `@mcp_home` | Home Assistant — control lights, sensors, automations |
+| `database` | `@mcp_db` | SQLite — structured data queries from the agent |
+
+### Step 1 — Provision a services atSign (if you haven't already)
+
+This is the same third atSign used by bridges.  
+If you already set up `@myservices` for a bridge, **skip this step** — MCP servers reuse the same atSign.
+
+If you haven't provisioned it yet:
+1. Go to [my.atsign.com/dashboard](https://my.atsign.com/dashboard)
+2. Create a new free atSign (e.g. `@myservices`)
+3. Download its `.atKeys` file → place in `~/.atsign/keys/`
+
+### Step 2 — Add credentials to `.env`
+
+**Home Automation server:**
+```env
+SERVICES_AT_SIGN=@myservices
+SERVICES_KEY_FILE=@myservices_key.atKeys
+HA_BASE_URL=http://homeassistant.local:8123
+HA_TOKEN=eyJ...long_lived_access_token...
+```
+
+**Database server:**
+```env
+SERVICES_AT_SIGN=@myservices
+SERVICES_KEY_FILE=@myservices_key.atKeys
+DB_PATH=/data/safeclaw.db   # path inside the container
+```
+
+> Get a Home Assistant long-lived access token: **HA → Profile → Long-Lived Access Tokens → Create Token**
+
+### Step 3 — Allow the services atSign to talk to the agent
+
+If `@myservices` is already in `ALLOWED_USERS` (because you added it for bridges), **nothing more is needed**.
+
+If not, add it:
+```env
+ALLOWED_USERS=@myowner,@myservices
+```
+
+### Step 4 — Uncomment and start the MCP service
+
+Edit `docker-compose.yml`: find the commented-out `mcp_home:` (or `mcp_database:`) service block and uncomment it.
+
+Then:
+```bash
+docker compose up -d mcp_home
+# or:
+docker compose up -d mcp_database
+```
+
+### Step 5 — Verify
+
+```bash
+docker compose logs -f mcp_home
+```
+
+You should see:
+```
+[INFO] MCP  — Connected as @myservices on namespace safeclaw
+[INFO] MCP  — Waiting for commands from @myagent
+```
+
+---
+
+## 11. Enable Bridges (Optional)
 
 Bridges relay messages from external platforms (WhatsApp, Telegram, Discord, Slack) to the agent.  
-All bridges share the `@bridges` atSign.
+All bridges share the services atSign (`@myservices` in these examples) together with any MCP servers you have enabled.
+
+> **Important:** Each bridge process reads the agent atSign from the `AGENT_AT_SIGN` environment variable.  
+> This is set automatically in `docker-compose.yml` from your `.env` file.  
+> If `AGENT_AT_SIGN` is missing, bridges fall back to the literal placeholder `@agent` and log a warning.
 
 ### Step 1 — Get platform credentials
 
@@ -313,9 +469,9 @@ Configure the webhook URL in the Meta / Slack developer console.
 
 ---
 
-## 9. Allow Additional Users
+## 12. Allow Additional Users
 
-By default, only `@myowner` (and `@mybridges` if configured) can send commands to the agent.  
+By default, only `@myowner` (and `@myservices` if configured) can send commands to the agent.  
 To allow other atSigns, update the `settings.allowed_users` AtKey on the agent:
 
 ```bash
@@ -324,7 +480,7 @@ dart run bin/init_config.dart \
   --atsign @myagent \
   --key-file ~/.atsign/keys/@myagent_key.atKeys \
   --owner @myowner \
-  --allowed-users @myowner,@mybridges,@alice,@bob
+  --allowed-users @myowner,@myservices,@alice,@bob
 ```
 
 The agent picks up the change within **5 minutes** (allowList is refreshed on a timer).  
@@ -339,7 +495,7 @@ No restart is required.
 
 ---
 
-## 10. Managing Policies
+## 13. Managing Policies
 
 SafeClaw has a built-in policy engine that controls who can do what.  
 Policies are stored as AtKeys on the agent's atServer and managed from the Flutter app.
@@ -364,7 +520,7 @@ A default "deny all" rule sits at the bottom.
 
 ---
 
-## 11. Troubleshooting
+## 14. Troubleshooting
 
 ### Agent fails to start — "container safeclaw-ollama is unhealthy"
 
@@ -458,13 +614,16 @@ Set `Logger.root.level = Level.ALL` in `agent/bin/main.dart` temporarily, or add
 └──────────┬───────────────────────────┬──────────────┘
            │ outbound only             │ outbound only
     ┌──────▼──────┐             ┌──────▼──────┐
-    │  Flutter app │             │    Bridges   │
-    │  @owner      │             │  @bridges    │
-    │  (your phone)│             │ (WhatsApp /  │
-    └─────────────┘             │  Telegram /  │
-                                │  Discord /   │
-                                │  Slack)      │
-                                └──────┬───────┘
+    │  Flutter app │             │  Bridges +  │
+    │  @owner      │             │  MCP servers│
+    │  (your phone)│             │  @services  │
+    └─────────────┘             │ (WhatsApp / │
+                                │  Telegram / │
+                                │  Discord /  │
+                                │  Slack /    │
+                                │  @mcp_home /│
+                                │  @mcp_db)   │
+                                └──────┬──────┘
                                        │
                                 ┌──────▼──────────────────────────────┐
                                 │         SafeClaw Agent               │

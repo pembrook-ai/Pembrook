@@ -4,9 +4,13 @@
 ///   - Audit log entries    (read from @owner — written there by the agent)
 ///   - Pending HITL requests
 ///   - Installed skills     (read/write — owner declares skills, shared w/ @agent)
+///   - Conversation history (stored locally in SharedPreferences)
 ///
 /// SKILL KEY PATTERN (on @owner's atServer, sharedWith @agent):
 ///   skill_meta.<skillId>.safeclaw@<owner>  →  JSON-encoded SkillData
+///
+/// CONVERSATION HISTORY (local SharedPreferences):
+///   Key: 'conversations'  →  JSON array of ConversationSummary objects
 ///
 /// Agent atSign: loaded from SharedPreferences 'agentAtSign' (same source as
 /// RpcService so they stay in sync when the user updates Settings).
@@ -304,5 +308,156 @@ class DataService extends ChangeNotifier {
     await _atClient!.delete(_skillKey(skillId));
     _skills.removeWhere((s) => s.skillId == skillId);
     notifyListeners();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Conversation History (local storage)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A single message in a stored conversation.
+class StoredMessage {
+  final String text;
+  final bool isUser;
+  final DateTime timestamp;
+
+  const StoredMessage({
+    required this.text,
+    required this.isUser,
+    required this.timestamp,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        'isUser': isUser,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  factory StoredMessage.fromJson(Map<String, dynamic> json) => StoredMessage(
+        text: json['text'] as String? ?? '',
+        isUser: json['isUser'] as bool? ?? false,
+        timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ??
+            DateTime.now(),
+      );
+}
+
+/// Summary + full message list for one conversation session.
+class ConversationSummary {
+  final String id;
+
+  /// The first user message (truncated to 80 chars) used as the display title.
+  final String title;
+
+  final DateTime createdAt;
+  final List<StoredMessage> messages;
+
+  const ConversationSummary({
+    required this.id,
+    required this.title,
+    required this.createdAt,
+    required this.messages,
+  });
+
+  int get messageCount => messages.length;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'createdAt': createdAt.toIso8601String(),
+        'messages': messages.map((m) => m.toJson()).toList(),
+      };
+
+  factory ConversationSummary.fromJson(Map<String, dynamic> json) =>
+      ConversationSummary(
+        id: json['id'] as String? ?? '',
+        title: json['title'] as String? ?? '(untitled)',
+        createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+            DateTime.now(),
+        messages: (json['messages'] as List<dynamic>? ?? [])
+            .map((e) => StoredMessage.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+/// Persists conversation history in SharedPreferences.
+///
+/// Stores up to [maxConversations] sessions.  Oldest sessions are pruned
+/// when the limit is exceeded.
+class ConversationStore extends ChangeNotifier {
+  static const String _prefsKey = 'conversations';
+  static const int maxConversations = 100;
+
+  List<ConversationSummary> _conversations = [];
+
+  List<ConversationSummary> get conversations =>
+      List.unmodifiable(_conversations);
+
+  /// Load all conversations from SharedPreferences.
+  Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_prefsKey);
+    if (raw == null || raw.isEmpty) {
+      _conversations = [];
+      notifyListeners();
+      return;
+    }
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      _conversations = list
+          .map((e) => ConversationSummary.fromJson(e as Map<String, dynamic>))
+          .toList();
+      // Sort newest-first.
+      _conversations.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    } catch (_) {
+      _conversations = [];
+    }
+    notifyListeners();
+  }
+
+  /// Save (or overwrite) a conversation session.
+  ///
+  /// If [messages] contains no user messages the save is skipped so empty
+  /// "new conversation" sessions are not cluttered into the list.
+  Future<void> save(ConversationSummary summary) async {
+    if (summary.messages.every((m) => !m.isUser)) return;
+
+    final idx = _conversations.indexWhere((c) => c.id == summary.id);
+    if (idx >= 0) {
+      _conversations[idx] = summary;
+    } else {
+      _conversations.insert(0, summary);
+    }
+
+    // Prune oldest if over limit.
+    if (_conversations.length > maxConversations) {
+      _conversations = _conversations.sublist(0, maxConversations);
+    }
+
+    await _persist();
+    notifyListeners();
+  }
+
+  /// Delete a conversation by ID.
+  Future<void> delete(String id) async {
+    _conversations.removeWhere((c) => c.id == id);
+    await _persist();
+    notifyListeners();
+  }
+
+  /// Returns the conversation with [id], or null.
+  ConversationSummary? get(String id) {
+    try {
+      return _conversations.firstWhere((c) => c.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _persist() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _prefsKey,
+      jsonEncode(_conversations.map((c) => c.toJson()).toList()),
+    );
   }
 }

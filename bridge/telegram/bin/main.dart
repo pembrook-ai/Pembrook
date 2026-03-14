@@ -24,7 +24,8 @@ import 'package:logging/logging.dart';
 import 'package:uuid/uuid.dart';
 
 const _namespace = 'safeclaw';
-const _agentAtSign = '@agent';
+String _agentAtSign =
+    '@agent'; // overridden at startup from AGENT_AT_SIGN env var
 const _platform = 'telegram';
 const _pollTimeout = 30; // seconds (long-poll)
 const _requestTimeout = Duration(seconds: 60);
@@ -50,7 +51,16 @@ void main(List<String> args) async {
   }
 
   final atClient = cli.atClient;
-  _log.info('Telegram bridge started as ${atClient.getCurrentAtSign()}');
+  // CLIBase sets Logger.root.level = Level.SHOUT internally — restore.
+  Logger.root.level = Level.INFO;
+  // Read the agent atSign from env (set in docker-compose or .env).
+  _agentAtSign = Platform.environment['AGENT_AT_SIGN'] ?? '@agent';
+  if (_agentAtSign == '@agent') {
+    _log.warning(
+        'AGENT_AT_SIGN env var not set — messages will go to @agent (placeholder)');
+  }
+  _log.info(
+      'Telegram bridge started as ${atClient.getCurrentAtSign()} → agent: $_agentAtSign');
 
   final token = await _loadToken(atClient);
   if (token.isEmpty) {
