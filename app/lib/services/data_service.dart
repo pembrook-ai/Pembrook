@@ -65,13 +65,21 @@ class AuditItem {
     this.notes,
   });
 
-  factory AuditItem.fromJson(Map<String, dynamic> json) => AuditItem(
-        timestamp: DateTime.parse(json['timestamp'] as String),
-        actionType: json['actionType'] as String,
-        initiatorAtSign: json['initiatorAtSign'] as String,
-        policyDecision: json['policyDecision'] as String,
-        notes: json['notes'] as String?,
-      );
+  factory AuditItem.fromJson(Map<String, dynamic> json) {
+    // The agent writes timestamp as millisecondsSinceEpoch (int).
+    // Guard against older entries that may have stored an ISO string.
+    final rawTs = json['timestamp'];
+    final DateTime ts = rawTs is int
+        ? DateTime.fromMillisecondsSinceEpoch(rawTs)
+        : DateTime.parse(rawTs as String);
+    return AuditItem(
+      timestamp: ts,
+      actionType: json['actionType'] as String,
+      initiatorAtSign: json['initiatorAtSign'] as String,
+      policyDecision: json['policyDecision'] as String,
+      notes: json['notes'] as String?,
+    );
+  }
 }
 
 /// A skill registered by the owner and shared with the agent.

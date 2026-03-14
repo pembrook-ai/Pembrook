@@ -15,6 +15,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -158,7 +159,7 @@ class _ChatScreenState extends State<ChatScreen> {
         title: const Text('SafeClaw'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.history),
+            icon: const Icon(Icons.forum_outlined),
             tooltip: 'Conversation history',
             onPressed: _openHistory,
           ),
@@ -387,7 +388,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           _DrawerItem(Icons.chat, 'Chat', '/home', context),
           ListTile(
-            leading: const Icon(Icons.history),
+            leading: const Icon(Icons.forum_outlined),
             title: const Text('History'),
             onTap: () {
               Navigator.pop(context);
@@ -442,14 +443,41 @@ class _ChatBubble extends StatelessWidget {
               : Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(16),
         ),
-        child: SelectableText(
-          message.text,
-          style: TextStyle(
-            color: isUser
-                ? Theme.of(context).colorScheme.onPrimary
-                : Theme.of(context).colorScheme.onSurface,
-          ),
-        ),
+        child: isUser
+            ? SelectableText(
+                message.text,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onPrimary,
+                ),
+              )
+            : MarkdownBody(
+                data: message.text,
+                selectable: true,
+                styleSheet:
+                    MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                  p: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                  code: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                        backgroundColor:
+                            Theme.of(context).colorScheme.surfaceContainerLow,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                  codeblockDecoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  blockquoteDecoration: BoxDecoration(
+                    border: Border(
+                      left: BorderSide(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 3,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
       ),
     );
   }
@@ -491,4 +519,3 @@ class _StreamingBubble extends StatelessWidget {
     );
   }
 }
-
