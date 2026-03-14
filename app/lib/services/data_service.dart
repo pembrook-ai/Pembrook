@@ -19,6 +19,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:at_client/at_client.dart';
+import 'package:at_commons/at_builders.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -166,6 +167,29 @@ class DataService extends ChangeNotifier {
     await refresh();
   }
 
+  /// Scan the **remote** secondary for keys matching [regex].
+  ///
+  /// Bypasses the local secondary store entirely — keys written by the agent
+  /// with useRemoteAtServer=true are immediately visible without waiting for sync.
+  Future<List<String>> _remoteKeys(String regex) async {
+    try {
+      final remote = _atClient!.getRemoteSecondary();
+      if (remote == null) return [];
+      final scanBuilder = ScanVerbBuilder()
+        ..regex = regex
+        ..auth = true;
+      final result = await remote.executeVerb(scanBuilder);
+      if (result.isEmpty) return [];
+      // Response format: data:["key1","key2",...]
+      final jsonStr = result.replaceFirst('data:', '').trim();
+      if (jsonStr == 'null' || jsonStr.isEmpty) return [];
+      return (jsonDecode(jsonStr) as List<dynamic>).cast<String>();
+    } catch (_) {
+      // Fall back to local key scan if remote scan fails.
+      return _atClient!.getKeys(regex: regex);
+    }
+  }
+
   Future<void> refresh() async {
     if (_atClient == null) return;
     _loading = true;
@@ -188,7 +212,7 @@ class DataService extends ChangeNotifier {
   Future<void> _loadPendingHitl() async {
     if (_atClient == null) return;
     try {
-      final keys = await _atClient!.getKeys(regex: r'^hitl\.pending\.');
+      final keys = await _remoteKeys(r'hitl\.pending\.');
       final items = <HitlItem>[];
       for (final keyStr in keys) {
         try {
@@ -237,7 +261,7 @@ class DataService extends ChangeNotifier {
   Future<void> _loadAuditEntries() async {
     if (_atClient == null) return;
     try {
-      final keys = await _atClient!.getKeys(regex: r'^audit\.');
+      final keys = await _remoteKeys(r'audit\.');
       final items = <AuditItem>[];
       for (final keyStr in keys.take(100)) {
         try {
