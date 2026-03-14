@@ -58,8 +58,10 @@ class AuditService {
     )..sharedWith(_ownerAtSign))
         .build()
       ..metadata = (Metadata()
-            ..immutable = true // CANNOT be changed after creation
-            ..ttr = -1 // no time-to-refresh; permanent record
+            ..immutable = true // value CANNOT be changed after creation
+            ..ttl =
+                7 * 24 * 60 * 60 * 1000 // 7-day TTL — auto-expires old entries
+            ..ttr = -1 // no time-to-refresh
           );
 
     try {

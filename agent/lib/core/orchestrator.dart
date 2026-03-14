@@ -132,6 +132,10 @@ class Orchestrator {
 
     // ── 4. Execute by intent ──────────────────────────────────────────────
     String responseText;
+    // Audit capture vars — filled in per-branch below.
+    String _auditTarget = intentType.name;
+    String? _auditSkillId;
+    String? _auditMcpServer;
 
     switch (intentType) {
       case IntentType.chat:
@@ -154,6 +158,8 @@ class Orchestrator {
         } else {
           // Extract skill id from command payload (expected field: "skillId")
           final skillId = _extractField(command, 'skillId') ?? 'unknown';
+          _auditSkillId = skillId;
+          _auditTarget = 'skill:$skillId';
           final payload = _extractPayload(command);
           final runResult = await skillRunner!.invoke(
             skillId: skillId,
@@ -176,6 +182,8 @@ class Orchestrator {
         } else {
           final mcpAtSign = _extractField(command, 'mcpAtSign') ?? '@mcp_home';
           final toolName = _extractField(command, 'toolName') ?? 'unknown';
+          _auditMcpServer = mcpAtSign;
+          _auditTarget = 'mcp:$toolName';
           final args = _extractPayload(command);
           final callResult = await mcpClient!.callTool(
             mcpAtSign: mcpAtSign,
@@ -236,14 +244,19 @@ class Orchestrator {
 
     // ── 7. Audit ──────────────────────────────────────────────────────────
     try {
+      final preview =
+          command.length > 150 ? '${command.substring(0, 150)}\u2026' : command;
       await auditService.log(AuditEntry(
-        actionType: 'command',
+        actionType: intentType.name,
         initiatorAtSign: fromAtSign,
-        targetResource: 'orchestrator',
+        targetResource: _auditTarget,
         policyDecision: 'allowed',
         inputHash: 'sha256:${AuditService.contentHash(command)}',
         outputHash: 'sha256:${AuditService.contentHash(responseText)}',
         executionDurationMs: elapsed,
+        skillId: _auditSkillId,
+        mcpServer: _auditMcpServer,
+        notes: preview,
       ));
     } catch (e) {
       _log.warning('Failed to write audit log: $e');
