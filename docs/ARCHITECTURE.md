@@ -237,7 +237,64 @@ ChatScreen (active session)
 
 ## 6. Skills System
 
-### Problem (fixed)
+### Sandbox execution model
+
+Each skill is a **Docker container** spawned per invocation by `SandboxManager`.  
+The image name is derived from the Skill ID registered in the app:
+
+```
+safeclaw-skill-<skillId>:latest
+```
+
+Security constraints applied to every container run:
+
+| Flag | Value | Purpose |
+|---|---|---|
+| `--rm` | — | Remove container on exit (no persistent state) |
+| `--network=none` | — | Zero network access inside the sandbox |
+| `--memory` | `256m` | Hard memory cap |
+| `--cpus` | `0.5` | Hard CPU cap |
+| `--read-only` | — | Read-only root filesystem |
+| `--cap-drop` | `ALL` | Drop all Linux capabilities |
+| `--security-opt` | `no-new-privileges` | Prevent privilege escalation |
+
+> **Network-dependent skills** (email, calendar, web_search) require a custom sandbox profile with egress allow-listing — the default `--network=none` will block their outbound connections.
+
+#### stdin/stdout JSON protocol
+
+```
+SandboxManager                              Skill container (stdin/stdout)
+      │                                               │
+      │  {"command":"run","payload":{...},"requestId":"<id>"}
+      │──────────────────────────────────────────────>│
+      │                                               │ executes action
+      │  {"status":"ok","result":{...},"requestId":"<id>"}
+      │<──────────────────────────────────────────────│
+```
+
+On error the container writes `{"status":"error","error":"<message>","requestId":"<id>"}` to stdout and exits non-zero.
+
+#### Built-in skills
+
+| Skill ID | Directory | Key actions |
+|---|---|---|
+| `email` | `skills/email/` | `send_email`, `list_inbox`, `read_email`, `delete_email` |
+| `calendar` | `skills/calendar/` | CalDAV read/create/update |
+| `web_search` | `skills/web_search/` | `search.query`, `search.get_page` |
+
+#### Building a skill image
+
+```bash
+# From repo root — repeat per skill
+docker build -t safeclaw-skill-email:latest -f skills/email/Dockerfile .
+```
+
+The agent accesses Docker via `/var/run/docker.sock` (mounted in `docker-compose.yml`).  
+The image must be present on the same Docker host as the agent container.
+
+---
+
+### Problem (fixed) — AtKey namespace mismatch
 
 The Flutter app stored skills using the AtKey `@agent:skill_meta.<id>.safeclaw@owner`  
 (a **shared** key — sender is `@owner`, recipient is `@agent`).

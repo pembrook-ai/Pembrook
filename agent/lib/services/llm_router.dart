@@ -143,9 +143,13 @@ Current date: ${DateTime.now().toUtc().toIso8601String()}''';
     // Privacy routing decision
     final useLocal = _localOnly || privacyScore >= _privacyThreshold;
 
-    if (useLocal && tools.isNotEmpty && toolExecutor != null) {
+    if (tools.isNotEmpty && toolExecutor != null) {
       // ── Agentic tool-calling loop (local model + tools) ──────────────────
-      _log.fine('Using tool-calling loop with ${tools.length} tool(s)');
+      // Tool calling always runs on the local model (Ollama) regardless of
+      // the privacy score — the privacyScore only governs whether to send
+      // text to an external LLM.  Never skip tools for low-privacy queries.
+      _log.info(
+          'Using tool-calling loop (${tools.length} tool(s), model=$_localModel)');
       final messages = <Map<String, dynamic>>[
         {'role': 'system', 'content': systemPrompt},
         for (final m in contextMessages)
@@ -295,6 +299,8 @@ Current date: ${DateTime.now().toUtc().toIso8601String()}''';
     final history = List<Map<String, dynamic>>.from(messages);
 
     for (var iteration = 0; iteration < maxIterations; iteration++) {
+      _log.info(
+          '[tool-loop] iteration=${iteration + 1}/$maxIterations — calling model');
       final assistantMsg = await _callOllamaChat(
         messages: history,
         tools: tools,
@@ -305,8 +311,12 @@ Current date: ${DateTime.now().toUtc().toIso8601String()}''';
 
       // No tool calls → model produced a final text answer.
       if (toolCalls == null || toolCalls.isEmpty) {
+        _log.info(
+            '[tool-loop] model returned plain text answer (no tool calls) after ${iteration + 1} iteration(s)');
         return (assistantMsg['content'] as String? ?? '').trim();
       }
+
+      _log.info('[tool-loop] model requested ${toolCalls.length} tool call(s)');
 
       // Execute each tool call and feed results back.
       for (final call in toolCalls) {
@@ -326,7 +336,7 @@ Current date: ${DateTime.now().toUtc().toIso8601String()}''';
         } catch (e) {
           result = 'Error calling $toolName: $e';
         }
-        _log.fine('Tool result (${result.length} chars)');
+        _log.info('Tool result for $toolName: ${result.length} chars');
 
         // Ollama expects the tool result as a message with role 'tool'.
         history.add({

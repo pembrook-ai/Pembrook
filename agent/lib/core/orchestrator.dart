@@ -124,11 +124,11 @@ class Orchestrator {
       query: command,
       conversationHistory: conversation.messages,
     );
-    _log.fine('Intent classified as: ${intentType.name}');
+    _log.info('Intent classified as: ${intentType.name}');
 
     // ── 3. Privacy score ──────────────────────────────────────────────────
     final privacyScore = await llmRouter.scorePrivacy(command);
-    _log.fine('Privacy score: $privacyScore');
+    _log.info('Privacy score: $privacyScore | intent: ${intentType.name}');
 
     // ── 4. Execute by intent ──────────────────────────────────────────────
     String responseText;
@@ -323,11 +323,13 @@ class Orchestrator {
   /// Each tool in [_kTools] must have a corresponding case here.
   Future<String> _executeTool(
       String toolName, Map<String, dynamic> args) async {
+    _log.info('[TOOL] Executing tool="$toolName" args=$args');
     switch (toolName) {
       case 'fetch_webpage':
         final url = args['url'] as String? ?? '';
         return _fetchWebpage(url);
       default:
+        _log.warning('[TOOL] Unknown tool requested: $toolName');
         return 'Unknown tool: $toolName';
     }
   }
@@ -345,13 +347,14 @@ class Orchestrator {
       return 'Error: invalid URL — $url';
     }
     try {
-      _log.info('Fetching webpage: $uri');
+      _log.info('[fetch_webpage] GET $uri');
       final resp = await http.get(uri, headers: {
         'User-Agent': 'SafeClaw-Agent/1.0 (fetch_webpage tool)',
         'Accept': 'text/html,application/xhtml+xml',
       }).timeout(const Duration(seconds: 15));
 
       if (resp.statusCode != 200) {
+        _log.warning('[fetch_webpage] HTTP ${resp.statusCode} from $uri');
         return 'Error: HTTP ${resp.statusCode} from $uri';
       }
 
@@ -373,10 +376,14 @@ class Orchestrator {
         text =
             '${text.substring(0, kMaxChars)}\n[... truncated at $kMaxChars chars]';
       }
+      _log.info(
+          '[fetch_webpage] OK — ${text.length} chars extracted from $uri');
       return text.isEmpty ? '(page had no readable text)' : text;
     } on TimeoutException {
+      _log.warning('[fetch_webpage] Timed out fetching $uri');
       return 'Error: timed out fetching $uri';
     } catch (e) {
+      _log.warning('[fetch_webpage] Error: $e');
       return 'Error fetching $uri: $e';
     }
   }

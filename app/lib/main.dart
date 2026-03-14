@@ -38,6 +38,7 @@ import 'policy/policy_list_screen.dart';
 import 'settings/settings_screen.dart';
 import 'skills/skills_screen.dart';
 import 'hitl/hitl_screen.dart';
+import 'services/app_settings.dart';
 import 'services/rpc_service.dart';
 import 'services/data_service.dart';
 
@@ -206,6 +207,7 @@ class SafeClawApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => AppSettings()),
         ChangeNotifierProvider(create: (_) => RpcService()),
         ChangeNotifierProvider(create: (_) => DataService()),
         ChangeNotifierProvider(create: (_) => ConversationStore()),
@@ -214,6 +216,15 @@ class SafeClawApp extends StatelessWidget {
         title: 'SafeClaw',
         debugShowCheckedModeBanner: false,
         routerConfig: _router,
+        builder: (context, child) {
+          final scale = context.watch<AppSettings>().fontScale;
+          return MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(scale),
+            ),
+            child: child!,
+          );
+        },
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
             seedColor: const Color(0xFF1B5E20), // deep green — "claw"

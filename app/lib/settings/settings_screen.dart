@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/app_settings.dart';
 import '../services/rpc_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _privacyThreshold = 0.7;
   bool _localOnly = false;
   bool _streamingEnabled = true;
+  double _fontScale = 1.0;
 
   static const String _namespace = 'safeclaw';
   static const String _atKeyName = 'settings.app';
@@ -42,6 +44,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    // Read current font scale from the live AppSettings provider.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _fontScale = context.read<AppSettings>().fontScale;
+        });
+      }
+    });
     _loadPrefs();
   }
 
@@ -200,6 +210,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: const Text('Show tokens as they arrive'),
             value: _streamingEnabled,
             onChanged: (v) => setState(() => _streamingEnabled = v),
+          ),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Font size'),
+            subtitle: Text(
+              _fontScale == 1.0
+                  ? 'Normal (100%)'
+                  : '${(_fontScale * 100).round()}%',
+            ),
+          ),
+          Slider(
+            value: _fontScale,
+            min: 0.8,
+            max: 1.6,
+            divisions: 8,
+            label: '${(_fontScale * 100).round()}%',
+            onChanged: (v) {
+              setState(() => _fontScale = v);
+              context.read<AppSettings>().setFontScale(v);
+            },
           ),
           const SizedBox(height: 24),
 

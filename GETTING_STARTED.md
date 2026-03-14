@@ -295,26 +295,73 @@ They are registered in the Flutter app and automatically synced to the running a
 
 ### What is a Skill?
 
-A skill is an atSign process (`@skill_calendar`, `@skill_search`, etc.) that the agent can dispatch tasks to.  
-The agent only calls skills whose atSigns are in its `SkillRegistry`.
+A skill is a **sandboxed Docker container** that the agent spawns on demand.  
+Each skill exposes one or more actions via a simple stdin/stdout JSON protocol.  
+The agent only invokes skills that are registered in its `SkillRegistry`.
 
-### Register a skill
+The Docker image name is derived from the Skill ID:
+```
+safeclaw-skill-<skillId>:latest
+```
+
+### Built-in skills
+
+Three skills ship with SafeClaw in the `skills/` directory:
+
+| Skill ID | Directory | What it does | Network needed? |
+|---|---|---|---|
+| `email` | `skills/email/` | Send / list / read / delete email via SMTP + IMAP | Yes (SMTP/IMAP) |
+| `calendar` | `skills/calendar/` | Read / create / update calendar events (CalDAV) | Yes |
+| `web_search` | `skills/web_search/` | SearXNG or Brave web search + page fetcher | Yes |
+
+> **Note:** The default Docker sandbox runs with `--network=none`.  
+> Skills that need network access (all three above) require a network-enabled sandbox profile or an allow-listed egress rule.
+
+### Step 1 — Build the skill Docker image
+
+Run this once per skill, from the repo root, on the same host where the agent container runs:
+
+```bash
+# Example: email skill
+docker build \
+  -t safeclaw-skill-email:latest \
+  -f skills/email/Dockerfile \
+  .
+```
+
+Repeat with `email` → `calendar` / `web_search` for the other built-in skills.
+
+> The image must be present on the **Docker host** the agent container uses.  
+> The agent gets access to Docker via the `/var/run/docker.sock` volume defined in `docker-compose.yml`.
+
+### Step 2 — Register the skill in the app
 
 1. Open the **Skills** tab in the app
 2. Tap the **➕** FAB
 3. Fill in:
    | Field | Example | Notes |
    |---|---|---|
-   | Skill ID | `calendar` | Short unique slug |
-   | Skill atSign | `@skill_calendar` | The atSign of the skill process |
-   | Description | `Manages calendar events` | Shown in the agent's tool list |
+   | Skill ID | `email` | Must match the image name: `safeclaw-skill-<id>:latest` |
+   | Skill atSign | `@ai6bh` | Can be your services atSign — no dedicated atSign needed |
+   | Description | `Send and read emails via SMTP/IMAP` | Shown in the agent's tool list |
    | Version | `1.0.0` | Semantic version |
-4. Tap **Save**
+4. Tap **Register**
 
 What happens behind the scenes:
 1. The app writes the skill metadata to an AtKey on `@owner`'s atServer (for audit)
 2. The app sends a `_sys.skill.install` RPC command to `@agent`
-3. The agent registers the skill in its `SkillRegistry` — it can now dispatch tasks to `@skill_calendar`
+3. The agent registers the skill in its `SkillRegistry` and can now spawn the container on demand
+
+### Step 3 — Use the skill
+
+Just ask the agent naturally in chat:
+
+> *"Send an email to bob@example.com with subject 'Hello' and body 'Test'"*  
+> *"Show me my last 10 inbox messages"*  
+> *"Search the web for the latest Dart release notes"*
+
+The agent classifies the intent, looks up the matching skill, spawns the container with the payload, and returns the result.  
+Destructive operations (e.g. `delete_email`) trigger a HITL approval request before execution.
 
 ### Enable / disable a skill
 
