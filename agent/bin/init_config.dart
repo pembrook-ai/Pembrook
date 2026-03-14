@@ -5,8 +5,8 @@
 ///     --atsign @myagent \
 ///     --key-file /path/to/@myagent_key.atKeys \
 ///     --owner @myowner \
-///     [--allowed-users @myowner,@mybridges] \
-///     [--bridges-atsign @mybridges] \
+///     [--allowed-users @myowner,@myservices] \
+///     [--services-atsign @myservices] \
 ///     [--ollama-model llama3.2] \
 ///     [--local-only false]
 ///
@@ -50,12 +50,15 @@ void main(List<String> args) async {
         help: 'Owner atSign — the Flutter app / CLI atSign (e.g. @myowner)')
     ..addOption('allowed-users',
         help: 'Comma-separated atSigns permitted to send commands '
-            '(default: just --owner). Example: @myowner,@mybridges')
-    ..addOption('bridges-atsign',
-        help: 'Additional bridge relay atSign to add to the allowList '
+            '(default: just --owner). Example: @myowner,@myservices')
+    ..addOption('services-atsign',
+        help: 'Services atSign (bridges + MCP servers) to add to the allowList '
             '(shorthand for including in --allowed-users)')
+    ..addOption('bridges-atsign',
+        hide: true, // deprecated alias for --services-atsign
+        help: 'Deprecated: use --services-atsign instead')
     ..addOption('ollama-model',
-        defaultsTo: 'llama3.2', help: 'Default Ollama model name')
+        defaultsTo: 'qwen2.5:7b', help: 'Default Ollama model name')
     ..addOption('ollama-url',
         defaultsTo: 'http://localhost:11434', help: 'Ollama server base URL')
     ..addFlag('local-only',
@@ -91,12 +94,14 @@ void main(List<String> args) async {
   final ollamaUrl = parsed['ollama-url'] as String;
   final localOnly = parsed['local-only'] as bool;
 
-  // Build allowList: owner + optional bridges + optional extra users.
+  // Build allowList: owner + optional services atSign + optional extra users.
   final allowSet = <String>{ownerAtSign};
 
-  final bridgesAtSign = parsed['bridges-atsign'] as String?;
-  if (bridgesAtSign != null && bridgesAtSign.isNotEmpty) {
-    allowSet.add(bridgesAtSign.trim());
+  // --services-atsign is the current name; --bridges-atsign is a deprecated alias.
+  final servicesAtSign = (parsed['services-atsign'] as String?) ??
+      (parsed['bridges-atsign'] as String?);
+  if (servicesAtSign != null && servicesAtSign.isNotEmpty) {
+    allowSet.add(servicesAtSign.trim());
   }
 
   final allowedUsersRaw = parsed['allowed-users'] as String?;
@@ -190,6 +195,7 @@ void main(List<String> args) async {
   } finally {
     await storageDir.delete(recursive: true);
   }
+  exit(0);
 }
 
 /// Write a self AtKey (sharedBy = agent, sharedWith = agent).

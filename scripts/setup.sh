@@ -33,6 +33,27 @@ ENV_FILE="$PROJECT_ROOT/.env"
 KEYS_DIR="${HOME}/.atsign/keys"
 NON_INTERACTIVE=false
 
+# ── Pre-load existing .env as shell defaults ──────────────────────────────────
+# On re-runs the .env already has the saved values.  Export each KEY=VALUE line
+# so prompt_or_env() uses them as defaults without asking again.
+if [[ -f "$ENV_FILE" ]]; then
+  while IFS= read -r _line || [[ -n "$_line" ]]; do
+    [[ "$_line" =~ ^[[:space:]]*# ]] && continue          # skip comments
+    [[ -z "${_line//[[:space:]]/}" ]] && continue         # skip blank lines
+    _key="${_line%%=*}"
+    _val="${_line#*=}"
+    [[ -z "${!_key:-}" ]] && export "$_key"="$_val" 2>/dev/null || true
+  done < "$ENV_FILE"
+  # Reconstruct full key-file paths from stored dir + basename so the path
+  # prompts also pre-fill correctly.
+  if [[ -z "${AGENT_KEYS_PATH:-}" && -n "${AGENT_KEY_FILE:-}" ]]; then
+    export AGENT_KEYS_PATH="${KEYS_DIR}/${AGENT_KEY_FILE}"
+  fi
+  if [[ -z "${SERVICES_KEYS_PATH:-}" && -n "${SERVICES_KEY_FILE:-}" ]]; then
+    export SERVICES_KEYS_PATH="${KEYS_DIR}/${SERVICES_KEY_FILE}"
+  fi
+fi
+
 # ── Colour helpers ────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -187,7 +208,7 @@ else
 fi
 
 # Ollama model
-OLLAMA_MODEL=$(prompt_or_env OLLAMA_MODEL "Ollama model name" "llama3.2")
+OLLAMA_MODEL=$(prompt_or_env OLLAMA_MODEL "Ollama model name" "qwen2.5:7b")
 
 # Extra allowed users (optional)
 ALLOWED_USERS_EXTRA=$(prompt_or_env ALLOWED_USERS \

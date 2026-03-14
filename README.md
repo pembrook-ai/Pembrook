@@ -279,11 +279,11 @@ dart run agent/bin/init_config.dart \
   --atsign @youragent \
   --key-file ~/.atsign/keys/@youragent_key.atKeys \
   --owner @you \
-  --ollama-model llama3.2 \
+  --ollama-model qwen2.5:7b \
   --allowed-users @you
 
 # 3. Pull the Ollama model:
-docker compose run --rm ollama ollama pull llama3.2
+docker compose run --rm ollama ollama pull qwen2.5:7b
 
 # 4. Start (CPU — works on macOS, Windows, Linux):
 docker compose up -d

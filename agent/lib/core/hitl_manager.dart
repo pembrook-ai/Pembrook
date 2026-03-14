@@ -18,6 +18,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:at_client/at_client.dart';
 import 'package:logging/logging.dart';
 
@@ -27,12 +28,14 @@ class HitlManager {
   final AtClient atClient;
   final Logger _log = Logger('HitlManager');
 
-  static const String _ownerAtSign = '@owner';
+  /// Resolved at construction from OWNER_AT_SIGN env var (set by docker-compose).
+  final String _ownerAtSign;
 
   // Default HITL timeout — after this, action is DENIED (fail-closed)
   static const Duration _defaultTimeout = Duration(minutes: 5);
 
-  HitlManager({required this.atClient});
+  HitlManager({required this.atClient})
+      : _ownerAtSign = Platform.environment['OWNER_AT_SIGN'] ?? '@owner';
 
   /// Request owner approval for a high-risk action.
   ///

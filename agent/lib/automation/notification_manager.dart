@@ -12,6 +12,7 @@
 /// The Flutter app subscribes to "safeclaw\.notify\..*" to surface them.
 
 import 'dart:convert';
+import 'dart:io';
 import 'package:at_client/at_client.dart';
 import 'package:logging/logging.dart';
 
@@ -21,14 +22,16 @@ class NotificationManager {
   final AtClient atClient;
   final Logger _log = Logger('NotificationManager');
 
-  static const String _ownerAtSign = '@owner';
+  /// Resolved at construction from OWNER_AT_SIGN env var (set by docker-compose).
+  final String _ownerAtSign;
   static const String _namespace = 'safeclaw';
   static const int _digestTtlMs = 30 * 24 * 60 * 60 * 1000; // 30 days
 
   // In-memory queue for medium/low urgency alerts.
   final List<Alert> _digestQueue = [];
 
-  NotificationManager({required this.atClient});
+  NotificationManager({required this.atClient})
+      : _ownerAtSign = Platform.environment['OWNER_AT_SIGN'] ?? '@owner';
 
   // ──────────────────────────────────────────────────────────
   //  PUBLIC API

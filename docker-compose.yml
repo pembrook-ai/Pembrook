@@ -10,7 +10,7 @@
 ##
 ##   Option A — use your host's running Ollama (recommended, simplest):
 ##     1. Start Ollama on your host:  ollama serve
-##     2. Pull a model:               ollama pull llama3.2
+##     2. Pull a model:               ollama pull qwen2.5:7b
 ##     3. Start the agent:            docker compose up -d
 ##
 ##   Option B — bundled Ollama (runs Ollama inside Docker, CPU):
@@ -33,7 +33,7 @@
 ##                          set to http://ollama:11434 when using --profile bundled-ollama
 ##     SERVICES_AT_SIGN   — atSign shared by all bridges AND all MCP servers
 ##     SERVICES_KEY_FILE  — services .atKeys filename
-##     OLLAMA_MODEL       — model name (default: llama3.2)
+##     OLLAMA_MODEL       — model name (default: qwen2.5:7b)
 ##
 ## Keys directory: ~/.atsign/keys/  (default; set KEYS_DIR in .env to override)
 ##   All .atKeys files must be in this directory on the host.

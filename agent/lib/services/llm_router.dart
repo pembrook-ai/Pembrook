@@ -33,7 +33,7 @@ class LlmRouter {
   final Logger _log = Logger('LlmRouter');
 
   // Cached settings — refreshed from AtKey periodically
-  String _localModel = 'llama3.2';
+  String _localModel = 'qwen2.5:7b';
   String _externalProvider = 'none';
   double _privacyThreshold = 0.7;
   bool _localOnly = false;
@@ -108,11 +108,19 @@ Score:''';
   }
 
   /// Generate a response, routing to local or external LLM.
+  ///
+  /// When [tools] and [toolExecutor] are provided the local model is called
+  /// with the Ollama native tool-calling API.  On each iteration the model
+  /// may return a tool call; the executor runs it and the result is fed back
+  /// until the model produces a plain-text reply.
   Future<String> generateResponse({
     required String query,
     required List<ConversationMessage> conversationHistory,
     required double privacyScore,
     String? systemOverride,
+    List<Map<String, dynamic>> tools = const [],
+    Future<String> Function(String toolName, Map<String, dynamic> args)?
+        toolExecutor,
   }) async {
     await _maybeRefreshSettings();
 
@@ -126,22 +134,42 @@ Score:''';
         .take(20) // last 20 trusted messages
         .toList();
 
-    final contextText = contextMessages
-        .map((m) =>
-            '${m.role == 'assistant' ? 'Assistant' : 'User'}: ${m.content}')
-        .join('\n');
-
     final systemPrompt = systemOverride ??
         '''You are SafeClaw, a helpful and privacy-focused AI assistant.
 You operate exclusively for your owner. Be concise and accurate.
 Never suggest storing personal data outside the atPlatform.
 Current date: ${DateTime.now().toUtc().toIso8601String()}''';
 
-    final fullPrompt =
-        '$systemPrompt\n\nConversation history:\n$contextText\n\nUser: $query\nAssistant:';
-
     // Privacy routing decision
     final useLocal = _localOnly || privacyScore >= _privacyThreshold;
+
+    if (useLocal && tools.isNotEmpty && toolExecutor != null) {
+      // ── Agentic tool-calling loop (local model + tools) ──────────────────
+      _log.fine('Using tool-calling loop with ${tools.length} tool(s)');
+      final messages = <Map<String, dynamic>>[
+        {'role': 'system', 'content': systemPrompt},
+        for (final m in contextMessages)
+          {
+            'role': m.role == 'assistant' ? 'assistant' : 'user',
+            'content': m.content
+          },
+        {'role': 'user', 'content': query},
+      ];
+      return generateResponseWithTools(
+        messages: messages,
+        tools: tools,
+        toolExecutor: toolExecutor,
+      );
+    }
+
+    // ── Plain text path (no tools, or privacy-routed to external) ─────────
+    final contextText = contextMessages
+        .map((m) =>
+            '${m.role == 'assistant' ? 'Assistant' : 'User'}: ${m.content}')
+        .join('\n');
+
+    final fullPrompt =
+        '$systemPrompt\n\nConversation history:\n$contextText\n\nUser: $query\nAssistant:';
 
     if (useLocal) {
       _log.fine(
@@ -172,47 +200,146 @@ Current date: ${DateTime.now().toUtc().toIso8601String()}''';
 
   // ── Ollama ────────────────────────────────────────────────────────────────
 
-  /// Call the local Ollama API.
+  /// Call the local Ollama /api/chat endpoint.
   ///
-  /// Ollama must be running at [ollamaBaseUrl] (default: http://localhost:11434).
-  /// Start with: docker run -d -p 127.0.0.1:11434:11434 ollama/ollama
-  Future<String> _callOllama({
-    required String prompt,
+  /// Uses the chat format (messages array) which all Ollama models support
+  /// and which enables structured tool calling on capable models
+  /// (qwen2.5:7b, llama3.1:8b, mistral-nemo, etc.)
+  ///
+  /// [tools] — optional list of tool definitions in Ollama/OpenAI schema.
+  /// Returns the raw response message map so callers can inspect tool_calls.
+  Future<Map<String, dynamic>> _callOllamaChat({
+    required List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>> tools = const [],
     int maxTokens = 2048,
     double temperature = 0.7,
   }) async {
     try {
+      final body = <String, dynamic>{
+        'model': _localModel,
+        'messages': messages,
+        'stream': false,
+        'options': {
+          'num_predict': maxTokens,
+          'temperature': temperature,
+        },
+      };
+      if (tools.isNotEmpty) body['tools'] = tools;
+
       final response = await http
           .post(
-            Uri.parse('$ollamaBaseUrl/api/generate'),
+            Uri.parse('$ollamaBaseUrl/api/chat'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'model': _localModel,
-              'prompt': prompt,
-              'stream': false,
-              'options': {
-                'num_predict': maxTokens,
-                'temperature': temperature,
-              },
-            }),
+            body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 120));
 
       if (response.statusCode != 200) {
         _log.warning(
-            'Ollama returned ${response.statusCode}: ${response.body}');
-        return 'I apologize — the local AI model is temporarily unavailable. '
-            'Please ensure Ollama is running: '
-            'docker run -d -p 127.0.0.1:11434:11434 ollama/ollama';
+            'Ollama chat returned ${response.statusCode}: ${response.body}');
+        return {
+          'role': 'assistant',
+          'content':
+              'I apologize — the local AI model is temporarily unavailable.'
+        };
       }
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      return (data['response'] as String? ?? '').trim();
+      return (data['message'] as Map<String, dynamic>?) ??
+          {'role': 'assistant', 'content': ''};
     } catch (e) {
-      _log.severe('Ollama call failed: $e');
-      return 'I apologize — I could not reach the local AI model. '
-          'Error: $e';
+      _log.severe('Ollama chat call failed: $e');
+      return {
+        'role': 'assistant',
+        'content':
+            'I apologize — I could not reach the local AI model. Error: $e'
+      };
     }
+  }
+
+  /// Call the local Ollama API (simple text-in/text-out wrapper).
+  ///
+  /// Uses the chat endpoint internally so the same model weights handle
+  /// both plain chat and tool-calling conversations.
+  Future<String> _callOllama({
+    required String prompt,
+    int maxTokens = 2048,
+    double temperature = 0.7,
+  }) async {
+    final msg = await _callOllamaChat(
+      messages: [
+        {'role': 'user', 'content': prompt}
+      ],
+      maxTokens: maxTokens,
+      temperature: temperature,
+    );
+    return (msg['content'] as String? ?? '').trim();
+  }
+
+  /// Agentic tool-use loop using Ollama's native tool-calling API.
+  ///
+  /// [tools] — list of tool definitions (Ollama/OpenAI schema).
+  /// [toolExecutor] — async callback that executes a tool call and returns
+  ///   the result string.  Called with (toolName, arguments).
+  /// [messages] — initial message history (system + user messages).
+  ///
+  /// The loop runs until the model returns a plain text response (no tool
+  /// calls), or until [maxIterations] is reached (safety guard).
+  Future<String> generateResponseWithTools({
+    required List<Map<String, dynamic>> messages,
+    required List<Map<String, dynamic>> tools,
+    required Future<String> Function(String toolName, Map<String, dynamic> args)
+        toolExecutor,
+    int maxIterations = 5,
+  }) async {
+    final history = List<Map<String, dynamic>>.from(messages);
+
+    for (var iteration = 0; iteration < maxIterations; iteration++) {
+      final assistantMsg = await _callOllamaChat(
+        messages: history,
+        tools: tools,
+      );
+      history.add(assistantMsg);
+
+      final toolCalls = assistantMsg['tool_calls'] as List<dynamic>?;
+
+      // No tool calls → model produced a final text answer.
+      if (toolCalls == null || toolCalls.isEmpty) {
+        return (assistantMsg['content'] as String? ?? '').trim();
+      }
+
+      // Execute each tool call and feed results back.
+      for (final call in toolCalls) {
+        final fn = call['function'] as Map<String, dynamic>;
+        final toolName = fn['name'] as String;
+        final rawArgs = fn['arguments'];
+        final args = (rawArgs is Map)
+            ? Map<String, dynamic>.from(rawArgs)
+            : (rawArgs is String
+                ? (jsonDecode(rawArgs) as Map<String, dynamic>)
+                : <String, dynamic>{});
+
+        _log.info('Tool call: $toolName($args)');
+        String result;
+        try {
+          result = await toolExecutor(toolName, args);
+        } catch (e) {
+          result = 'Error calling $toolName: $e';
+        }
+        _log.fine('Tool result (${result.length} chars)');
+
+        // Ollama expects the tool result as a message with role 'tool'.
+        history.add({
+          'role': 'tool',
+          'content': result,
+        });
+      }
+    }
+
+    // Safety: return whatever the last assistant message contained.
+    final last = history.lastWhere((m) => m['role'] == 'assistant',
+        orElse: () => {'content': ''});
+    return (last['content'] as String? ?? '').trim();
   }
 
   // ── External LLM ──────────────────────────────────────────────────────────

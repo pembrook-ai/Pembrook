@@ -20,10 +20,12 @@
 ///     @owner:safeclaw.stream.$reqId.safeclaw@agent
 ///   The Flutter app subscribes to 'safeclaw\\.stream\\..*' to receive chunks.
 
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:at_client/at_client.dart';
+import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
-import 'package:uuid/uuid.dart';
 
 import '../core/policy_engine.dart';
 import '../core/hitl_manager.dart';
@@ -34,7 +36,6 @@ import '../skills/skill_runner.dart';
 import '../mcp/secure_mcp_client.dart';
 import '../models/conversation.dart';
 import '../models/audit_entry.dart';
-import '../models/policy.dart';
 
 class Orchestrator {
   final AtClient atClient;
@@ -47,7 +48,30 @@ class Orchestrator {
   final SecureMcpClient? mcpClient;
 
   final Logger _log = Logger('Orchestrator');
-  final Uuid _uuid = const Uuid();
+
+  /// Tool definitions offered to the LLM on every chat/task request.
+  /// Models that support tool calling (qwen2.5, llama3.1, mistral-nemo)
+  /// will use these automatically.  Models that don't will ignore them.
+  static const _kTools = [
+    {
+      'type': 'function',
+      'function': {
+        'name': 'fetch_webpage',
+        'description': 'Fetch and read the text content of any webpage or URL. '
+            'Use this to get current news, check a website, or read online content.',
+        'parameters': {
+          'type': 'object',
+          'required': ['url'],
+          'properties': {
+            'url': {
+              'type': 'string',
+              'description': 'The full URL to fetch (e.g. https://cnn.com)',
+            },
+          },
+        },
+      },
+    },
+  ];
 
   Orchestrator({
     required this.atClient,
@@ -113,11 +137,14 @@ class Orchestrator {
       case IntentType.chat:
       case IntentType.task:
       case IntentType.unknown:
-        // Route to LLM (local or hybrid based on privacy score)
+        // Route to LLM — pass web tools so tool-capable models (qwen2.5, llama3.1)
+        // can fetch live content instead of apologising about knowledge cutoffs.
         responseText = await llmRouter.generateResponse(
           query: command,
           conversationHistory: conversation.messages,
           privacyScore: privacyScore,
+          tools: _kTools,
+          toolExecutor: _executeTool,
         );
 
       case IntentType.skillInvocation:
@@ -198,9 +225,10 @@ class Orchestrator {
         userMessage: command,
         assistantMessage: responseText,
         sourceAtSign: fromAtSign,
-        trustLevel: fromAtSign == '@owner'
-            ? TrustLevel.owner
-            : TrustLevel.unverifiedInput,
+        trustLevel:
+            fromAtSign == (Platform.environment['OWNER_AT_SIGN'] ?? '@owner')
+                ? TrustLevel.owner
+                : TrustLevel.unverifiedInput,
       );
     } catch (e) {
       _log.warning('Failed to save exchange to memory: $e');
@@ -287,6 +315,69 @@ class Orchestrator {
           {};
     } catch (_) {
       return {};
+    }
+  }
+
+  /// Tool executor called by the LLM agentic loop.
+  ///
+  /// Each tool in [_kTools] must have a corresponding case here.
+  Future<String> _executeTool(
+      String toolName, Map<String, dynamic> args) async {
+    switch (toolName) {
+      case 'fetch_webpage':
+        final url = args['url'] as String? ?? '';
+        return _fetchWebpage(url);
+      default:
+        return 'Unknown tool: $toolName';
+    }
+  }
+
+  /// Fetch a URL and return its visible text content (HTML stripped).
+  ///
+  /// Caps output at 4 000 characters to keep context windows manageable.
+  Future<String> _fetchWebpage(String url) async {
+    if (url.isEmpty) return 'Error: no URL provided';
+    Uri uri;
+    try {
+      uri = Uri.parse(url);
+      if (!uri.hasScheme) uri = Uri.parse('https://$url');
+    } catch (_) {
+      return 'Error: invalid URL — $url';
+    }
+    try {
+      _log.info('Fetching webpage: $uri');
+      final resp = await http.get(uri, headers: {
+        'User-Agent': 'SafeClaw-Agent/1.0 (fetch_webpage tool)',
+        'Accept': 'text/html,application/xhtml+xml',
+      }).timeout(const Duration(seconds: 15));
+
+      if (resp.statusCode != 200) {
+        return 'Error: HTTP ${resp.statusCode} from $uri';
+      }
+
+      // Strip HTML tags and collapse whitespace.
+      var text = resp.body
+          .replaceAll(RegExp(r'<style[^>]*>.*?</style>', dotAll: true), ' ')
+          .replaceAll(RegExp(r'<script[^>]*>.*?</script>', dotAll: true), ' ')
+          .replaceAll(RegExp(r'<[^>]+>'), ' ')
+          .replaceAll(RegExp(r'&nbsp;'), ' ')
+          .replaceAll(RegExp(r'&amp;'), '&')
+          .replaceAll(RegExp(r'&lt;'), '<')
+          .replaceAll(RegExp(r'&gt;'), '>')
+          .replaceAll(RegExp(r'\s{2,}'), ' ')
+          .trim();
+
+      // Truncate to keep context window healthy.
+      const kMaxChars = 4000;
+      if (text.length > kMaxChars) {
+        text =
+            '${text.substring(0, kMaxChars)}\n[... truncated at $kMaxChars chars]';
+      }
+      return text.isEmpty ? '(page had no readable text)' : text;
+    } on TimeoutException {
+      return 'Error: timed out fetching $uri';
+    } catch (e) {
+      return 'Error fetching $uri: $e';
     }
   }
 }

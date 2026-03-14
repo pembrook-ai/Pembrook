@@ -18,6 +18,7 @@
 /// Phase 2: add content hashing, alerting thresholds, periodic reports.
 
 import 'dart:convert';
+import 'dart:io';
 import 'package:at_client/at_client.dart';
 import 'package:crypto/crypto.dart';
 import 'package:logging/logging.dart';
@@ -30,9 +31,11 @@ class AuditService {
   final Logger _log = Logger('AuditService');
   final Uuid _uuid = const Uuid();
 
-  static const String _ownerAtSign = '@owner';
+  /// Resolved at construction from OWNER_AT_SIGN env var (set by docker-compose).
+  final String _ownerAtSign;
 
-  AuditService({required this.atClient});
+  AuditService({required this.atClient})
+      : _ownerAtSign = Platform.environment['OWNER_AT_SIGN'] ?? '@owner';
 
   /// Compute a SHA-256 hex digest of [text].
   ///

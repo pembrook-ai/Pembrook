@@ -111,7 +111,7 @@ You will be asked:
 | Agent .atKeys file path | `~/.atsign/keys/@myagent_key.atKeys` |
 | Services atSign (optional) | `@myservices` |
 | Services .atKeys file path | `~/.atsign/keys/@myservices_key.atKeys` |
-| Ollama model | `llama3.2` |
+| Ollama model | `qwen2.5:7b` |
 | Extra allowed atSigns | *(leave blank)* |
 
 The wizard will:
@@ -145,7 +145,7 @@ dart run bin/init_config.dart \
   --key-file ~/.atsign/keys/@myagent_key.atKeys \
   --owner @myowner \
   --services-atsign @myservices \
-  --ollama-model llama3.2 \
+  --ollama-model qwen2.5:7b \
   --verbose
 ```
 
@@ -161,7 +161,7 @@ Install Ollama on your machine from [ollama.com](https://ollama.com), then:
 
 ```bash
 # Pull a model:
-ollama pull llama3.2
+ollama pull qwen2.5:7b
 
 # Start Ollama (if not already running as a service):
 ollama serve
@@ -187,7 +187,7 @@ No host install needed, but slower to start and uses more RAM.
 
 ```bash
 # Pull the model first:
-docker compose --profile bundled-ollama run --rm ollama ollama pull llama3.2
+docker compose --profile bundled-ollama run --rm ollama ollama pull qwen2.5:7b
 
 # Start with bundled Ollama (CPU):
 docker compose --profile bundled-ollama up -d
@@ -199,7 +199,7 @@ docker compose --profile bundled-ollama -f docker-compose.yml -f docker-compose.
 > Add `OLLAMA_BASE_URL=http://ollama:11434` to your `.env` when using the bundled option.
 
 > Use a smaller model if RAM is limited:  
-> `ollama pull llama3.2:1b` (~1 GB) or `ollama pull phi4-mini` (~2.5 GB)
+> `ollama pull qwen2.5:3b` (~2 GB) or `ollama pull phi4-mini` (~2.5 GB)
 
 ### Watch the logs:
 
@@ -539,8 +539,8 @@ bash -c 'echo > /dev/tcp/localhost/11434' && echo "up" || echo "not ready"
 docker compose down && docker compose up -d
 ```
 
-If Ollama consistently fails, check available RAM — `llama3.2` (3B) needs ~4 GB free.  
-Switch to a smaller model: edit `OLLAMA_MODEL=llama3.2:1b` in `.env`.
+If Ollama consistently fails, check available RAM — `qwen2.5:7b` (7B) needs ~6 GB free.  
+Switch to a smaller model: edit `OLLAMA_MODEL=qwen2.5:3b` in `.env`.
 
 ### Agent fails to start — "AllowList is empty"
 
@@ -582,7 +582,7 @@ OLLAMA_HOST=0.0.0.0 ollama serve
 
 **Using bundled Ollama:** the model must be pulled first:
 ```bash
-docker compose --profile bundled-ollama run --rm ollama ollama pull llama3.2
+docker compose --profile bundled-ollama run --rm ollama ollama pull qwen2.5:7b
 ```
 Check available models:
 ```bash
