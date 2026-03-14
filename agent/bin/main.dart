@@ -38,11 +38,10 @@ void main(List<String> args) async {
   // Configure structured logging
   Logger.root.level = Level.INFO;
   Logger.root.onRecord.listen((record) {
-    stderr.writeln(
-        '[${record.level.name}] ${record.loggerName}: ${record.message}');
-    if (record.error != null) stderr.writeln('  Error: ${record.error}');
-    if (record.stackTrace != null)
-      stderr.writeln('  Stack: ${record.stackTrace}');
+    var msg = '[${record.level.name}] ${record.loggerName}: ${record.message}';
+    if (record.error != null) msg += '\n  Error: ${record.error}';
+    if (record.stackTrace != null) msg += '\n  Stack: ${record.stackTrace}';
+    stderr.writeln(msg);
   });
 
   final log = Logger('SafeClawAgent');
@@ -75,6 +74,10 @@ void main(List<String> args) async {
         '--namespace',
         kNamespace
       ],
+      // Skip initial atServer sync — agent reads AtKeys directly via
+      // useRemoteAtServer=true, so local Hive sync is not needed and would
+      // block startup for minutes on heavily-used atSigns.
+      if (!args.contains('--never-sync')) '--never-sync',
     ];
     cliBase = await CLIBase.fromCommandLineArgs(
       augmentedArgs,
@@ -98,18 +101,27 @@ Ensure you have:
   }
 
   final atClient = cliBase.atClient;
+  // CLIBase internally sets Logger.root.level = Level.SHOUT to suppress its
+  // own verbose output — restore our desired level after it returns.
+  Logger.root.level = Level.INFO;
   log.info('Authenticated as ${atClient.getCurrentAtSign()}');
 
   // ── Service Wiring ────────────────────────────────────────────────────────
   // All services are stateless classes that read/write AtKeys.
   // They do NOT use local files — all state flows through the atServer.
 
+  // Read Ollama URL from env — allows docker-compose to inject
+  // http://host.docker.internal:11434 (or http://ollama:11434 for bundled mode).
+  final ollamaBaseUrl =
+      Platform.environment['OLLAMA_BASE_URL'] ?? 'http://localhost:11434';
+  log.info('Ollama base URL: $ollamaBaseUrl');
+
   final auditService = AuditService(atClient: atClient);
-  final sanitizer = QuerySanitizer(ollamaBaseUrl: 'http://localhost:11434');
+  final sanitizer = QuerySanitizer(ollamaBaseUrl: ollamaBaseUrl);
   final llmRouter = LlmRouter(
     atClient: atClient,
     sanitizer: sanitizer,
-    ollamaBaseUrl: 'http://localhost:11434',
+    ollamaBaseUrl: ollamaBaseUrl,
   );
   // Pass llmRouter to MemoryService so summarizeOldConversations() works.
   final memoryService = MemoryService(atClient: atClient, llmRouter: llmRouter);
@@ -198,7 +210,9 @@ Ensure you have:
   heartbeat.start();
 
   log.info('SafeClaw agent is running. Listening for commands via atPlatform.');
-  log.info('Owner atSign: @owner (replace with your actual owner atSign)');
+  final ownerForLog = Platform.environment['OWNER_AT_SIGN'] ??
+      Platform.environment['ALLOWED_USERS'] ?? '(see ALLOWED_USERS env var)';
+  log.info('Agent: ${atClient.getCurrentAtSign()} — allowed senders: $ownerForLog');
 
   // Keep process alive — gateway handles all work via notification subscriptions
   await Future.delayed(Duration(days: 365 * 10));
