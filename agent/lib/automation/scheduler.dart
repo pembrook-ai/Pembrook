@@ -66,12 +66,14 @@ class TaskScheduler {
   // ──────────────────────────────────────────────────────────
 
   Future<TaskDefinition> scheduleTask(TaskDefinition task) async {
-    final atKey = _taskKey(task.taskId);
+    // 1. Write task payload.
     await atClient.put(
-      atKey,
+      _taskKey(task.taskId),
       jsonEncode(task.toJson()),
       putRequestOptions: PutRequestOptions()..useRemoteAtServer = true,
     );
+    // 2. Add ID to the index so listTasks can find it without a key scan.
+    await _addToIndex(task.taskId);
     _log.info(
         'Task scheduled: ${task.taskId} (${task.cronExpression ?? task.runAt})');
     return task;
@@ -79,21 +81,27 @@ class TaskScheduler {
 
   Future<void> cancelTask(String taskId) async {
     await atClient.delete(_taskKey(taskId));
+    await _removeFromIndex(taskId);
     _log.info('Task cancelled: $taskId');
   }
 
   Future<List<TaskDefinition>> listTasks() async {
     try {
-      final keys = await atClient.getKeys(regex: r'^schedule\.');
+      final ids = await _readIndex();
+      if (ids.isEmpty) return [];
       final tasks = <TaskDefinition>[];
-      for (final keyStr in keys) {
+      for (final taskId in ids) {
         try {
-          final atKey = AtKey.fromString(keyStr);
-          final v = await atClient.get(atKey,
-              getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
+          final v = await atClient.get(
+            _taskKey(taskId),
+            getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
+          );
           if (v.value != null) {
             tasks.add(TaskDefinition.fromJson(
                 jsonDecode(v.value as String) as Map<String, dynamic>));
+          } else {
+            // Payload missing — remove stale index entry.
+            await _removeFromIndex(taskId);
           }
         } catch (_) {}
       }
@@ -101,6 +109,68 @@ class TaskScheduler {
     } catch (e) {
       _log.warning('listTasks error: $e');
       return [];
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  //  INDEX HELPERS
+  //
+  //  A single AtKey 'schedule._index_' stores a JSON array of task IDs.
+  //  This avoids relying on atClient.getKeys() which only scans the local
+  //  secondary cache and misses keys written with useRemoteAtServer = true.
+  // ──────────────────────────────────────────────────────────
+
+  AtKey get _indexKey => AtKey()
+    ..key = 'schedule._index_'
+    ..namespace = _namespace
+    ..metadata = (Metadata()
+      ..ttl = 0
+      ..ttr = -1);
+
+  Future<List<String>> _readIndex() async {
+    try {
+      final v = await atClient.get(
+        _indexKey,
+        getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
+      );
+      if (v.value == null) {
+        _log.fine('_readIndex: no index key yet — returning empty list');
+        return [];
+      }
+      final ids = List<String>.from(jsonDecode(v.value as String) as List);
+      _log.fine('_readIndex: found ${ids.length} task id(s): $ids');
+      return ids;
+    } catch (e) {
+      _log.warning('_readIndex error: $e');
+      return [];
+    }
+  }
+
+  Future<void> _writeIndex(List<String> ids) async {
+    try {
+      await atClient.put(
+        _indexKey,
+        jsonEncode(ids),
+        putRequestOptions: PutRequestOptions()..useRemoteAtServer = true,
+      );
+      _log.info('_writeIndex: saved ${ids.length} task id(s): $ids');
+    } catch (e) {
+      _log.warning('_writeIndex error: $e');
+    }
+  }
+
+  Future<void> _addToIndex(String taskId) async {
+    final ids = await _readIndex();
+    if (!ids.contains(taskId)) {
+      ids.add(taskId);
+      await _writeIndex(ids);
+    }
+  }
+
+  Future<void> _removeFromIndex(String taskId) async {
+    final ids = await _readIndex();
+    if (ids.remove(taskId)) {
+      await _writeIndex(ids);
     }
   }
 
@@ -224,7 +294,6 @@ class TaskScheduler {
     final atKey = AtKey()
       ..key = 'taskrun.$taskId.$ts'
       ..namespace = _namespace
-      ..sharedWith = atClient.getCurrentAtSign()
       ..metadata = (Metadata()
         ..ttl = _runHistoryTtlMs
         ..ttr = -1);
@@ -282,7 +351,6 @@ class TaskScheduler {
   AtKey _taskKey(String taskId) => AtKey()
     ..key = 'schedule.$taskId'
     ..namespace = _namespace
-    ..sharedWith = atClient.getCurrentAtSign()
     ..metadata = (Metadata()
       ..ttl = 0
       ..ttr = -1);

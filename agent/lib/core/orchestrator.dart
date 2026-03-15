@@ -147,6 +147,41 @@ class Orchestrator {
         },
       },
     },
+    {
+      'type': 'function',
+      'function': {
+        'name': 'list_tasks',
+        'description':
+            'List all currently scheduled background tasks. Use this when the '
+                'user asks "what tasks are running?", "what have you scheduled?", '
+                '"show me my reminders", or similar.',
+        'parameters': {
+          'type': 'object',
+          'properties': {},
+        },
+      },
+    },
+    {
+      'type': 'function',
+      'function': {
+        'name': 'cancel_task',
+        'description':
+            'Cancel and remove a scheduled background task by its ID. '
+                'Use this when the user says "stop the CNN headlines task", '
+                '"cancel my water reminder", "remove task X", or similar. '
+                'Call list_tasks first if you do not already know the task ID.',
+        'parameters': {
+          'type': 'object',
+          'required': ['taskId'],
+          'properties': {
+            'taskId': {
+              'type': 'string',
+              'description': 'The task ID to cancel, e.g. "task_1741234567890"',
+            },
+          },
+        },
+      },
+    },
   ];
 
   Orchestrator({
@@ -428,6 +463,10 @@ class Orchestrator {
         return _fetchWebpage(url);
       case 'schedule_task':
         return _toolScheduleTask(args);
+      case 'cancel_task':
+        return _toolCancelTask(args);
+      case 'list_tasks':
+        return _toolListTasks();
       case 'notify_owner':
         return _toolNotifyOwner(args);
       default:
@@ -479,6 +518,40 @@ class Orchestrator {
     return 'Task scheduled — I will run "$description" $scheduleDesc and '
         'push the results to you automatically. '
         'Task ID: ${task.taskId}';
+  }
+
+  /// List all currently scheduled tasks.
+  Future<String> _toolListTasks() async {
+    if (taskScheduler == null) {
+      return 'Scheduling is not available — TaskScheduler not wired.';
+    }
+    final tasks = await taskScheduler!.listTasks();
+    if (tasks.isEmpty) {
+      return 'No tasks are currently scheduled.';
+    }
+    final lines = <String>['Currently scheduled tasks (${tasks.length}):'];
+    for (final t in tasks) {
+      final schedule = t.cronExpression != null
+          ? 'cron: ${t.cronExpression}'
+          : t.runAt != null
+              ? 'runs at: ${t.runAt!.toIso8601String()}'
+              : 'unknown schedule';
+      final description = t.parameters['description'] as String? ?? t.taskId;
+      lines.add('- ${t.taskId}: "$description" ($schedule)');
+    }
+    return lines.join('\n');
+  }
+
+  /// Cancel a scheduled task by ID.
+  Future<String> _toolCancelTask(Map<String, dynamic> args) async {
+    if (taskScheduler == null) {
+      return 'Scheduling is not available — TaskScheduler not wired.';
+    }
+    final taskId = args['taskId'] as String? ?? '';
+    if (taskId.isEmpty) return 'Error: taskId is required.';
+    await taskScheduler!.cancelTask(taskId);
+    _log.info('[cancel_task] Cancelled task $taskId');
+    return 'Task "$taskId" has been cancelled and will no longer run.';
   }
 
   /// Send an immediate push notification to the owner.

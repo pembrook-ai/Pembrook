@@ -150,8 +150,19 @@ Current date: ${DateTime.now().toUtc().toIso8601String()}''';
       // text to an external LLM.  Never skip tools for low-privacy queries.
       _log.info(
           'Using tool-calling loop (${tools.length} tool(s), model=$_localModel)');
+
+      // Append strict tool-use rules so the model doesn't answer from memory.
+      final toolSystemPrompt = '''$systemPrompt
+
+TOOL USE RULES — follow these exactly, every time:
+- To create any recurring or scheduled action: ALWAYS call schedule_task. Never just say "I'll set that up" without calling it.
+- To list scheduled tasks: ALWAYS call list_tasks. Never say "no tasks" without calling it first.
+- To stop or remove a task: ALWAYS call list_tasks then cancel_task. Never say "cancelled" without calling cancel_task.
+- To fetch live web content: ALWAYS call fetch_webpage. Never guess at current news, weather, prices, etc.
+- Do NOT answer task management questions from memory or conversation history. Always use the appropriate tool.''';
+
       final messages = <Map<String, dynamic>>[
-        {'role': 'system', 'content': systemPrompt},
+        {'role': 'system', 'content': toolSystemPrompt},
         for (final m in contextMessages)
           {
             'role': m.role == 'assistant' ? 'assistant' : 'user',
