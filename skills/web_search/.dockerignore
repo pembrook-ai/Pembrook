@@ -1,0 +1,5 @@
+# Exclude host-generated Dart tool files that have host-local paths.
+# Docker will run 'dart pub get' to regenerate these with container paths.
+.dart_tool/
+.packages
+build/

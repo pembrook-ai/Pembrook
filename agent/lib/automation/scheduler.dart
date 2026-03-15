@@ -14,15 +14,18 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:at_client/at_client.dart';
 import 'package:cron/cron.dart';
 import 'package:logging/logging.dart';
-import 'package:uuid/uuid.dart';
 
 import '../models/task.dart';
 import '../core/policy_engine.dart';
 import '../core/hitl_manager.dart';
 import '../services/audit_service.dart';
+import '../services/llm_router.dart';
+import '../skills/skill_runner.dart';
+import '../automation/notification_manager.dart';
 import '../models/audit_entry.dart';
 import '../models/policy.dart';
 
@@ -31,18 +34,32 @@ class TaskScheduler {
   final PolicyEngine policyEngine;
   final HitlManager hitlManager;
   final AuditService auditService;
+
+  /// Optional dependencies wired after all services are constructed.
+  final SkillRunner? skillRunner;
+  final NotificationManager? notificationManager;
+  final LlmRouter? llmRouter;
+
   final Logger _log = Logger('TaskScheduler');
-  final Uuid _uuid = const Uuid();
 
   static const String _namespace = 'safeclaw';
   static const int _runHistoryTtlMs = 90 * 24 * 60 * 60 * 1000; // 90 days
+
+  /// Push key TTL: 7 days for task result notifications.
+  static const int _pushTtlMs = 7 * 24 * 60 * 60 * 1000;
+
+  /// Resolved from OWNER_AT_SIGN env var.
+  late final String _ownerAtSign;
 
   TaskScheduler({
     required this.atClient,
     required this.policyEngine,
     required this.hitlManager,
     required this.auditService,
-  });
+    this.skillRunner,
+    this.notificationManager,
+    this.llmRouter,
+  }) : _ownerAtSign = Platform.environment['OWNER_AT_SIGN'] ?? '@owner';
 
   // ──────────────────────────────────────────────────────────
   //  CRUD
@@ -146,8 +163,51 @@ class TaskScheduler {
     }
 
     _log.info('Executing task: ${task.taskId}');
-    // Phase 4: wire to SkillRunner / SecureMcpClient based on task.skillToInvoke
-    // For now, record a stub run.
+
+    // ── Execute ────────────────────────────────────────────────────────────
+    String? result;
+    try {
+      if (task.skillToInvoke != null && skillRunner != null) {
+        // Run via a registered skill.
+        final payload = Map<String, dynamic>.from(task.parameters);
+        final runResult = await skillRunner!.invoke(
+          skillId: task.skillToInvoke!,
+          initiatorAtSign: task.ownerAtSign,
+          payload: payload,
+          conversationId: 'scheduled',
+        );
+        if (runResult.success && runResult.result != null) {
+          result = runResult.result.toString();
+        } else {
+          result = 'Skill "${task.skillToInvoke}" failed: '
+              '${runResult.error ?? runResult.denialReason ?? "unknown error"}';
+        }
+      } else if (llmRouter != null) {
+        // Run via the local LLM (privacy score 1.0 → always local).
+        final command = task.parameters['command'] as String? ??
+            task.parameters['description'] as String? ??
+            '';
+        if (command.isNotEmpty) {
+          result = await llmRouter!.generateResponse(
+            query: command,
+            conversationHistory: const [],
+            privacyScore: 1.0,
+          );
+        }
+      }
+    } catch (e) {
+      result = 'Task execution error: $e';
+      _log.warning('Task ${task.taskId} execution error: $e');
+    }
+
+    // ── Push result to owner ───────────────────────────────────────────────
+    if (result != null) {
+      final description =
+          task.parameters['description'] as String? ?? task.taskId;
+      await _pushResultToOwner(task.taskId, description, result);
+    }
+
+    // ── Phase 4: stub run.  Remove when code above replaces all paths. ─────
     await _logRun(task.taskId, 'executed', null);
 
     await auditService.log(AuditEntry(
@@ -173,6 +233,46 @@ class TaskScheduler {
       jsonEncode({'status': status, 'notes': notes, 'ts': ts}),
       putRequestOptions: PutRequestOptions()..useRemoteAtServer = true,
     );
+  }
+
+  // ──────────────────────────────────────────────────────────
+  //  PUSH RESULT TO OWNER
+  // ──────────────────────────────────────────────────────────
+
+  /// Send the task execution result as a push notification to @owner.
+  ///
+  /// The app subscribes to 'safeclaw\.push\..*' and surfaces these as
+  /// proactive messages in the chat screen.
+  Future<void> _pushResultToOwner(
+    String taskId,
+    String description,
+    String result,
+  ) async {
+    try {
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final pushKey = AtKey()
+        ..key = 'safeclaw.push.$taskId.$ts'
+        ..namespace = _namespace
+        ..sharedWith = _ownerAtSign
+        ..metadata = (Metadata()
+          ..ttl = _pushTtlMs
+          ..ttr = -1);
+
+      await atClient.notificationService.notify(
+        NotificationParams.forUpdate(
+          pushKey,
+          value: jsonEncode({
+            'taskId': taskId,
+            'description': description,
+            'result': result,
+            'ts': ts,
+          }),
+        ),
+      );
+      _log.info('Pushed result for task $taskId to $_ownerAtSign');
+    } catch (e) {
+      _log.warning('Failed to push result for task $taskId: $e');
+    }
   }
 
   // ──────────────────────────────────────────────────────────

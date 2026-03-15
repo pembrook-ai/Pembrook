@@ -40,10 +40,26 @@ class RpcCallResult {
   });
 }
 
+/// A proactive push message sent by the agent from a scheduled task.
+class PushMessage {
+  final String taskId;
+  final String description;
+  final String result;
+  final DateTime ts;
+
+  const PushMessage({
+    required this.taskId,
+    required this.description,
+    required this.result,
+    required this.ts,
+  });
+}
+
 class RpcService extends ChangeNotifier {
   AtClient? _atClient;
   AtRpcClient? _rpcClient;
   StreamSubscription<AtNotification>? _streamSubscription;
+  StreamSubscription<AtNotification>? _pushSubscription;
 
   String _agentAtSign = '@agent';
 
@@ -58,7 +74,39 @@ class RpcService extends ChangeNotifier {
   final StreamController<String> _streamChunkController =
       StreamController<String>.broadcast();
 
+  // Stream of proactive push messages from scheduled tasks.
+  final StreamController<PushMessage> _pushController =
+      StreamController<PushMessage>.broadcast();
+
+  // Buffer that accumulates push messages while ChatScreen is not mounted.
+  // Drained by ChatScreen.didChangeDependencies() via listenToPushMessages().
+  final List<PushMessage> _pushBuffer = [];
+
+  // True while ChatScreen has an active push subscription.
+  // Suppresses buffering so messages aren't shown twice on remount.
+  bool _hasPushListener = false;
+
   Stream<String> get streamChunks => _streamChunkController.stream;
+
+  /// Subscribe to push messages, draining any that arrived while away.
+  ///
+  /// Call from ChatScreen.didChangeDependencies().
+  /// Call releasePushListener() from ChatScreen.dispose() BEFORE cancelling.
+  StreamSubscription<PushMessage> listenToPushMessages(
+      void Function(PushMessage) onMessage) {
+    _hasPushListener = true;
+    // Deliver messages that arrived while the screen was unmounted.
+    final buffered = List<PushMessage>.from(_pushBuffer);
+    _pushBuffer.clear();
+    for (final msg in buffered) {
+      onMessage(msg);
+    }
+    return _pushController.stream.listen(onMessage);
+  }
+
+  /// Call from ChatScreen.dispose() to re-enable buffering.
+  void releasePushListener() => _hasPushListener = false;
+
   bool get isAuthenticated => _atClient != null;
   String get agentAtSign => _agentAtSign;
 
@@ -174,6 +222,31 @@ class RpcService extends ChangeNotifier {
         if (chunk.isNotEmpty) _streamChunkController.add(chunk);
       } catch (_) {}
     });
+
+    // Also subscribe to scheduled-task push messages from the agent.
+    _pushSubscription?.cancel();
+    _pushSubscription = _atClient!.notificationService
+        .subscribe(regex: r'safeclaw\.push\..*', shouldDecrypt: true)
+        .listen((notification) {
+      if (notification.value == null) return;
+      try {
+        final map = _tryDecode(notification.value!);
+        if (map == null) return;
+        final push = PushMessage(
+          taskId: map['taskId'] as String? ?? '',
+          description: map['description'] as String? ?? 'Scheduled task result',
+          result: map['result'] as String? ?? '',
+          ts: DateTime.fromMillisecondsSinceEpoch(
+              (map['ts'] as num?)?.toInt() ??
+                  DateTime.now().millisecondsSinceEpoch),
+        );
+        if (push.result.isNotEmpty) {
+          // Buffer only when ChatScreen is not actively listening.
+          if (!_hasPushListener) _pushBuffer.add(push);
+          _pushController.add(push);
+        }
+      } catch (_) {}
+    });
   }
 
   Map<String, dynamic>? _tryDecode(String s) {
@@ -207,7 +280,9 @@ class RpcService extends ChangeNotifier {
   @override
   void dispose() {
     _streamSubscription?.cancel();
+    _pushSubscription?.cancel();
     _streamChunkController.close();
+    _pushController.close();
     super.dispose();
   }
 }

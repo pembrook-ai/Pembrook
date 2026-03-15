@@ -36,6 +36,9 @@ import '../skills/skill_runner.dart';
 import '../mcp/secure_mcp_client.dart';
 import '../models/conversation.dart';
 import '../models/audit_entry.dart';
+import '../automation/scheduler.dart';
+import '../automation/notification_manager.dart';
+import '../models/task.dart';
 
 class Orchestrator {
   final AtClient atClient;
@@ -46,6 +49,8 @@ class Orchestrator {
   final HitlManager hitlManager;
   final SkillRunner? skillRunner;
   final SecureMcpClient? mcpClient;
+  final TaskScheduler? taskScheduler;
+  final NotificationManager? notificationManager;
 
   final Logger _log = Logger('Orchestrator');
 
@@ -71,6 +76,77 @@ class Orchestrator {
         },
       },
     },
+    {
+      'type': 'function',
+      'function': {
+        'name': 'schedule_task',
+        'description': 'Schedule a recurring or one-shot background task. Use this whenever '
+            'the user asks you to monitor something, send periodic updates, '
+            'remind them, or automate a repeated action. The task runs in the '
+            'background and results are pushed directly to the owner as messages. '
+            'Examples: "get me CNN headlines every 30 minutes", '
+            '"remind me to drink water every hour", "check weather every morning".',
+        'parameters': {
+          'type': 'object',
+          'required': ['description', 'command'],
+          'properties': {
+            'description': {
+              'type': 'string',
+              'description':
+                  'Human-readable label for the task, e.g. "CNN headlines every 30 min"',
+            },
+            'command': {
+              'type': 'string',
+              'description':
+                  'The instruction to run at each tick, e.g. "Fetch the latest CNN headlines and summarise them in 3 bullet points"',
+            },
+            'cronExpression': {
+              'type': 'string',
+              'description': 'Cron expression for recurring tasks. Examples: '
+                  '"*/30 * * * *" (every 30 min), "0 8 * * *" (daily 8am). '
+                  'Omit for one-shot tasks.',
+            },
+            'runAt': {
+              'type': 'string',
+              'description':
+                  'ISO-8601 datetime for a one-shot task, e.g. "2026-03-14T09:00:00Z". '
+                      'Omit when using cronExpression.',
+            },
+            'skillToInvoke': {
+              'type': 'string',
+              'description':
+                  'Optional skill ID to use (e.g. "web_search", "email", "calendar"). '
+                      'If omitted the task is handled by the LLM directly.',
+            },
+          },
+        },
+      },
+    },
+    {
+      'type': 'function',
+      'function': {
+        'name': 'notify_owner',
+        'description':
+            'Send an immediate push message to the owner. Use this to proactively '
+                'inform the user about something without them asking — e.g. after '
+                'completing an action, detecting an event, or when you have important info.',
+        'parameters': {
+          'type': 'object',
+          'required': ['message'],
+          'properties': {
+            'message': {
+              'type': 'string',
+              'description': 'The message text to deliver to the owner',
+            },
+            'urgency': {
+              'type': 'string',
+              'enum': ['low', 'medium', 'high', 'critical'],
+              'description': 'Urgency level (default: medium)',
+            },
+          },
+        },
+      },
+    },
   ];
 
   Orchestrator({
@@ -82,6 +158,8 @@ class Orchestrator {
     required this.hitlManager,
     this.skillRunner,
     this.mcpClient,
+    this.taskScheduler,
+    this.notificationManager,
   });
 
   /// Process a single request from the Gateway.
@@ -204,8 +282,15 @@ class Orchestrator {
         }
 
       case IntentType.automation:
-        // Automation requests are persisted as tasks and executed by the scheduler.
-        responseText = 'Automation request received and queued for scheduling.';
+        // Route through LLM with full tool set so the model can call
+        // schedule_task or notify_owner as appropriate.
+        responseText = await llmRouter.generateResponse(
+          query: command,
+          conversationHistory: conversation.messages,
+          privacyScore: privacyScore,
+          tools: _kTools,
+          toolExecutor: _executeTool,
+        );
 
       case IntentType.multiStepPlan:
         // Decompose and execute each step via LLM
@@ -341,10 +426,84 @@ class Orchestrator {
       case 'fetch_webpage':
         final url = args['url'] as String? ?? '';
         return _fetchWebpage(url);
+      case 'schedule_task':
+        return _toolScheduleTask(args);
+      case 'notify_owner':
+        return _toolNotifyOwner(args);
       default:
         _log.warning('[TOOL] Unknown tool requested: $toolName');
         return 'Unknown tool: $toolName';
     }
+  }
+
+  /// Create a scheduled / recurring task via the TaskScheduler.
+  Future<String> _toolScheduleTask(Map<String, dynamic> args) async {
+    if (taskScheduler == null) {
+      return 'Scheduling is not available — TaskScheduler not wired.';
+    }
+    final description = args['description'] as String? ?? 'Scheduled task';
+    final command = args['command'] as String? ?? description;
+    final cron = args['cronExpression'] as String?;
+    final runAtStr = args['runAt'] as String?;
+    final skillId = args['skillToInvoke'] as String?;
+
+    if (cron == null && runAtStr == null) {
+      return 'Error: provide either cronExpression (recurring) or runAt (one-shot).';
+    }
+
+    DateTime? runAt;
+    if (runAtStr != null) {
+      runAt = DateTime.tryParse(runAtStr);
+      if (runAt == null) {
+        return 'Error: invalid runAt format — use ISO-8601 (e.g. 2026-03-14T09:00:00Z).';
+      }
+    }
+
+    final task = TaskDefinition(
+      taskId: 'task_${DateTime.now().millisecondsSinceEpoch}',
+      cronExpression: cron,
+      runAt: runAt,
+      skillToInvoke: skillId,
+      parameters: {'command': command, 'description': description},
+      hitlRequired: false,
+      ownerAtSign: Platform.environment['OWNER_AT_SIGN'] ?? '@owner',
+      createdAt: DateTime.now().toUtc(),
+    );
+
+    await taskScheduler!.scheduleTask(task);
+
+    final scheduleDesc =
+        cron != null ? 'every $cron (cron)' : 'once at $runAtStr';
+    _log.info(
+        '[schedule_task] Created task ${task.taskId}: $description ($scheduleDesc)');
+    return 'Task scheduled — I will run "$description" $scheduleDesc and '
+        'push the results to you automatically. '
+        'Task ID: ${task.taskId}';
+  }
+
+  /// Send an immediate push notification to the owner.
+  Future<String> _toolNotifyOwner(Map<String, dynamic> args) async {
+    if (notificationManager == null) {
+      return 'Push notifications not available — NotificationManager not wired.';
+    }
+    final message = args['message'] as String? ?? '';
+    if (message.isEmpty) return 'Error: message is required.';
+
+    final urgencyStr = args['urgency'] as String? ?? 'medium';
+    final urgency = NotificationUrgency.values.firstWhere(
+      (u) => u.name == urgencyStr,
+      orElse: () => NotificationUrgency.medium,
+    );
+
+    await notificationManager!.sendAlert(Alert(
+      alertId: 'push_${DateTime.now().millisecondsSinceEpoch}',
+      title: 'Agent',
+      message: message,
+      urgency: urgency,
+      forceImmediate: true,
+    ));
+
+    return 'Message pushed to owner.';
   }
 
   /// Fetch a URL and return its visible text content (HTML stripped).

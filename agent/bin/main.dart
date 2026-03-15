@@ -12,7 +12,6 @@
 import 'dart:io';
 
 import 'package:at_cli_commons/at_cli_commons.dart';
-import 'package:at_client/at_client.dart';
 import 'package:logging/logging.dart';
 
 import 'package:safeclaw_agent/core/orchestrator.dart';
@@ -155,6 +154,17 @@ Ensure you have:
   final atPlatformService =
       AtPlatformService(atClient: atClient, namespace: kNamespace);
 
+  // Construct scheduler first so orchestrator can receive it.
+  final scheduler = TaskScheduler(
+    atClient: atClient,
+    policyEngine: policyEngine,
+    hitlManager: hitlManager,
+    auditService: auditService,
+    skillRunner: skillRunner,
+    notificationManager: notificationManager,
+    llmRouter: llmRouter,
+  );
+
   final orchestrator = Orchestrator(
     atClient: atClient,
     llmRouter: llmRouter,
@@ -164,13 +174,8 @@ Ensure you have:
     hitlManager: hitlManager,
     skillRunner: skillRunner,
     mcpClient: mcpClient,
-  );
-
-  final scheduler = TaskScheduler(
-    atClient: atClient,
-    policyEngine: policyEngine,
-    hitlManager: hitlManager,
-    auditService: auditService,
+    taskScheduler: scheduler,
+    notificationManager: notificationManager,
   );
 
   final heartbeat = HeartbeatEngine(

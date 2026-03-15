@@ -60,10 +60,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // Cached reference so we can safely call it from dispose().
   ConversationStore? _store;
+  RpcService? _rpcService;
 
   bool _isLoading = false;
   String _streamBuffer = '';
   StreamSubscription<String>? _streamSub;
+  StreamSubscription<PushMessage>? _pushSub;
 
   static const String _welcomeText =
       'Hello! I\'m your SafeClaw AI assistant. All our communication is '
@@ -85,9 +87,26 @@ class _ChatScreenState extends State<ChatScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _store = context.read<ConversationStore>();
+    _rpcService = context.read<RpcService>();
     _streamSub?.cancel();
-    _streamSub = context.read<RpcService>().streamChunks.listen((chunk) {
+    _streamSub = _rpcService!.streamChunks.listen((chunk) {
       setState(() => _streamBuffer += chunk);
+      _scrollToBottom();
+    });
+    // Subscribe to proactive push messages from scheduled tasks.
+    // listenToPushMessages() also drains any messages that arrived while
+    // this screen was unmounted (e.g. user was on Settings/Skills screen).
+    _pushSub?.cancel();
+    _pushSub = _rpcService!.listenToPushMessages((push) {
+      final header = '**\u23f0 ${push.description}**\n\n';
+      if (!mounted) return;
+      setState(() {
+        _messages.add(_Message(
+          text: '$header${push.result}',
+          isUser: false,
+          timestamp: push.ts,
+        ));
+      });
       _scrollToBottom();
     });
   }
@@ -99,6 +118,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
     _streamSub?.cancel();
+    // Release before cancel so RpcService re-enables buffering immediately.
+    _rpcService?.releasePushListener();
+    _pushSub?.cancel();
     super.dispose();
   }
 
