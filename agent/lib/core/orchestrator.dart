@@ -253,6 +253,54 @@ class Orchestrator {
     // Per-request streaming chunk counter shared across all branches.
     var _chunkIndex = 0;
 
+    // ── Token batching ────────────────────────────────────────────────────
+    // Each sendStreamChunk() is an at-platform notification (encrypted,
+    // atServer round-trip). Sending one per token is very slow.
+    // Buffer tokens and flush every ~80 chars OR every 400 ms instead.
+    //
+    // Two key design decisions:
+    //   1. _lastFlush is reset AFTER await sendStreamChunk(), not before.
+    //      If reset before, notify() takes ~300ms so by the time it returns
+    //      the elapsed for the next token is already 300ms — causing every
+    //      word to flush immediately (the bug this fixes).
+    //   2. Time-based flushing only activates after the first char-based
+    //      flush. The LLM startup delay (500ms+) would otherwise immediately
+    //      trigger a time-based flush on the very first token.
+    const _flushChars = 80;
+    const _flushMs = 400;
+    final _tokenBuf = <String>[];
+    var _lastFlush = DateTime.now();
+    var _hasFlushed = false;
+
+    Future<void> _flushTokenBuf() async {
+      if (_tokenBuf.isEmpty) return;
+      final text = _tokenBuf.join();
+      _tokenBuf.clear();
+      await sendStreamChunk(
+        ownerAtSign: fromAtSign,
+        reqId: reqId,
+        chunkIndex: _chunkIndex++,
+        chunk: text,
+        conversationId: conversationId,
+      );
+      // Reset timer AFTER delivery so the next batch gets a full _flushMs
+      // window before time-based flushing kicks in again.
+      _lastFlush = DateTime.now();
+      _hasFlushed = true;
+    }
+
+    Future<void> _batchChunk(String chunk) async {
+      _tokenBuf.add(chunk);
+      final bufLen = _tokenBuf.fold<int>(0, (s, t) => s + t.length);
+      final elapsed = DateTime.now().difference(_lastFlush).inMilliseconds;
+      // Char threshold: always active.
+      // Time threshold: only active after the first flush so LLM startup
+      // delay doesn't immediately flush every first token alone.
+      if (bufLen >= _flushChars || (_hasFlushed && elapsed >= _flushMs)) {
+        await _flushTokenBuf();
+      }
+    }
+
     switch (intentType) {
       case IntentType.chat:
       case IntentType.task:
@@ -265,14 +313,9 @@ class Orchestrator {
           privacyScore: privacyScore,
           tools: _kTools,
           toolExecutor: _executeTool,
-          onChunk: (chunk) => sendStreamChunk(
-            ownerAtSign: fromAtSign,
-            reqId: reqId,
-            chunkIndex: _chunkIndex++,
-            chunk: chunk,
-            conversationId: conversationId,
-          ),
+          onChunk: _batchChunk,
         );
+        await _flushTokenBuf(); // drain any buffered remainder
 
       case IntentType.skillInvocation:
         if (skillRunner == null) {
@@ -335,14 +378,9 @@ class Orchestrator {
           privacyScore: privacyScore,
           tools: _kTools,
           toolExecutor: _executeTool,
-          onChunk: (chunk) => sendStreamChunk(
-            ownerAtSign: fromAtSign,
-            reqId: reqId,
-            chunkIndex: _chunkIndex++,
-            chunk: chunk,
-            conversationId: conversationId,
-          ),
+          onChunk: _batchChunk,
         );
+        await _flushTokenBuf();
 
       case IntentType.multiStepPlan:
         // Decompose and execute each step via LLM
@@ -352,14 +390,9 @@ class Orchestrator {
           privacyScore: privacyScore,
           systemOverride: 'Break this request into steps and execute each one. '
               'Show your reasoning.',
-          onChunk: (chunk) => sendStreamChunk(
-            ownerAtSign: fromAtSign,
-            reqId: reqId,
-            chunkIndex: _chunkIndex++,
-            chunk: chunk,
-            conversationId: conversationId,
-          ),
+          onChunk: _batchChunk,
         );
+        await _flushTokenBuf();
     }
 
     final elapsed = DateTime.now().difference(startTime).inMilliseconds;
