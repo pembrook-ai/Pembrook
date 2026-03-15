@@ -16,6 +16,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -453,6 +454,14 @@ class _ChatBubble extends StatelessWidget {
             : MarkdownBody(
                 data: message.text,
                 selectable: true,
+                onTapLink: (text, href, title) {
+                  if (href != null) {
+                    launchUrl(
+                      Uri.parse(href),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  }
+                },
                 styleSheet:
                     MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
                   p: Theme.of(context).textTheme.bodyMedium?.copyWith(

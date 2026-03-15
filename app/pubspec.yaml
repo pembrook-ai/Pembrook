@@ -30,6 +30,7 @@ dependencies:
 
   # Storage
   shared_preferences: ^2.0.0
+  url_launcher: ^6.3.2
 
 dependency_overrides: {}
 
