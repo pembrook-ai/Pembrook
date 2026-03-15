@@ -20,6 +20,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../services/data_service.dart';
@@ -65,6 +66,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool _isLoading = false;
   String _streamBuffer = '';
+  // Mirrors the 'streamingEnabled' SharedPreferences setting.
+  // Re-read at the start of every _send() so changes in Settings take effect
+  // on the next message without requiring a restart.
+  bool _streamingEnabled = true;
   // Explicitly tracks which conversationId is currently streaming.
   // Set just before rpcService.call(), cleared when the response arrives.
   // NOT cleared on conversation switch — stays alive so backgrounded responses
@@ -90,6 +95,14 @@ class _ChatScreenState extends State<ChatScreen> {
       _store = context.read<ConversationStore>();
       _store?.load();
     });
+    // Read streaming pref so the initial state mirrors Settings.
+    SharedPreferences.getInstance().then((prefs) {
+      if (mounted) {
+        setState(() {
+          _streamingEnabled = prefs.getBool('streamingEnabled') ?? true;
+        });
+      }
+    });
   }
 
   @override
@@ -102,6 +115,7 @@ class _ChatScreenState extends State<ChatScreen> {
     // Because _conversationId is read at event-fire time (not captured),
     // this correctly handles conversation switches without re-subscribing.
     _streamSub = _rpcService!.streamChunkEvents.listen((event) {
+      if (!_streamingEnabled) return; // streaming disabled in Settings
       if (event.conversationId != _activeStreamConvId) return;
       if (event.conversationId == _conversationId) {
         // Chunk for the currently displayed conversation.
@@ -243,7 +257,8 @@ class _ChatScreenState extends State<ChatScreen> {
             },
           ),
           Expanded(child: _buildMessages()),
-          if (_streamBuffer.isNotEmpty) _StreamingBubble(text: _streamBuffer),
+          if (_streamBuffer.isNotEmpty && _streamingEnabled)
+            _StreamingBubble(text: _streamBuffer),
           _buildInput(),
         ],
       ),
@@ -322,6 +337,10 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _inputCtrl.text.trim();
     if (text.isEmpty || _isLoading) return;
 
+    // Re-read pref on every send so Settings changes take effect immediately.
+    final prefs = await SharedPreferences.getInstance();
+    _streamingEnabled = prefs.getBool('streamingEnabled') ?? true;
+
     _inputCtrl.clear();
     setState(() {
       _messages.add(_Message(
@@ -353,9 +372,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // Pick up streamed content: from the visible buffer if user stayed in this
     // conversation, or from the background buffer if they switched away.
-    final streamedText = sendConvId == _conversationId
-        ? _streamBuffer.trim()
-        : (_bgStreamBuffers.remove(sendConvId) ?? '').trim();
+    // Ignored entirely when streaming is disabled — always use RPC reply.
+    final streamedText = _streamingEnabled
+        ? (sendConvId == _conversationId
+            ? _streamBuffer.trim()
+            : (_bgStreamBuffers.remove(sendConvId) ?? '').trim())
+        : '';
     final responseText = result.success
         ? (streamedText.isNotEmpty ? streamedText : result.response)
         : '⚠️ ${result.error ?? "Unknown error"}';

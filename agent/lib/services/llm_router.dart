@@ -389,6 +389,12 @@ TOOL USE RULES — follow these exactly, every time:
     for (var iteration = 0; iteration < maxIterations; iteration++) {
       _log.info(
           '[tool-loop] iteration=${iteration + 1}/$maxIterations — calling model');
+
+      // Use non-streaming call to detect tool calls. If the model returns a
+      // plain-text final answer AND we have an onChunk callback, we discard
+      // this text and re-call with streaming so tokens arrive incrementally.
+      // (One extra LLM call only on the final iteration — worth the trade-off
+      // vs. sending one big chunk to the app.)
       final assistantMsg = await _callOllamaChat(
         messages: history,
         tools: tools,
@@ -401,17 +407,21 @@ TOOL USE RULES — follow these exactly, every time:
       if (toolCalls == null || toolCalls.isEmpty) {
         _log.info(
             '[tool-loop] model returned plain text answer (no tool calls) after ${iteration + 1} iteration(s)');
-        final rawAnswer = (assistantMsg['content'] as String? ?? '').trim();
-        // Feed the answer through onChunk so the app sees it token-by-token
-        // even though the tool-calling path used a non-streaming call.
-        // We re-stream the text in small bursts (word-by-word) so the UI
-        // still animates smoothly rather than popping in all at once.
-        if (onChunk != null && rawAnswer.isNotEmpty) {
-          // Send the full answer in one batch — no need to word-split since
-          // the batcher in orchestrator will handle chunking for delivery.
-          onChunk(rawAnswer); // ignore: unawaited_futures
+
+        if (onChunk != null) {
+          // Stream the final answer token-by-token so the app sees progressive
+          // chunks. Pop the non-streaming assistant message we just added so
+          // the streaming call regenerates cleanly from the same prompt.
+          history.removeLast();
+          _log.fine(
+              '[tool-loop] re-running final answer via streaming endpoint');
+          return await _callOllamaStreaming(
+            messages: history,
+            onChunk: onChunk,
+          );
         }
-        return rawAnswer;
+
+        return (assistantMsg['content'] as String? ?? '').trim();
       }
 
       _log.info('[tool-loop] model requested ${toolCalls.length} tool call(s)');
