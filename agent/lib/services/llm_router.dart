@@ -290,12 +290,13 @@ TOOL USE RULES — follow these exactly, every time:
       {'role': 'user', 'content': prompt}
     ];
     if (onChunk != null) {
-      return _callOllamaStreaming(
+      final msg = await _callOllamaStreamingMsg(
         messages: messages,
         onChunk: onChunk,
         maxTokens: maxTokens,
         temperature: temperature,
       );
+      return (msg['content'] as String? ?? '').trim();
     }
     final msg = await _callOllamaChat(
       messages: messages,
@@ -305,11 +306,21 @@ TOOL USE RULES — follow these exactly, every time:
     return (msg['content'] as String? ?? '').trim();
   }
 
-  /// Streaming variant of [_callOllamaChat] — uses Ollama NDJSON streaming.
-  /// Calls [onChunk] for every token as it is produced.
-  Future<String> _callOllamaStreaming({
+  /// Streaming variant of [_callOllamaChat].
+  ///
+  /// Returns the same Map shape as [_callOllamaChat] (role/content/tool_calls)
+  /// so it can drop-in replace it in the tool loop.  When [onChunk] is
+  /// provided each content token is fired immediately (fire-and-forget) so the
+  /// NDJSON consumer loop is never blocked by at-platform latency.
+  ///
+  /// Ollama streaming + tools: when the model decides to call a tool, content
+  /// tokens are empty and tool_calls appear in the final done:true chunk.
+  /// When the model returns a plain text answer, tokens stream and there are
+  /// no tool_calls.  Either way we capture both from the stream.
+  Future<Map<String, dynamic>> _callOllamaStreamingMsg({
     required List<Map<String, dynamic>> messages,
-    required Future<void> Function(String chunk) onChunk,
+    List<Map<String, dynamic>> tools = const [],
+    Future<void> Function(String chunk)? onChunk,
     int maxTokens = 2048,
     double temperature = 0.7,
   }) async {
@@ -317,10 +328,10 @@ TOOL USE RULES — follow these exactly, every time:
     try {
       final request = http.Request(
         'POST',
-        Uri.parse('\$ollamaBaseUrl/api/chat'),
+        Uri.parse('$ollamaBaseUrl/api/chat'),
       );
       request.headers['Content-Type'] = 'application/json';
-      request.body = jsonEncode({
+      final body = <String, dynamic>{
         'model': _localModel,
         'messages': messages,
         'stream': true,
@@ -328,17 +339,25 @@ TOOL USE RULES — follow these exactly, every time:
           'num_predict': maxTokens,
           'temperature': temperature,
         },
-      });
+      };
+      if (tools.isNotEmpty) body['tools'] = tools;
+      request.body = jsonEncode(body);
 
       final streamedResp =
           await client.send(request).timeout(const Duration(seconds: 120));
 
       if (streamedResp.statusCode != 200) {
-        _log.warning('Ollama streaming returned \${streamedResp.statusCode}');
-        return 'I apologize — the local AI model is temporarily unavailable.';
+        _log.warning('Ollama streaming returned ${streamedResp.statusCode}');
+        return {
+          'role': 'assistant',
+          'content':
+              'I apologize — the local AI model is temporarily unavailable.'
+        };
       }
 
-      final chunks = <String>[];
+      final contentChunks = <String>[];
+      List<dynamic>? toolCalls;
+
       await for (final line in streamedResp.stream
           .transform(utf8.decoder)
           .transform(const LineSplitter())) {
@@ -346,22 +365,37 @@ TOOL USE RULES — follow these exactly, every time:
         try {
           final data = jsonDecode(line) as Map<String, dynamic>;
           final message = data['message'] as Map<String, dynamic>?;
-          final content = message?['content'] as String? ?? '';
-          if (content.isNotEmpty) {
-            chunks.add(content);
-            // Fire-and-forget: do NOT await the notification here.
-            // Awaiting onChunk() blocks the NDJSON loop for each at-platform
-            // round-trip (~300ms), stalling Ollama consumption and eventually
-            // timing out the connection so the full response never arrives.
-            onChunk(content); // ignore: unawaited_futures
+          if (message != null) {
+            final content = message['content'] as String? ?? '';
+            if (content.isNotEmpty) {
+              contentChunks.add(content);
+              if (onChunk != null) {
+                // Fire-and-forget: do NOT await — blocking here stalls the
+                // NDJSON loop for each at-platform round-trip (~300ms).
+                onChunk(content); // ignore: unawaited_futures
+              }
+            }
+            // tool_calls only appear in the done:true chunk when using tools.
+            final tc = message['tool_calls'] as List<dynamic>?;
+            if (tc != null && tc.isNotEmpty) toolCalls = tc;
           }
           if (data['done'] == true) break;
         } catch (_) {}
       }
-      return chunks.join().trim();
+
+      final result = <String, dynamic>{
+        'role': 'assistant',
+        'content': contentChunks.join(),
+      };
+      if (toolCalls != null) result['tool_calls'] = toolCalls;
+      return result;
     } catch (e) {
-      _log.severe('Ollama streaming call failed: \$e');
-      return 'I apologize — I could not reach the local AI model. Error: \$e';
+      _log.severe('Ollama streaming call failed: $e');
+      return {
+        'role': 'assistant',
+        'content':
+            'I apologize — I could not reach the local AI model. Error: $e'
+      };
     } finally {
       client.close();
     }
@@ -390,14 +424,14 @@ TOOL USE RULES — follow these exactly, every time:
       _log.info(
           '[tool-loop] iteration=${iteration + 1}/$maxIterations — calling model');
 
-      // Use non-streaming call to detect tool calls. If the model returns a
-      // plain-text final answer AND we have an onChunk callback, we discard
-      // this text and re-call with streaming so tokens arrive incrementally.
-      // (One extra LLM call only on the final iteration — worth the trade-off
-      // vs. sending one big chunk to the app.)
-      final assistantMsg = await _callOllamaChat(
+      // Single streaming call: tokens flow to the app immediately while we
+      // also capture tool_calls from the final done:true chunk.  onChunk is
+      // passed on every iteration; tool-call iterations produce no content
+      // tokens, so the app receives nothing until the final text answer.
+      final assistantMsg = await _callOllamaStreamingMsg(
         messages: history,
         tools: tools,
+        onChunk: onChunk,
       );
       history.add(assistantMsg);
 
@@ -407,20 +441,6 @@ TOOL USE RULES — follow these exactly, every time:
       if (toolCalls == null || toolCalls.isEmpty) {
         _log.info(
             '[tool-loop] model returned plain text answer (no tool calls) after ${iteration + 1} iteration(s)');
-
-        if (onChunk != null) {
-          // Stream the final answer token-by-token so the app sees progressive
-          // chunks. Pop the non-streaming assistant message we just added so
-          // the streaming call regenerates cleanly from the same prompt.
-          history.removeLast();
-          _log.fine(
-              '[tool-loop] re-running final answer via streaming endpoint');
-          return await _callOllamaStreaming(
-            messages: history,
-            onChunk: onChunk,
-          );
-        }
-
         return (assistantMsg['content'] as String? ?? '').trim();
       }
 

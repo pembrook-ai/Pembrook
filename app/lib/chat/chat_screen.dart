@@ -363,6 +363,7 @@ class _ChatScreenState extends State<ChatScreen> {
       command: text,
       conversationId: _conversationId,
       payload: {'message': text},
+      streamingEnabled: _streamingEnabled,
     );
 
     if (!mounted) return;

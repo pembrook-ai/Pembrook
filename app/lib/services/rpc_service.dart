@@ -150,10 +150,16 @@ class RpcService extends ChangeNotifier {
   // ──────────────────────────────────────────────────────────
 
   /// Send a command to @agent and wait for its response.
+  ///
+  /// [streamingEnabled] — when false, the agent skips sending stream chunk
+  /// notifications and returns the full response only in the RPC reply.
+  /// This matches the Flutter "Show tokens as they arrive" preference and
+  /// saves significant latency when the user has streaming turned off.
   Future<RpcCallResult> call({
     required String command,
     required String conversationId,
     Map<String, dynamic> payload = const {},
+    bool streamingEnabled = true,
   }) async {
     if (_rpcClient == null) {
       return const RpcCallResult(
@@ -169,6 +175,7 @@ class RpcService extends ChangeNotifier {
         'command': command,
         'conversationId': conversationId,
         'platform': _platformName(),
+        'streamingEnabled': streamingEnabled,
         ...payload,
       }).timeout(_callTimeout);
 

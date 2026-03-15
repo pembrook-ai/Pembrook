@@ -212,6 +212,7 @@ class Orchestrator {
     required String fromAtSign,
     required String platform,
     required int reqId,
+    bool streamingEnabled = true,
   }) async {
     _log.info('Processing request convId=$conversationId '
         'from=$fromAtSign platform=$platform');
@@ -304,9 +305,10 @@ class Orchestrator {
           privacyScore: privacyScore,
           tools: _kTools,
           toolExecutor: _executeTool,
-          onChunk: _batchChunk,
+          onChunk: streamingEnabled ? _batchChunk : null,
         );
-        await _flushTokenBuf(); // drain any buffered remainder
+        if (streamingEnabled)
+          await _flushTokenBuf(); // drain any buffered remainder
 
       case IntentType.skillInvocation:
         if (skillRunner == null) {
@@ -369,9 +371,9 @@ class Orchestrator {
           privacyScore: privacyScore,
           tools: _kTools,
           toolExecutor: _executeTool,
-          onChunk: _batchChunk,
+          onChunk: streamingEnabled ? _batchChunk : null,
         );
-        await _flushTokenBuf();
+        if (streamingEnabled) await _flushTokenBuf();
 
       case IntentType.multiStepPlan:
         // Decompose and execute each step via LLM
@@ -381,17 +383,19 @@ class Orchestrator {
           privacyScore: privacyScore,
           systemOverride: 'Break this request into steps and execute each one. '
               'Show your reasoning.',
-          onChunk: _batchChunk,
+          onChunk: streamingEnabled ? _batchChunk : null,
         );
-        await _flushTokenBuf();
+        if (streamingEnabled) await _flushTokenBuf();
     }
 
     // Drain any remainder and wait for ALL in-flight sendStreamChunk
     // notifications to complete before sending the RPC reply.
     // Without this the RPC reply races the notifications, arrives first,
     // sets _isLoading=false in the app, and the guard discards every chunk.
-    await _flushTokenBuf();
-    if (_pendingChunks.isNotEmpty) await Future.wait(_pendingChunks);
+    if (streamingEnabled) {
+      await _flushTokenBuf();
+      if (_pendingChunks.isNotEmpty) await Future.wait(_pendingChunks);
+    }
 
     final elapsed = DateTime.now().difference(startTime).inMilliseconds;
 

@@ -83,6 +83,7 @@ class GatewayCallbacks implements AtRpcCallbacks {
       // owner atSign registered in policy.
       final effectiveSender = payload['senderAtSign'] as String? ?? fromAtSign;
       final platform = payload['platform'] as String? ?? 'app';
+      final streamingEnabled = payload['streamingEnabled'] as bool? ?? true;
 
       if (command.isEmpty) {
         return _errorResponse(request.reqId, 'Empty command');
@@ -144,6 +145,7 @@ class GatewayCallbacks implements AtRpcCallbacks {
         fromAtSign: effectiveSender,
         platform: platform,
         reqId: request.reqId,
+        streamingEnabled: streamingEnabled,
       );
 
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;
