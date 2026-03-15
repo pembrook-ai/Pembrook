@@ -1,7 +1,7 @@
 /// SkillRegistry — CRUD for installed skills, stored as AtKeys.
 ///
 /// KEY PATTERN:
-///   skill_meta.$skillId.safeclaw@agent
+///   skill_meta.$skillId.pembrook@agent
 ///     value: JSON-encoded SkillMetadata
 ///     Metadata: ttl=0 (permanent until deleted), sharedWith=self
 ///
@@ -21,7 +21,7 @@ import '../models/skill_metadata.dart';
 class SkillRegistry {
   final AtClient atClient;
   final Logger _log = Logger('SkillRegistry');
-  static const String _namespace = 'safeclaw';
+  static const String _namespace = 'pembrook';
 
   SkillRegistry({required this.atClient});
 

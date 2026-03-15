@@ -1,7 +1,7 @@
-/// PolicyEditorScreen — create or edit a single SafeClaw policy.
+/// PolicyEditorScreen — create or edit a single Pembrook policy.
 ///
 /// A Policy is stored as JSON in the AtKey:
-///   `policy.$policyId.safeclaw@<ownerAtSign>` sharedWith `@agent`
+///   `policy.$policyId.pembrook@<ownerAtSign>` sharedWith `@agent`
 ///
 /// The screen lets the owner:
 ///   - Set policyId, type, and priority
@@ -40,7 +40,7 @@ class PolicyEditorScreen extends StatefulWidget {
 }
 
 class _PolicyEditorScreenState extends State<PolicyEditorScreen> {
-  static const String _namespace = 'safeclaw';
+  static const String _namespace = 'pembrook';
 
   final _formKey = GlobalKey<FormState>();
 

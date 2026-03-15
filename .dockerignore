@@ -1,4 +1,4 @@
-## SafeClaw — .dockerignore
+## Pembrook — .dockerignore
 ##
 ## Excludes files that should never enter the Docker build context.
 ## KEY RULE: .dart_tool/ must be excluded so COPY agent/ . never overwrites
@@ -51,5 +51,5 @@ coverage/
 lcov.info
 
 # ── Compiled agent binary (built inside Docker — not from host) ─────────────
-agent/bin/safeclaw-agent
-agent/safeclaw-agent
+agent/bin/pembrook-agent
+agent/pembrook-agent

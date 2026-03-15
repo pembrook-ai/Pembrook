@@ -1,4 +1,4 @@
-# SafeClaw Database MCP Server — Phase 4.
+# Pembrook Database MCP Server — Phase 4.
 #
 # Exposes database query tools to the agent via the atNetwork (AtRpc).
 # Connects to a local SQLite database.
@@ -9,10 +9,10 @@
 #   - db.execute(sql, params)    — write queries (HITL required)
 #
 # atSign: @mcp_db (placeholder)
-# Namespace: safeclaw
+# Namespace: pembrook
 
-name: safeclaw_mcp_database
-description: Database MCP server for SafeClaw.
+name: pembrook_mcp_database
+description: Database MCP server for Pembrook.
 publish_to: none
 
 version: 1.0.0+1

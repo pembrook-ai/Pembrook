@@ -44,8 +44,8 @@ docker-volumes/
 ollama-data/
 
 # Compiled agent binary
-agent/bin/safeclaw-agent
-agent/safeclaw-agent
+agent/bin/pembrook-agent
+agent/pembrook-agent
 
 # Test coverage
 coverage/

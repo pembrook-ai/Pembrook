@@ -1,11 +1,11 @@
-name: safeclaw_bridge_discord
+name: pembrook_bridge_discord
 description: >-
-  SafeClaw bridge — routes Discord Bot messages to/from the @agent atSign
+  Pembrook bridge — routes Discord Bot messages to/from the @agent atSign
   via the atNetwork (zero open ports, E2E encrypted).
 
   Uses Discord Gateway WebSocket API.
   atSign: @bridge_discord
-  Namespace: safeclaw
+  Namespace: pembrook
 
 publish_to: none
 

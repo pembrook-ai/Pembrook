@@ -1,7 +1,7 @@
 /// Skill metadata model.
 ///
 /// Each installed skill has a metadata entry stored as:
-///   skill_meta.$skillId.safeclaw@agent
+///   skill_meta.$skillId.pembrook@agent
 ///
 /// The declared capabilities are enforced at TWO levels:
 ///   1. Application level: PolicyEngine rejects requests beyond declared scope

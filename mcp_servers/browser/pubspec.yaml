@@ -1,4 +1,4 @@
-# SafeClaw Browser MCP Server — Phase 4.
+# Pembrook Browser MCP Server — Phase 4.
 #
 # Exposes web browsing tools to the agent via the atNetwork (AtRpc).
 # Uses http+html for fetch/extract_text.
@@ -12,10 +12,10 @@
 #   - browser.fill_form(fields)      — fill and submit form (HITL required)
 #
 # atSign: @mcp_browser (placeholder)
-# Namespace: safeclaw
+# Namespace: pembrook
 
-name: safeclaw_mcp_browser
-description: Web browser MCP server for SafeClaw.
+name: pembrook_mcp_browser
+description: Web browser MCP server for Pembrook.
 publish_to: none
 
 version: 1.0.0+1

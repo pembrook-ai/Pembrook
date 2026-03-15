@@ -1,7 +1,7 @@
-/// Policy models for SafeClaw.
+/// Policy models for Pembrook.
 ///
 /// Policies are stored on @agent's atServer as:
-///   policy.$policyId.safeclaw@agent
+///   policy.$policyId.pembrook@agent
 ///
 /// The owner writes policies via the Flutter app policy editor.
 /// They are serialized as JSON (with a YAML source for human editing).
@@ -181,7 +181,7 @@ class Policy {
 
 // ── HITL models ───────────────────────────────────────────────────────────
 
-/// A HITL approval request stored as AtKey: hitl.pending.$actionId.safeclaw@agent
+/// A HITL approval request stored as AtKey: hitl.pending.$actionId.pembrook@agent
 class HitlRequest {
   final String actionId;
   final String actionType;

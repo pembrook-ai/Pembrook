@@ -12,7 +12,7 @@
 ///   homeassistant.list_entities(domain?)
 ///
 /// Configuration (passed in request arguments by agent, read from AtKey
-/// settings.ha.safeclaw@mcp_home by the agent before calling):
+/// settings.ha.pembrook@mcp_home by the agent before calling):
 ///   haBaseUrl  : String  — e.g. "http://homeassistant.local:8123"
 ///   haToken    : String  — long-lived access token
 
@@ -27,7 +27,7 @@ import 'package:logging/logging.dart';
 
 final _log = Logger('mcp_home');
 
-const _namespace = 'safeclaw';
+const _namespace = 'pembrook';
 const _requestPattern = r'mcp\.request\.';
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
-# SafeClaw Architecture Reference
+# Pembrook Architecture Reference
 
-This document covers the internal design, data-flow, component contracts, and implementation decisions for SafeClaw.  
+This document covers the internal design, data-flow, component contracts, and implementation decisions for Pembrook.  
 For setup instructions see [GETTING_STARTED.md](../GETTING_STARTED.md).
 
 ---
@@ -77,18 +77,18 @@ AtKeys are the fundamental data unit. Key format: `@recipient:keyname.namespace@
 > **Maximum 3 atSigns** are ever needed, no matter how many bridges or MCP servers are enabled.  
 > `@agent` cannot be reused for any other role: the atPlatform forbids a notification whose sender and recipient are the same atSign.
 
-**Self key** (only sender can read): `keyname.safeclaw@agent`  
-**Shared key** (recipient can read): `@owner:keyname.safeclaw@agent`
+**Self key** (only sender can read): `keyname.pembrook@agent`  
+**Shared key** (recipient can read): `@owner:keyname.pembrook@agent`
 
 > **Important:** `@agent:key@owner` (shared, sender=owner) is a *completely different key* from `key@agent` (self, sender=agent).  
 > This was the root cause of the skills mismatch — see §10.
 
 ### AtRpc
 
-AtRpc is SafeClaw's inter-process communication layer built on top of AtKeys.
+AtRpc is Pembrook's inter-process communication layer built on top of AtKeys.
 
-- **Caller** writes a request AtKey: `@callee:rpc_req.uuid.safeclaw@caller`
-- **Server** processes it, writes a response AtKey: `@caller:rpc_res.uuid.safeclaw@callee`
+- **Caller** writes a request AtKey: `@callee:rpc_req.uuid.pembrook@caller`
+- **Server** processes it, writes a response AtKey: `@caller:rpc_res.uuid.pembrook@callee`
 - **Caller** subscribes to notifications from its own atServer and reads the response
 
 This gives us:
@@ -138,7 +138,7 @@ These commands are only accepted from atSigns in `allowList` — the policy engi
 ### SkillRegistry (`agent/lib/skills/registry.dart`)
 
 Stores `SkillMetadata` instances keyed by `skillId`.  
-Skills are persisted as self-keys on `@agent`: `skill_meta.<id>.safeclaw@agent`
+Skills are persisted as self-keys on `@agent`: `skill_meta.<id>.pembrook@agent`
 
 The registry is injected into `GatewayCallbacks` so `_sys.skill.install` can register skills in the live instance without a restart.
 
@@ -243,7 +243,7 @@ Each skill is a **Docker container** spawned per invocation by `SandboxManager`.
 The image name is derived from the Skill ID registered in the app:
 
 ```
-safeclaw-skill-<skillId>:latest
+pembrook-skill-<skillId>:latest
 ```
 
 Security constraints applied to every container run:
@@ -286,7 +286,7 @@ On error the container writes `{"status":"error","error":"<message>","requestId"
 
 ```bash
 # From repo root — repeat per skill
-docker build -t safeclaw-skill-email:latest -f skills/email/Dockerfile .
+docker build -t pembrook-skill-email:latest -f skills/email/Dockerfile .
 ```
 
 The agent accesses Docker via `/var/run/docker.sock` (mounted in `docker-compose.yml`).  
@@ -296,10 +296,10 @@ The image must be present on the same Docker host as the agent container.
 
 ### Problem (fixed) — AtKey namespace mismatch
 
-The Flutter app stored skills using the AtKey `@agent:skill_meta.<id>.safeclaw@owner`  
+The Flutter app stored skills using the AtKey `@agent:skill_meta.<id>.pembrook@owner`  
 (a **shared** key — sender is `@owner`, recipient is `@agent`).
 
-The agent's `SkillRegistry` looked for `skill_meta.<id>.safeclaw@agent`  
+The agent's `SkillRegistry` looked for `skill_meta.<id>.pembrook@agent`  
 (a **self** key — owner is `@agent`).
 
 These are cryptographically distinct keys. The agent never saw skills registered from the app.
@@ -460,7 +460,7 @@ A built-in **deny-all** rule sits at the bottom.
 
 ### Why RPC for skill sync instead of a shared AtKey?
 
-**Rejected alternative:** Have the app write `skill_meta.<id>.safeclaw@agent` (self-key on `@agent`).  
+**Rejected alternative:** Have the app write `skill_meta.<id>.pembrook@agent` (self-key on `@agent`).  
 **Problem:** The atPlatform `sharedWith` restriction — a key `@agent:x@owner` is owned by `@owner` and readable by `@agent`; but a self-key `x@agent` can only be written by `@agent`. The app authenticates as `@owner`, not `@agent`, so it cannot write to `@agent`'s self-key namespace.
 
 **Solution chosen:** App sends `_sys.skill.install` RPC to the agent. The agent (running as `@agent`) then writes its own self-key. Clean separation of authority.

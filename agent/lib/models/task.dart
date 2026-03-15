@@ -1,7 +1,7 @@
 /// Task and Schedule models.
 ///
 /// Scheduled tasks stored as AtKeys:
-///   schedule.$taskId.safeclaw@agent
+///   schedule.$taskId.pembrook@agent
 ///
 /// All scheduled executions go through the same policy pipeline as
 /// interactive commands — no bypass for automated/background actions.

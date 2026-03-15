@@ -7,7 +7,7 @@
 ///   - Conversation history (stored locally in SharedPreferences)
 ///
 /// SKILL KEY PATTERN (on @owner's atServer, sharedWith @agent):
-///   skill_meta.<skillId>.safeclaw@<owner>  →  JSON-encoded SkillData
+///   skill_meta.<skillId>.pembrook@<owner>  →  JSON-encoded SkillData
 ///
 /// CONVERSATION HISTORY (local SharedPreferences):
 ///   Key: 'conversations'  →  JSON array of ConversationSummary objects
@@ -179,7 +179,7 @@ class SkillData {
 class DataService extends ChangeNotifier {
   AtClient? _atClient;
   String _agentAtSign = '@agent';
-  static const String _namespace = 'safeclaw';
+  static const String _namespace = 'pembrook';
 
   List<HitlItem> _pendingHitl = [];
   List<AuditItem> _auditEntries = [];
@@ -300,7 +300,7 @@ class DataService extends ChangeNotifier {
       final keys = await _remoteKeys(r'audit\.');
       for (final keyStr in keys) {
         try {
-          // Key pattern: (@owner:)audit.<timestampMs>.<id>.safeclaw@agent
+          // Key pattern: (@owner:)audit.<timestampMs>.<id>.pembrook@agent
           final bare = keyStr.contains(':') ? keyStr.split(':').last : keyStr;
           final segments = bare.split('.');
           // segments[0]='audit', segments[1]=timestampMs

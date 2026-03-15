@@ -4,7 +4,7 @@
 ///   - All MCP server communication goes through the atNetwork.
 ///   - Each MCP server has its own atSign (@mcp_home, @mcp_db, @mcp_browser).
 ///   - The client sends an RPC call to the server's atSign on domain
-///     "safeclaw.mcp" and waits for the response.
+///     "pembrook.mcp" and waits for the response.
 ///   - Before calling, the PolicyEngine checks the tool invocation.
 ///   - After calling, the AuditService logs the result.
 ///
@@ -62,8 +62,8 @@ class SecureMcpClient {
   final Logger _log = Logger('SecureMcpClient');
   final Uuid _uuid = const Uuid();
 
-  static const String _namespace = 'safeclaw';
-  static const String _mcpDomain = 'safeclaw.mcp';
+  static const String _namespace = 'pembrook';
+  static const String _mcpDomain = 'pembrook.mcp';
 
   SecureMcpClient({
     required this.atClient,
@@ -150,8 +150,8 @@ class SecureMcpClient {
     McpCallResult callResult;
     try {
       // Send request as notification; subscribe for response.
-      // The MCP server listens on "safeclaw.mcp.request" and responds on
-      // "safeclaw.mcp.response.<requestId>".
+      // The MCP server listens on "pembrook.mcp.request" and responds on
+      // "pembrook.mcp.response.<requestId>".
       final responseKey = 'mcp.response.$requestId';
       final responseFuture =
           _waitForResponse(responseKey, timeout: const Duration(seconds: 30));

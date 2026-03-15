@@ -9,7 +9,7 @@
 ///   - Keys use useRemoteAtServer=true so they bypass the local cache
 ///     and go directly to the cloud secondary.
 ///
-/// Key pattern: audit.$timestamp.$actionId.safeclaw@owner
+/// Key pattern: audit.$timestamp.$actionId.pembrook@owner
 ///   Created by @agent, sharedWith @owner; stored on @owner's atServer.
 ///
 /// Policy violations additionally trigger an immediate notification to @owner.
@@ -53,7 +53,7 @@ class AuditService {
     // Key stored on @owner's atServer via sharedWith
     final auditKey = (AtKey.shared(
       'audit.$ts.$actionId',
-      namespace: 'safeclaw',
+      namespace: 'pembrook',
       sharedBy: atClient.getCurrentAtSign() ?? '@agent',
     )..sharedWith(_ownerAtSign))
         .build()
@@ -91,7 +91,7 @@ class AuditService {
     try {
       final alertKey = AtKey()
         ..key = 'alert.policy.${DateTime.now().millisecondsSinceEpoch}'
-        ..namespace = 'safeclaw'
+        ..namespace = 'pembrook'
         ..sharedWith = _ownerAtSign
         ..metadata = (Metadata()
           ..ttl = 3600000 // 1 hour TTL
@@ -101,7 +101,7 @@ class AuditService {
         NotificationParams.forUpdate(
           alertKey,
           value: jsonEncode({
-            'title': 'SafeClaw: Policy ${entry.policyDecision}',
+            'title': 'Pembrook: Policy ${entry.policyDecision}',
             'message':
                 'Action "${entry.actionType}" by ${entry.initiatorAtSign} '
                     'was ${entry.policyDecision}.\n${entry.notes ?? ""}',

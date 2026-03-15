@@ -1,8 +1,8 @@
-# SafeClaw Calendar Skill
+# Pembrook Calendar Skill
 # Multi-stage build: compile to native binary, then copy into minimal runtime.
 #
 # Build (run from repo root):
-#   docker build -t safeclaw-skill-calendar:latest skills/calendar/
+#   docker build -t pembrook-skill-calendar:latest skills/calendar/
 #
 # NOTE: This skill requires HTTPS egress to www.googleapis.com.
 # Run with --network=bridge or a custom network profile.

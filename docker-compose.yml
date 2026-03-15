@@ -1,8 +1,8 @@
-## SafeClaw — docker-compose.yml
+## Pembrook — docker-compose.yml
 ##
 ## Services:
 ##   ollama   — bundled LLM (opt-in via --profile bundled-ollama)
-##   agent    — SafeClaw agent daemon
+##   agent    — Pembrook agent daemon
 ##   (optional, uncomment when ready)
 ##   bridge_whatsapp / bridge_telegram / bridge_discord / bridge_slack
 ##
@@ -45,7 +45,7 @@
 ##   - No inbound ports are opened for the agent (zero open ports).
 ##   - atSign keys are mounted read-only.
 
-name: safeclaw
+name: pembrook
 
 services:
   # ── Ollama — bundled LLM (optional — use --profile bundled-ollama) ──────────
@@ -53,7 +53,7 @@ services:
   # Only enable this service if you want Ollama managed by Docker Compose.
   ollama:
     image: ollama/ollama:latest
-    container_name: safeclaw-ollama
+    container_name: pembrook-ollama
     restart: unless-stopped
     profiles: [bundled-ollama]
     ports:
@@ -67,13 +67,13 @@ services:
       retries: 12
       start_period: 30s
 
-  # ── SafeClaw Agent ──────────────────────────────────────────────────────────
+  # ── Pembrook Agent ──────────────────────────────────────────────────────────
   agent:
     build:
       context: .
       dockerfile: Dockerfile.agent
-    image: safeclaw-agent:latest
-    container_name: safeclaw-agent
+    image: pembrook-agent:latest
+    container_name: pembrook-agent
     restart: unless-stopped
     # No depends_on — agent retries the Ollama connection at request time.
     # Works whether Ollama runs on the host or via --profile bundled-ollama.
@@ -106,7 +106,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - safeclaw_internal
+      - pembrook_internal
     # The agent opens NO inbound ports — outbound atNetwork + Docker API only.
 
   # ── WhatsApp Bridge (optional) ───────────────────────────────────────────────
@@ -116,7 +116,7 @@ services:
   #   build:
   #     context: .
   #     dockerfile: bridge/whatsapp/Dockerfile
-  #   container_name: safeclaw-bridge-whatsapp
+  #   container_name: pembrook-bridge-whatsapp
   #   restart: unless-stopped
   #   command:
   #     - "--atsign"
@@ -134,14 +134,14 @@ services:
   #   ports:
   #     - "127.0.0.1:8080:8080"   # webhook listener — reverse-proxy to expose
   #   networks:
-  #     - safeclaw_internal
+  #     - pembrook_internal
 
   # ── Telegram Bridge (optional) ───────────────────────────────────────────────
   # bridge_telegram:
   #   build:
   #     context: .
   #     dockerfile: bridge/telegram/Dockerfile
-  #   container_name: safeclaw-bridge-telegram
+  #   container_name: pembrook-bridge-telegram
   #   restart: unless-stopped
   #   command:
   #     - "--atsign"
@@ -154,14 +154,14 @@ services:
   #     AGENT_AT_SIGN: "${AGENT_AT_SIGN:-@agent}"
   #     TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
   #   networks:
-  #     - safeclaw_internal
+  #     - pembrook_internal
 
   # ── Discord Bridge (optional) ────────────────────────────────────────────────
   # bridge_discord:
   #   build:
   #     context: .
   #     dockerfile: bridge/discord/Dockerfile
-  #   container_name: safeclaw-bridge-discord
+  #   container_name: pembrook-bridge-discord
   #   restart: unless-stopped
   #   command:
   #     - "--atsign"
@@ -174,14 +174,14 @@ services:
   #     AGENT_AT_SIGN: "${AGENT_AT_SIGN:-@agent}"
   #     DISCORD_TOKEN: "${DISCORD_TOKEN:-}"
   #   networks:
-  #     - safeclaw_internal
+  #     - pembrook_internal
 
   # ── Slack Bridge (optional) ──────────────────────────────────────────────────
   # bridge_slack:
   #   build:
   #     context: .
   #     dockerfile: bridge/slack/Dockerfile
-  #   container_name: safeclaw-bridge-slack
+  #   container_name: pembrook-bridge-slack
   #   restart: unless-stopped
   #   command:
   #     - "--atsign"
@@ -197,7 +197,7 @@ services:
   #   ports:
   #     - "127.0.0.1:8081:8081"   # webhook listener
   #   networks:
-  #     - safeclaw_internal
+  #     - pembrook_internal
 
   # ── MCP Home Automation Server (optional) ─────────────────────────────────
   # Proxies requests to a local Home Assistant instance.
@@ -206,7 +206,7 @@ services:
   #   build:
   #     context: .
   #     dockerfile: mcp_servers/home/Dockerfile
-  #   container_name: safeclaw-mcp-home
+  #   container_name: pembrook-mcp-home
   #   restart: unless-stopped
   #   command:
   #     - "--atsign"
@@ -219,7 +219,7 @@ services:
   #     HA_BASE_URL: "${HA_BASE_URL:-http://homeassistant.local:8123}"
   #     HA_TOKEN: "${HA_TOKEN:-}"
   #   networks:
-  #     - safeclaw_internal
+  #     - pembrook_internal
 
   # ── MCP Database Server (optional) ────────────────────────────────────────
   # Exposes SQL query tools over a local SQLite database.
@@ -228,7 +228,7 @@ services:
   #   build:
   #     context: .
   #     dockerfile: mcp_servers/database/Dockerfile
-  #   container_name: safeclaw-mcp-database
+  #   container_name: pembrook-mcp-database
   #   restart: unless-stopped
   #   command:
   #     - "--atsign"
@@ -239,15 +239,15 @@ services:
   #     - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
   #     - "${DB_PATH:-./data}:/data"
   #   environment:
-  #     DB_PATH: "${DB_PATH:-/data/safeclaw.db}"
+  #     DB_PATH: "${DB_PATH:-/data/pembrook.db}"
   #   networks:
-  #     - safeclaw_internal
+  #     - pembrook_internal
 
 volumes:
   ollama_data:
     driver: local
 
 networks:
-  safeclaw_internal:
+  pembrook_internal:
     driver: bridge
     internal: false  # agent needs outbound internet for atServer connections

@@ -10,7 +10,7 @@
 ///   Everything else is denied.
 ///
 /// Policies are stored as AtKeys:
-///   policy.$policyId.safeclaw@agent
+///   policy.$policyId.pembrook@agent
 ///
 /// Owner writes policies via the Flutter app and they sync automatically
 /// across all devices and to the agent's atServer.
@@ -30,7 +30,7 @@ class PolicyEngine {
   DateTime _lastPolicyRefresh = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _policyCacheTtl = Duration(minutes: 5);
 
-  // Owner atSign — loaded from settings AtKey (settings.owner_atsign.safeclaw@agent).
+  // Owner atSign — loaded from settings AtKey (settings.owner_atsign.pembrook@agent).
   // Defaults to '@owner' as a safety baseline if the AtKey is not yet set.
   String _ownerAtSign = '@owner';
   DateTime _ownerAtSignLastRefresh = DateTime.fromMillisecondsSinceEpoch(0);
@@ -152,7 +152,7 @@ class PolicyEngine {
     try {
       final key = AtKey()
         ..key = 'settings.owner_atsign'
-        ..namespace = 'safeclaw';
+        ..namespace = 'pembrook';
       final atValue = await atClient.get(
         key,
         getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
@@ -178,7 +178,7 @@ class PolicyEngine {
     _cachedPolicies.clear();
 
     try {
-      // List all policy keys: policy.*.safeclaw@agent
+      // List all policy keys: policy.*.pembrook@agent
       final keys = await atClient.getKeys(
         regex: r'^policy\.',
       );

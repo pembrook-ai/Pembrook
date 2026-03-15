@@ -1,6 +1,6 @@
-name: safeclaw_app
+name: pembrook_app
 description: >-
-  SafeClaw — Flutter companion app for the secure AI personal agent.
+  Pembrook — Flutter companion app for the secure AI personal agent.
   Communicates with the @agent atSign exclusively via AtRpc (zero open ports,
   E2E encrypted, no cloud intermediary reads content).
 

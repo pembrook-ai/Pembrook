@@ -17,8 +17,8 @@
 /// Streaming design:
 ///   For streaming LLM output, the orchestrator sends incremental response
 ///   chunks to the owner via notificationService.notify() with key pattern:
-///     @owner:safeclaw.stream.$reqId.safeclaw@agent
-///   The Flutter app subscribes to 'safeclaw\\.stream\\..*' to receive chunks.
+///     @owner:pembrook.stream.$reqId.pembrook@agent
+///   The Flutter app subscribes to 'pembrook\\.stream\\..*' to receive chunks.
 
 import 'dart:async';
 import 'dart:convert';
@@ -393,9 +393,9 @@ class Orchestrator {
   /// Stream response chunks to the owner in real-time.
   ///
   /// Call this during streaming LLM generation to send incremental tokens.
-  /// The Flutter app subscribes to 'safeclaw\\.stream\\..*' to receive them.
+  /// The Flutter app subscribes to 'pembrook\\.stream\\..*' to receive them.
   ///
-  /// Chunk key pattern: @owner:safeclaw.stream.$reqId.$chunkIndex.safeclaw@agent
+  /// Chunk key pattern: @owner:pembrook.stream.$reqId.$chunkIndex.pembrook@agent
   Future<void> sendStreamChunk({
     required String ownerAtSign,
     required int reqId,
@@ -405,8 +405,8 @@ class Orchestrator {
     bool done = false,
   }) async {
     final key = AtKey()
-      ..key = 'safeclaw.stream.$reqId.$chunkIndex'
-      ..namespace = 'safeclaw'
+      ..key = 'pembrook.stream.$reqId.$chunkIndex'
+      ..namespace = 'pembrook'
       ..sharedWith = ownerAtSign
       ..metadata = (Metadata()
         ..ttl = 60000 // 1 minute TTL — transient streaming key
@@ -594,7 +594,7 @@ class Orchestrator {
     try {
       _log.info('[fetch_webpage] GET $uri');
       final resp = await http.get(uri, headers: {
-        'User-Agent': 'SafeClaw-Agent/1.0 (fetch_webpage tool)',
+        'User-Agent': 'Pembrook-Agent/1.0 (fetch_webpage tool)',
         'Accept': 'text/html,application/xhtml+xml',
       }).timeout(const Duration(seconds: 15));
 

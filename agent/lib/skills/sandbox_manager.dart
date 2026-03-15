@@ -64,7 +64,7 @@ class SandboxManager {
   /// Run a skill Docker image with [command] payload.
   ///
   /// [meta.skillId] is used as the Docker image name by convention:
-  ///   safeclaw-skill-<skillId>:latest
+  ///   pembrook-skill-<skillId>:latest
   Future<SandboxResult> run(
     SkillMetadata meta,
     Map<String, dynamic> command, {
@@ -96,7 +96,7 @@ class SandboxManager {
     Map<String, dynamic> command, {
     String? requestId,
   }) async {
-    final imageName = 'safeclaw-skill-${meta.skillId}:latest';
+    final imageName = 'pembrook-skill-${meta.skillId}:latest';
     final input = jsonEncode({
       'command': 'run',
       'payload': command,

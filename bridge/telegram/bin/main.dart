@@ -11,7 +11,7 @@
 ///   TELEGRAM_BOT_TOKEN — Bot token from @BotFather
 ///
 /// AtKey:
-///   bridge.telegram.token.safeclaw@bridge_telegram
+///   bridge.telegram.token.pembrook@bridge_telegram
 
 import 'dart:async';
 import 'dart:convert';
@@ -23,7 +23,7 @@ import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 import 'package:uuid/uuid.dart';
 
-const _namespace = 'safeclaw';
+const _namespace = 'pembrook';
 String _agentAtSign =
     '@agent'; // overridden at startup from AGENT_AT_SIGN env var
 const _platform = 'telegram';
@@ -81,7 +81,7 @@ Future<String> _loadToken(AtClient atClient) async {
   if (envToken.isNotEmpty) return envToken;
 
   try {
-    final keyStr = 'bridge.telegram.token.safeclaw'
+    final keyStr = 'bridge.telegram.token.pembrook'
         '@${atClient.getCurrentAtSign()!.replaceAll('@', '')}';
     final r = await atClient.get(AtKey.fromString(keyStr),
         getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);

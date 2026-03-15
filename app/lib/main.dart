@@ -1,4 +1,4 @@
-/// SafeClaw Flutter App — entry point.
+/// Pembrook Flutter App — entry point.
 ///
 /// Architecture:
 ///   - All backend communication via AtRpc calls to @agent's atSign.
@@ -44,7 +44,7 @@ import 'services/data_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const SafeClawApp());
+  runApp(const PembrookApp());
 }
 
 final _router = GoRouter(
@@ -200,8 +200,8 @@ class AppShell extends StatelessWidget {
   }
 }
 
-class SafeClawApp extends StatelessWidget {
-  const SafeClawApp({super.key});
+class PembrookApp extends StatelessWidget {
+  const PembrookApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -213,7 +213,7 @@ class SafeClawApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ConversationStore()),
       ],
       child: MaterialApp.router(
-        title: 'SafeClaw',
+        title: 'Pembrook',
         debugShowCheckedModeBanner: false,
         routerConfig: _router,
         builder: (context, child) {
@@ -289,7 +289,7 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              'SafeClaw',
+              'Pembrook',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),

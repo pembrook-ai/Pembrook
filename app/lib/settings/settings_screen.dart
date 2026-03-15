@@ -1,7 +1,7 @@
 /// SettingsScreen — configures agent atSign, LLM settings, and privacy preferences.
 ///
 /// Settings are stored in SharedPreferences locally AND synced to an AtKey
-/// on the owner's atServer (settings.app.safeclaw@<owner>) so they survive
+/// on the owner's atServer (settings.app.pembrook@<owner>) so they survive
 /// app reinstalls and sync across the owner's devices automatically.
 
 import 'dart:convert';
@@ -29,7 +29,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _streamingEnabled = true;
   double _fontScale = 1.0;
 
-  static const String _namespace = 'safeclaw';
+  static const String _namespace = 'pembrook';
   static const String _atKeyName = 'settings.app';
 
   /// Returns the AtClient if authenticated, or null.

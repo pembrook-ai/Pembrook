@@ -1,4 +1,4 @@
-## SafeClaw — multi-stage Docker build for the agent binary.
+## Pembrook — multi-stage Docker build for the agent binary.
 ##
 ## STAGES:
 ##   1. build   — Dart SDK, fetches deps, compiles to native binary.
@@ -7,13 +7,13 @@
 ## The compiled binary is ~10 MB and has no Dart runtime dependency.
 ##
 ## BUILD:
-##   docker build -f Dockerfile.agent -t safeclaw-agent:latest .
+##   docker build -f Dockerfile.agent -t pembrook-agent:latest .
 ##
 ## RUN (the agent manages its own containers for skills):
 ##   docker run --rm \
 ##     -v /var/run/docker.sock:/var/run/docker.sock \
 ##     -v /path/to/keys:/keys:ro \
-##     safeclaw-agent:latest \
+##     pembrook-agent:latest \
 ##     --atsign @agent --key-file /keys/@agent_key.atKeys
 
 # ──────────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ COPY agent/ .
 RUN rm -rf .dart_tool && dart pub get
 
 # Compile to a self-contained native binary (~10 MB, no Dart runtime needed).
-RUN mkdir -p /app && dart compile exe bin/main.dart -o /app/safeclaw-agent
+RUN mkdir -p /app && dart compile exe bin/main.dart -o /app/pembrook-agent
 
 # ──────────────────────────────────────────────────────────────
 # Stage 2: runtime
@@ -63,10 +63,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user for the agent process
-RUN useradd -m -u 1001 safeclaw
-USER safeclaw
-WORKDIR /home/safeclaw
+RUN useradd -m -u 1001 pembrook
+USER pembrook
+WORKDIR /home/pembrook
 
-COPY --from=build --chown=safeclaw /app/safeclaw-agent /usr/local/bin/safeclaw-agent
+COPY --from=build --chown=pembrook /app/pembrook-agent /usr/local/bin/pembrook-agent
 
-ENTRYPOINT ["/usr/local/bin/safeclaw-agent"]
+ENTRYPOINT ["/usr/local/bin/pembrook-agent"]

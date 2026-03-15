@@ -26,7 +26,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 final _log = Logger('mcp_database');
 
-const _namespace = 'safeclaw';
+const _namespace = 'pembrook';
 const _requestPattern = r'mcp\.request\.';
 
 // ─────────────────────────────────────────────────────────────────────────────

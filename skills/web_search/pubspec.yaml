@@ -1,4 +1,4 @@
-# SafeClaw Web Search Skill — Phase 3.
+# Pembrook Web Search Skill — Phase 3.
 #
 # Runs inside a Docker sandbox.
 # Uses SearXNG (self-hosted) or Brave Search API for privacy-preserving search.
@@ -9,11 +9,11 @@
 #   - search.query(q, engines?, num_results?)
 #   - search.get_page(url)  — fetch and extract text from a URL
 #
-# Docker image: safeclaw-skill-web-search:latest
+# Docker image: pembrook-skill-web-search:latest
 # atSign: @skill_search (placeholder)
 
-name: safeclaw_skill_web_search
-description: Privacy-preserving web search skill for SafeClaw.
+name: pembrook_skill_web_search
+description: Privacy-preserving web search skill for Pembrook.
 publish_to: none
 
 version: 1.0.0+1

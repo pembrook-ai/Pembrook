@@ -1,4 +1,4 @@
-# SafeClaw Calendar Skill — Phase 3.
+# Pembrook Calendar Skill — Phase 3.
 #
 # Runs inside a Docker sandbox.
 # Communicates with the agent via STDIN/STDOUT JSON line protocol.
@@ -10,12 +10,12 @@
 #   - calendar.create_event(title, start, end, description, attendees?)
 #   - calendar.delete_event(eventId)
 #
-# Docker image: safeclaw-skill-calendar:latest
+# Docker image: pembrook-skill-calendar:latest
 # atSign: @skill_cal (placeholder)
-# Namespace: safeclaw
+# Namespace: pembrook
 
-name: safeclaw_skill_calendar
-description: Google Calendar skill for SafeClaw.
+name: pembrook_skill_calendar
+description: Google Calendar skill for Pembrook.
 publish_to: none
 
 version: 1.0.0+1

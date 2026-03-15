@@ -2,11 +2,11 @@
 ///
 /// Runs every minute (configurable) and does:
 ///   1. Tick the TaskScheduler (run due tasks).
-///   2. Health check: write heart.beat.safeclaw@agent (TTL 2 min) so
+///   2. Health check: write heart.beat.pembrook@agent (TTL 2 min) so
 ///      @owner can tell the agent is alive.
 ///   3. Memory maintenance: call MemoryService.summarizeOldConversations().
 ///   4. Owner-configured proactive checks (loaded from AtKey):
-///      "proactive_checks.safeclaw@agent" → JSON list of check configs.
+///      "proactive_checks.pembrook@agent" → JSON list of check configs.
 ///
 /// The heartbeat AtKey uses a short TTL so it auto-expires when the
 /// agent goes offline — @owner can watch for absence.
@@ -28,7 +28,7 @@ class HeartbeatEngine {
   final MemoryService memoryService;
   final Logger _log = Logger('HeartbeatEngine');
 
-  static const String _namespace = 'safeclaw';
+  static const String _namespace = 'pembrook';
   static const Duration _interval = Duration(minutes: 1);
   // Heartbeat key TTL: 2 minutes — auto-expires if agent goes offline.
   static const int _heartbeatTtlMs = 120000;

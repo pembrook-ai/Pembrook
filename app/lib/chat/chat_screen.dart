@@ -1,4 +1,4 @@
-/// ChatScreen — the main SafeClaw conversation UI.
+/// ChatScreen — the main Pembrook conversation UI.
 ///
 /// Sends messages to @agent via RpcService.call() and renders the response.
 /// Subscribes to RpcService.streamChunks for incremental token rendering
@@ -68,7 +68,7 @@ class _ChatScreenState extends State<ChatScreen> {
   StreamSubscription<PushMessage>? _pushSub;
 
   static const String _welcomeText =
-      'Hello! I\'m your SafeClaw AI assistant. All our communication is '
+      'Hello! I\'m your Pembrook AI assistant. All our communication is '
       'end-to-end encrypted via the atPlatform. How can I help you today?';
 
   @override
@@ -179,7 +179,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final wide = MediaQuery.of(context).size.width >= 600;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SafeClaw'),
+        title: const Text('Pembrook'),
         actions: [
           IconButton(
             icon: const Icon(Icons.forum_outlined),
@@ -266,7 +266,7 @@ class _ChatScreenState extends State<ChatScreen> {
               maxLines: null,
               textInputAction: TextInputAction.newline,
               decoration: const InputDecoration(
-                hintText: 'Message SafeClaw…',
+                hintText: 'Message Pembrook…',
                 border: InputBorder.none,
               ),
               onSubmitted: (_) => _send(),
@@ -395,7 +395,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     size: 40,
                     color: Theme.of(context).colorScheme.onPrimaryContainer),
                 const SizedBox(height: 8),
-                Text('SafeClaw',
+                Text('Pembrook',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           color:
                               Theme.of(context).colorScheme.onPrimaryContainer,

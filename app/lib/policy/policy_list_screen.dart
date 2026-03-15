@@ -1,7 +1,7 @@
-/// PolicyListScreen — browse, create, and manage SafeClaw policy rules.
+/// PolicyListScreen — browse, create, and manage Pembrook policy rules.
 ///
 /// Policies are stored as AtKeys on @owner's atServer and shared with @agent:
-///   Key: `policy.$policyId.safeclaw@<ownerAtSign>` sharedWith `@agent`
+///   Key: `policy.$policyId.pembrook@<ownerAtSign>` sharedWith `@agent`
 ///   Value: JSON-encoded Policy object (see agent/lib/models/policy.dart)
 ///
 /// The @agent PolicyEngine reads these keys to evaluate every action.
@@ -27,7 +27,7 @@ class PolicyListScreen extends StatefulWidget {
 }
 
 class _PolicyListScreenState extends State<PolicyListScreen> {
-  static const String _namespace = 'safeclaw';
+  static const String _namespace = 'pembrook';
 
   List<PolicySummary> _policies = [];
   bool _loading = true;

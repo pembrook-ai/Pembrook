@@ -1,4 +1,4 @@
-## SafeClaw — docker-compose.gpu.yml
+## Pembrook — docker-compose.gpu.yml
 ##
 ## GPU override for Linux hosts with an NVIDIA GPU + nvidia-container-toolkit.
 ##
@@ -13,7 +13,7 @@
 ## macOS / Windows: do NOT use this file — there is no NVIDIA passthrough.
 ##   Ollama runs in CPU mode on those platforms.
 
-name: safeclaw
+name: pembrook
 
 services:
   ollama:

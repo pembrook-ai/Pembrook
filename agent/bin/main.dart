@@ -1,37 +1,37 @@
-/// SafeClaw Agent — Entry point
+/// Pembrook Agent — Entry point
 ///
 /// Usage:
 ///   dart run bin/main.dart -a @agent --key-file /path/to/@agent_key.atKeys
 ///
 /// For multi-instance horizontal scaling, use unique temp dirs per instance:
-///   SAFECLAW_INSTANCE_ID=1 dart run bin/main.dart ...
+///   PEMBROOK_INSTANCE_ID=1 dart run bin/main.dart ...
 ///
 /// atSign: @agent (placeholder — replace with your provisioned atSign)
-/// Namespace: safeclaw
+/// Namespace: pembrook
 
 import 'dart:io';
 
 import 'package:at_cli_commons/at_cli_commons.dart';
 import 'package:logging/logging.dart';
 
-import 'package:safeclaw_agent/core/orchestrator.dart';
-import 'package:safeclaw_agent/core/policy_engine.dart';
-import 'package:safeclaw_agent/core/hitl_manager.dart';
-import 'package:safeclaw_agent/gateway/gateway.dart';
-import 'package:safeclaw_agent/services/llm_router.dart';
-import 'package:safeclaw_agent/services/sanitizer.dart';
-import 'package:safeclaw_agent/services/memory_service.dart';
-import 'package:safeclaw_agent/services/audit_service.dart';
-import 'package:safeclaw_agent/services/at_platform_service.dart';
-import 'package:safeclaw_agent/skills/registry.dart';
-import 'package:safeclaw_agent/skills/sandbox_manager.dart';
-import 'package:safeclaw_agent/skills/skill_runner.dart';
-import 'package:safeclaw_agent/mcp/secure_mcp_client.dart';
-import 'package:safeclaw_agent/automation/scheduler.dart';
-import 'package:safeclaw_agent/automation/notification_manager.dart';
-import 'package:safeclaw_agent/automation/heartbeat.dart';
+import 'package:pembrook_agent/core/orchestrator.dart';
+import 'package:pembrook_agent/core/policy_engine.dart';
+import 'package:pembrook_agent/core/hitl_manager.dart';
+import 'package:pembrook_agent/gateway/gateway.dart';
+import 'package:pembrook_agent/services/llm_router.dart';
+import 'package:pembrook_agent/services/sanitizer.dart';
+import 'package:pembrook_agent/services/memory_service.dart';
+import 'package:pembrook_agent/services/audit_service.dart';
+import 'package:pembrook_agent/services/at_platform_service.dart';
+import 'package:pembrook_agent/skills/registry.dart';
+import 'package:pembrook_agent/skills/sandbox_manager.dart';
+import 'package:pembrook_agent/skills/skill_runner.dart';
+import 'package:pembrook_agent/mcp/secure_mcp_client.dart';
+import 'package:pembrook_agent/automation/scheduler.dart';
+import 'package:pembrook_agent/automation/notification_manager.dart';
+import 'package:pembrook_agent/automation/heartbeat.dart';
 
-const String kNamespace = 'safeclaw';
+const String kNamespace = 'pembrook';
 
 void main(List<String> args) async {
   // Configure structured logging
@@ -43,21 +43,21 @@ void main(List<String> args) async {
     stderr.writeln(msg);
   });
 
-  final log = Logger('SafeClawAgent');
+  final log = Logger('PembrookAgent');
 
   // ── Authentication ────────────────────────────────────────────────────────
   // at_cli_commons CLIBase handles:
   //   -a / --atsign         atSign to authenticate as
   //   -k / --key-file       path to .atKeys file
   //   --root-domain         root server (default: root.atsign.org)
-  //   --namespace           namespace (default: safeclaw)
+  //   --namespace           namespace (default: pembrook)
   //
   // IMPORTANT: Each agent instance MUST use a unique hiveStoragePath and
   // commitLogPath. We derive them from a temp directory created per-process.
   // Using shared hive paths across processes causes BHive collision errors.
-  final storageDir = Directory.systemTemp.createTempSync('safeclaw_agent_');
+  final storageDir = Directory.systemTemp.createTempSync('pembrook_agent_');
 
-  log.info('Starting SafeClaw agent — storage: ${storageDir.path}');
+  log.info('Starting Pembrook agent — storage: ${storageDir.path}');
 
   late CLIBase cliBase;
   try {
@@ -85,7 +85,7 @@ void main(List<String> args) async {
   } catch (e) {
     log.severe('Authentication failed: $e');
     stderr.writeln('''
-SafeClaw Agent — Authentication failed.
+Pembrook Agent — Authentication failed.
 
 Usage: dart run bin/main.dart \\
   --atsign @agent \\
@@ -215,7 +215,7 @@ Ensure you have:
   await gateway.start();
   heartbeat.start();
 
-  log.info('SafeClaw agent is running. Listening for commands via atPlatform.');
+  log.info('Pembrook agent is running. Listening for commands via atPlatform.');
   final ownerForLog = Platform.environment['OWNER_AT_SIGN'] ??
       Platform.environment['ALLOWED_USERS'] ??
       '(see ALLOWED_USERS env var)';

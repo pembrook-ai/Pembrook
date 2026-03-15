@@ -1,11 +1,11 @@
-# SafeClaw Email Skill
+# Pembrook Email Skill
 # Multi-stage build: compile to native binary, then copy into minimal runtime.
 #
 # Build (run from repo root):
-#   docker build -t safeclaw-skill-email:latest skills/email/
+#   docker build -t pembrook-skill-email:latest skills/email/
 #
 # The resulting image is invoked by SandboxManager as:
-#   docker run --rm ... safeclaw-skill-email:latest
+#   docker run --rm ... pembrook-skill-email:latest
 
 # ── Stage 1: compile ──────────────────────────────────────────────────────────
 FROM dart:stable AS builder

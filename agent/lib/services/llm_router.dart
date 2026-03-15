@@ -5,8 +5,8 @@
 ///   else if (needsExternalKnowledge) → SANITIZE → EXTERNAL LLM
 ///   else → LOCAL LLM with full context
 ///
-/// Settings loaded from AtKey: settings.llm.safeclaw@agent
-/// API keys loaded from AtKey: apikey.$provider.safeclaw@agent
+/// Settings loaded from AtKey: settings.llm.pembrook@agent
+/// API keys loaded from AtKey: apikey.$provider.pembrook@agent
 ///   (stored encrypted — NEVER in .env files)
 ///
 /// Ollama API: POST http://localhost:11434/api/generate
@@ -135,7 +135,7 @@ Score:''';
         .toList();
 
     final systemPrompt = systemOverride ??
-        '''You are SafeClaw, a helpful and privacy-focused AI assistant.
+        '''You are Pem, a helpful and privacy-focused AI assistant. Pem is short for Pembrook.
 You operate exclusively for your owner. Be concise and accurate.
 Never suggest storing personal data outside the atPlatform.
 Current date: ${DateTime.now().toUtc().toIso8601String()}''';
@@ -367,14 +367,14 @@ TOOL USE RULES — follow these exactly, every time:
 
   /// Call an external LLM with a SANITIZED query (no PII).
   ///
-  /// API key is loaded from encrypted AtKey: apikey.$provider.safeclaw@agent
+  /// API key is loaded from encrypted AtKey: apikey.$provider.pembrook@agent
   Future<String> _callExternalLlm(String sanitizedQuery) async {
     // Retrieve API key from encrypted AtKey (NEVER from .env files)
     String? apiKey;
     try {
       final keyAtKey = AtKey()
         ..key = 'apikey.$_externalProvider'
-        ..namespace = 'safeclaw';
+        ..namespace = 'pembrook';
       final atValue = await atClient.get(
         keyAtKey,
         getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
@@ -479,7 +479,7 @@ TOOL USE RULES — follow these exactly, every time:
     try {
       final settingsKey = AtKey()
         ..key = 'settings.llm'
-        ..namespace = 'safeclaw';
+        ..namespace = 'pembrook';
       final atValue = await atClient.get(
         settingsKey,
         getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,

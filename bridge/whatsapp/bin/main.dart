@@ -15,9 +15,9 @@
 ///   PORT                    — Webhook listen port (default 8080)
 ///
 /// AtKeys (agent injects into startup payload):
-///   bridge.whatsapp.token.safeclaw@bridge_whatsapp
-///   bridge.whatsapp.secret.safeclaw@bridge_whatsapp
-///   bridge.whatsapp.phone_id.safeclaw@bridge_whatsapp
+///   bridge.whatsapp.token.pembrook@bridge_whatsapp
+///   bridge.whatsapp.secret.pembrook@bridge_whatsapp
+///   bridge.whatsapp.phone_id.pembrook@bridge_whatsapp
 ///
 /// Deploy behind a TLS reverse proxy (nginx / Caddy). Meta requires HTTPS.
 
@@ -35,7 +35,7 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
 import 'package:uuid/uuid.dart';
 
-const _namespace = 'safeclaw';
+const _namespace = 'pembrook';
 String _agentAtSign =
     '@agent'; // overridden at startup from AGENT_AT_SIGN env var
 const _platform = 'whatsapp';
@@ -106,7 +106,7 @@ Future<_Config> _loadConfig(AtClient atClient) async {
   String _env(String key, String fallback) =>
       Platform.environment[key] ?? fallback;
 
-  String _atKey(String sub) => 'bridge.whatsapp.$sub.safeclaw'
+  String _atKey(String sub) => 'bridge.whatsapp.$sub.pembrook'
       '@${atClient.getCurrentAtSign()!.replaceAll('@', '')}';
 
   Future<String?> _readAtKey(String sub) async {

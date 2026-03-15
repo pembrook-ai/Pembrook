@@ -6,9 +6,9 @@
 ///   success.<reqId>.<domainNS>.<rpcsNS>.<baseNS>  ← from @agent
 ///
 /// AtRpc namespaces (must match agent/lib/gateway/gateway.dart exactly):
-///   baseNameSpace   = 'safeclaw'
+///   baseNameSpace   = 'pembrook'
 ///   rpcsNameSpace   = '__rpcs'   (AtRpc default)
-///   domainNameSpace = 'safeclaw'
+///   domainNameSpace = 'pembrook'
 ///
 /// Agent atSign: read from SharedPreferences key 'agentAtSign'.
 ///   Set once in SettingsScreen.  Call [updateAgentAtSign] after saving
@@ -16,7 +16,7 @@
 ///
 /// Streaming:
 ///   [streamChunks] — a Stream<String> yielding incremental tokens sent by
-///   the Orchestrator as 'safeclaw.stream.<reqId>.safeclaw' notifications.
+///   the Orchestrator as 'pembrook.stream.<reqId>.pembrook' notifications.
 ///   The final full response still arrives via the normal AtRpc reply.
 
 import 'dart:async';
@@ -63,9 +63,9 @@ class RpcService extends ChangeNotifier {
 
   String _agentAtSign = '@agent';
 
-  static const String _baseNS = 'safeclaw';
+  static const String _baseNS = 'pembrook';
   static const String _rpcsNS = '__rpcs';
-  static const String _domainNS = 'safeclaw';
+  static const String _domainNS = 'pembrook';
 
   /// How long to wait for an agent response before giving up.
   static const Duration _callTimeout = Duration(seconds: 90);
@@ -205,7 +205,7 @@ class RpcService extends ChangeNotifier {
   void _subscribeToStream() {
     _streamSubscription?.cancel();
     _streamSubscription = _atClient!.notificationService
-        .subscribe(regex: r'safeclaw\.stream\..*', shouldDecrypt: true)
+        .subscribe(regex: r'pembrook\.stream\..*', shouldDecrypt: true)
         .listen((notification) {
       if (notification.value == null) return;
       try {
@@ -226,7 +226,7 @@ class RpcService extends ChangeNotifier {
     // Also subscribe to scheduled-task push messages from the agent.
     _pushSubscription?.cancel();
     _pushSubscription = _atClient!.notificationService
-        .subscribe(regex: r'safeclaw\.push\..*', shouldDecrypt: true)
+        .subscribe(regex: r'pembrook\.push\..*', shouldDecrypt: true)
         .listen((notification) {
       if (notification.value == null) return;
       try {

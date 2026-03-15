@@ -21,7 +21,7 @@
 ///   DISCORD_BOT_TOKEN   — Bot token (required)
 ///
 /// AtKey:
-///   bridge.discord.token.safeclaw@bridge_discord
+///   bridge.discord.token.pembrook@bridge_discord
 ///
 /// IMPORTANT: Enable MESSAGE_CONTENT privileged intent in the
 ///   Discord Developer Portal → Bot → Privileged Gateway Intents.
@@ -37,7 +37,7 @@ import 'package:logging/logging.dart';
 import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-const _namespace = 'safeclaw';
+const _namespace = 'pembrook';
 String _agentAtSign =
     '@agent'; // overridden at startup from AGENT_AT_SIGN env var
 const _platform = 'discord';
@@ -101,7 +101,7 @@ Future<String> _loadToken(AtClient atClient) async {
   final envToken = Platform.environment['DISCORD_BOT_TOKEN'] ?? '';
   if (envToken.isNotEmpty) return envToken;
   try {
-    final keyStr = 'bridge.discord.token.safeclaw'
+    final keyStr = 'bridge.discord.token.pembrook'
         '@${atClient.getCurrentAtSign()!.replaceAll('@', '')}';
     final r = await atClient.get(AtKey.fromString(keyStr),
         getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
@@ -219,8 +219,8 @@ class _DiscordBridge {
         'intents': _intents,
         'properties': {
           'os': Platform.operatingSystem,
-          'browser': 'safeclaw',
-          'device': 'safeclaw',
+          'browser': 'pembrook',
+          'device': 'pembrook',
         },
       },
     });
@@ -278,7 +278,7 @@ class _DiscordBridge {
       },
       body: jsonEncode({
         'name': 'ask',
-        'description': 'Ask the SafeClaw AI agent a question',
+        'description': 'Ask the Pembrook AI agent a question',
         'options': [
           {
             'type': 3, // STRING
