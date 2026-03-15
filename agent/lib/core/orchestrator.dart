@@ -258,45 +258,36 @@ class Orchestrator {
     // atServer round-trip). Sending one per token is very slow.
     // Buffer tokens and flush every ~80 chars OR every 400 ms instead.
     //
-    // Two key design decisions:
-    //   1. _lastFlush is reset AFTER await sendStreamChunk(), not before.
-    //      If reset before, notify() takes ~300ms so by the time it returns
-    //      the elapsed for the next token is already 300ms — causing every
-    //      word to flush immediately (the bug this fixes).
-    //   2. Time-based flushing only activates after the first char-based
-    //      flush. The LLM startup delay (500ms+) would otherwise immediately
-    //      trigger a time-based flush on the very first token.
+    // _pendingChunks tracks in-flight sendStreamChunk futures so we can
+    // await them all BEFORE the RPC reply goes out. Without this the RPC
+    // reply races the notifications, arrives first, sets _isLoading=false
+    // in the app, and the !_isLoading guard discards every chunk.
     const _flushChars = 80;
-    const _flushMs = 400;
     final _tokenBuf = <String>[];
-    var _lastFlush = DateTime.now();
-    var _hasFlushed = false;
+    final _pendingChunks = <Future<void>>[];
 
-    Future<void> _flushTokenBuf() async {
-      if (_tokenBuf.isEmpty) return;
+    Future<void> _flushTokenBuf() {
+      if (_tokenBuf.isEmpty) return Future.value();
       final text = _tokenBuf.join();
       _tokenBuf.clear();
-      await sendStreamChunk(
+      final f = sendStreamChunk(
         ownerAtSign: fromAtSign,
         reqId: reqId,
         chunkIndex: _chunkIndex++,
         chunk: text,
         conversationId: conversationId,
       );
-      // Reset timer AFTER delivery so the next batch gets a full _flushMs
-      // window before time-based flushing kicks in again.
-      _lastFlush = DateTime.now();
-      _hasFlushed = true;
+      _pendingChunks.add(f);
+      return f;
     }
 
+    // Called fire-and-forget from inside _callOllamaStreaming.
+    // Runs synchronously up to the first await, so _tokenBuf mutations
+    // and size checks happen before any suspension.
     Future<void> _batchChunk(String chunk) async {
       _tokenBuf.add(chunk);
       final bufLen = _tokenBuf.fold<int>(0, (s, t) => s + t.length);
-      final elapsed = DateTime.now().difference(_lastFlush).inMilliseconds;
-      // Char threshold: always active.
-      // Time threshold: only active after the first flush so LLM startup
-      // delay doesn't immediately flush every first token alone.
-      if (bufLen >= _flushChars || (_hasFlushed && elapsed >= _flushMs)) {
+      if (bufLen >= _flushChars) {
         await _flushTokenBuf();
       }
     }
@@ -394,6 +385,13 @@ class Orchestrator {
         );
         await _flushTokenBuf();
     }
+
+    // Drain any remainder and wait for ALL in-flight sendStreamChunk
+    // notifications to complete before sending the RPC reply.
+    // Without this the RPC reply races the notifications, arrives first,
+    // sets _isLoading=false in the app, and the guard discards every chunk.
+    await _flushTokenBuf();
+    if (_pendingChunks.isNotEmpty) await Future.wait(_pendingChunks);
 
     final elapsed = DateTime.now().difference(startTime).inMilliseconds;
 

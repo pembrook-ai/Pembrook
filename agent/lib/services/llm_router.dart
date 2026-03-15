@@ -349,7 +349,11 @@ TOOL USE RULES — follow these exactly, every time:
           final content = message?['content'] as String? ?? '';
           if (content.isNotEmpty) {
             chunks.add(content);
-            await onChunk(content);
+            // Fire-and-forget: do NOT await the notification here.
+            // Awaiting onChunk() blocks the NDJSON loop for each at-platform
+            // round-trip (~300ms), stalling Ollama consumption and eventually
+            // timing out the connection so the full response never arrives.
+            onChunk(content); // ignore: unawaited_futures
           }
           if (data['done'] == true) break;
         } catch (_) {}
@@ -403,10 +407,9 @@ TOOL USE RULES — follow these exactly, every time:
         // We re-stream the text in small bursts (word-by-word) so the UI
         // still animates smoothly rather than popping in all at once.
         if (onChunk != null && rawAnswer.isNotEmpty) {
-          final words = rawAnswer.split(' ');
-          for (var i = 0; i < words.length; i++) {
-            await onChunk(i == 0 ? words[i] : ' ${words[i]}');
-          }
+          // Send the full answer in one batch — no need to word-split since
+          // the batcher in orchestrator will handle chunking for delivery.
+          onChunk(rawAnswer); // ignore: unawaited_futures
         }
         return rawAnswer;
       }
