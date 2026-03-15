@@ -51,6 +51,11 @@ class TaskScheduler {
   /// Resolved from OWNER_AT_SIGN env var.
   late final String _ownerAtSign;
 
+  /// In-memory cache of known tasks.
+  /// Populated every time listTasks() succeeds so that transient atServer
+  /// outages don't prevent scheduled tasks from firing.
+  final List<TaskDefinition> _taskCache = [];
+
   TaskScheduler({
     required this.atClient,
     required this.policyEngine,
@@ -74,6 +79,9 @@ class TaskScheduler {
     );
     // 2. Add ID to the index so listTasks can find it without a key scan.
     await _addToIndex(task.taskId);
+    // 3. Update in-memory cache immediately.
+    _taskCache.removeWhere((t) => t.taskId == task.taskId);
+    _taskCache.add(task);
     _log.info(
         'Task scheduled: ${task.taskId} (${task.cronExpression ?? task.runAt})');
     return task;
@@ -82,13 +90,17 @@ class TaskScheduler {
   Future<void> cancelTask(String taskId) async {
     await atClient.delete(_taskKey(taskId));
     await _removeFromIndex(taskId);
+    _taskCache.removeWhere((t) => t.taskId == taskId);
     _log.info('Task cancelled: $taskId');
   }
 
   Future<List<TaskDefinition>> listTasks() async {
     try {
       final ids = await _readIndex();
-      if (ids.isEmpty) return [];
+      if (ids.isEmpty) {
+        _taskCache.clear();
+        return [];
+      }
       final tasks = <TaskDefinition>[];
       for (final taskId in ids) {
         try {
@@ -105,6 +117,10 @@ class TaskScheduler {
           }
         } catch (_) {}
       }
+      // Refresh cache on every successful read.
+      _taskCache
+        ..clear()
+        ..addAll(tasks);
       return tasks;
     } catch (e) {
       _log.warning('listTasks error: $e');
@@ -141,8 +157,10 @@ class TaskScheduler {
       _log.fine('_readIndex: found ${ids.length} task id(s): $ids');
       return ids;
     } catch (e) {
+      // Re-throw so listTasks() can distinguish a real empty index from
+      // a transient atServer connection failure.
       _log.warning('_readIndex error: $e');
-      return [];
+      rethrow;
     }
   }
 
@@ -179,8 +197,26 @@ class TaskScheduler {
   // ──────────────────────────────────────────────────────────
 
   Future<void> tick() async {
-    final now = DateTime.now().toUtc();
-    final tasks = await listTasks();
+    // Use LOCAL time so cron expressions match the user's timezone.
+    // e.g. "0 8 * * *" fires at 8am local, not 8am UTC.
+    final now = DateTime.now();
+
+    // Try to get a fresh list from the atServer.  If that fails (transient
+    // outage), fall back to the in-memory cache so tasks aren't silently
+    // skipped due to connectivity blips.
+    List<TaskDefinition> tasks;
+    try {
+      tasks = await listTasks();
+      if (tasks.isEmpty && _taskCache.isNotEmpty) {
+        // listTasks cleared cache on empty index — only use cache if we
+        // think the server was unreachable rather than genuinely empty.
+        tasks = List.from(_taskCache);
+      }
+    } catch (e) {
+      _log.warning('tick: listTasks failed ($e) — falling back to cache '
+          '(${_taskCache.length} task(s))');
+      tasks = List.from(_taskCache);
+    }
 
     for (final task in tasks) {
       final shouldRun = _shouldRunNow(task, now);
@@ -200,9 +236,13 @@ class TaskScheduler {
   // ──────────────────────────────────────────────────────────
 
   Future<void> _executeTask(TaskDefinition task) async {
-    // Policy check
+    // Policy check — use the task's ownerAtSign as initiator, not the agent's
+    // own atSign.  Scheduled tasks are always created on behalf of the owner,
+    // so the identity check must be against the owner (who IS in the allow list).
+    final initiator =
+        task.ownerAtSign.isNotEmpty ? task.ownerAtSign : _ownerAtSign;
     final policyReq = PolicyCheckRequest(
-      initiatorAtSign: atClient.getCurrentAtSign() ?? '@agent',
+      initiatorAtSign: initiator,
       targetResource: 'task:${task.taskId}',
       actionType: 'task.run',
       payload: task.toJson(),

@@ -94,6 +94,10 @@ services:
       OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
       OWNER_AT_SIGN: "${OWNER_AT_SIGN:-}"
       ALLOWED_USERS: "${ALLOWED_USERS:-}"
+      # Timezone for cron scheduling — set TZ in .env to match your local time.
+      # e.g. TZ=Europe/London, TZ=America/New_York, TZ=Australia/Sydney
+      # Without this, cron expressions like "0 8 * * *" fire at 8am UTC.
+      TZ: "${TZ:-UTC}"
       # Optional: pass external LLM API keys from the host .env
       # OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       # ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"

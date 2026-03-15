@@ -14,5 +14,14 @@
 	<!-- File picker – allow user to open .atKeys files -->
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
+	<!-- Allow sqflite_darwin to write its local database in the app container.
+	     Without this macOS tries CloudKit-backed NSXPCStore and logs noisy
+	     CoreData XPC errors; plain file access is all we actually need. -->
+	<key>com.apple.security.files.downloads.read-write</key>
+	<true/>
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+	<array>
+		<string>/Library/Application Support/</string>
+	</array>
 </dict>
 </plist>
