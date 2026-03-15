@@ -250,6 +250,9 @@ class Orchestrator {
     String? _auditSkillId;
     String? _auditMcpServer;
 
+    // Per-request streaming chunk counter shared across all branches.
+    var _chunkIndex = 0;
+
     switch (intentType) {
       case IntentType.chat:
       case IntentType.task:
@@ -262,6 +265,13 @@ class Orchestrator {
           privacyScore: privacyScore,
           tools: _kTools,
           toolExecutor: _executeTool,
+          onChunk: (chunk) => sendStreamChunk(
+            ownerAtSign: fromAtSign,
+            reqId: reqId,
+            chunkIndex: _chunkIndex++,
+            chunk: chunk,
+            conversationId: conversationId,
+          ),
         );
 
       case IntentType.skillInvocation:
@@ -325,6 +335,13 @@ class Orchestrator {
           privacyScore: privacyScore,
           tools: _kTools,
           toolExecutor: _executeTool,
+          onChunk: (chunk) => sendStreamChunk(
+            ownerAtSign: fromAtSign,
+            reqId: reqId,
+            chunkIndex: _chunkIndex++,
+            chunk: chunk,
+            conversationId: conversationId,
+          ),
         );
 
       case IntentType.multiStepPlan:
@@ -335,16 +352,22 @@ class Orchestrator {
           privacyScore: privacyScore,
           systemOverride: 'Break this request into steps and execute each one. '
               'Show your reasoning.',
+          onChunk: (chunk) => sendStreamChunk(
+            ownerAtSign: fromAtSign,
+            reqId: reqId,
+            chunkIndex: _chunkIndex++,
+            chunk: chunk,
+            conversationId: conversationId,
+          ),
         );
     }
 
     final elapsed = DateTime.now().difference(startTime).inMilliseconds;
 
     // ── 5. Stream response to owner in real-time ──────────────────────────
-    // NOTE: For true streaming, llmRouter.generateResponse() can be modified
-    // to call a streaming callback that sends chunks via notificationService.
-    // The current implementation returns the full response at once.
-    // Streaming is a Phase 1 enhancement — see llm_router.dart.
+    // NOTE: Streaming IS now active — tokens are sent live via sendStreamChunk
+    // inside the onChunk callbacks above.  The full responseText is still
+    // returned so the RPC reply and memory save paths work unchanged.
 
     // ── 6. Persist exchange to Memory Service ─────────────────────────────
     try {
@@ -591,11 +614,28 @@ class Orchestrator {
     } catch (_) {
       return 'Error: invalid URL — $url';
     }
+
+    // Rewrite Google / Bing search URLs → DuckDuckGo HTML (scraper-friendly).
+    if ((uri.host.contains('google.com') || uri.host.contains('bing.com')) &&
+        (uri.path == '/search' || uri.queryParameters.containsKey('q'))) {
+      final q = uri.queryParameters['q'] ?? '';
+      if (q.isNotEmpty) {
+        uri = Uri.parse(
+            'https://html.duckduckgo.com/html/?q=${Uri.encodeQueryComponent(q)}');
+        _log.info('[fetch_webpage] Rewrote search URL → $uri');
+      }
+    }
+
     try {
       _log.info('[fetch_webpage] GET $uri');
       final resp = await http.get(uri, headers: {
-        'User-Agent': 'Pembrook-Agent/1.0 (fetch_webpage tool)',
-        'Accept': 'text/html,application/xhtml+xml',
+        // Use a real browser UA so sites don't serve bot-blocking pages.
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/124.0.0.0 Safari/537.36',
+        'Accept':
+            'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
       }).timeout(const Duration(seconds: 15));
 
       if (resp.statusCode != 200) {

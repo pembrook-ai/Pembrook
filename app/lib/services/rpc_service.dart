@@ -15,8 +15,9 @@
 ///   there so the client is recreated immediately without a restart.
 ///
 /// Streaming:
-///   [streamChunks] — a Stream<String> yielding incremental tokens sent by
-///   the Orchestrator as 'pembrook.stream.<reqId>.pembrook' notifications.
+///   [streamChunkEvents] — a Stream<StreamChunkEvent> yielding incremental tokens
+///   sent by the Orchestrator as 'pembrook.stream.<reqId>.<i>.pembrook' notifications.
+///   Each event carries a [conversationId] so ChatScreen can filter to its own chunks.
 ///   The final full response still arrives via the normal AtRpc reply.
 
 import 'dart:async';
@@ -38,6 +39,14 @@ class RpcCallResult {
     required this.conversationId,
     this.error,
   });
+}
+
+/// A streaming chunk event — carries the conversationId it belongs to so
+/// each ChatScreen can filter and only render its own conversation's chunks.
+class StreamChunkEvent {
+  final String conversationId;
+  final String chunk;
+  const StreamChunkEvent({required this.conversationId, required this.chunk});
 }
 
 /// A proactive push message sent by the agent from a scheduled task.
@@ -71,8 +80,10 @@ class RpcService extends ChangeNotifier {
   static const Duration _callTimeout = Duration(seconds: 90);
 
   // Stream of incremental text chunks from the agent (streaming mode).
-  final StreamController<String> _streamChunkController =
-      StreamController<String>.broadcast();
+  // Each event carries the conversationId it belongs to so individual
+  // ChatScreens can filter to only their own conversation's chunks.
+  final StreamController<StreamChunkEvent> _streamChunkController =
+      StreamController<StreamChunkEvent>.broadcast();
 
   // Stream of proactive push messages from scheduled tasks.
   final StreamController<PushMessage> _pushController =
@@ -86,7 +97,10 @@ class RpcService extends ChangeNotifier {
   // Suppresses buffering so messages aren't shown twice on remount.
   bool _hasPushListener = false;
 
-  Stream<String> get streamChunks => _streamChunkController.stream;
+  /// Stream of chunk events keyed by conversationId.
+  /// ChatScreen should filter: `streamChunkEvents.where((e) => e.conversationId == _conversationId)`
+  Stream<StreamChunkEvent> get streamChunkEvents =>
+      _streamChunkController.stream;
 
   /// Subscribe to push messages, draining any that arrived while away.
   ///
@@ -213,13 +227,18 @@ class RpcService extends ChangeNotifier {
         // Handle both: plain string and {"chunk": "..."} JSON envelope.
         final value = notification.value!;
         String chunk;
+        String convId = '';
         if (value.startsWith('{')) {
           final map = _tryDecode(value);
           chunk = map?['chunk'] as String? ?? value;
+          convId = map?['conversationId'] as String? ?? '';
         } else {
           chunk = value;
         }
-        if (chunk.isNotEmpty) _streamChunkController.add(chunk);
+        if (chunk.isNotEmpty) {
+          _streamChunkController
+              .add(StreamChunkEvent(conversationId: convId, chunk: chunk));
+        }
       } catch (_) {}
     });
 

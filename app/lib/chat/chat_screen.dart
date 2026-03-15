@@ -1,8 +1,9 @@
 /// ChatScreen — the main Pembrook conversation UI.
 ///
 /// Sends messages to @agent via RpcService.call() and renders the response.
-/// Subscribes to RpcService.streamChunks for incremental token rendering
-/// (streaming mode from the agent).
+/// Subscribes to RpcService.streamChunkEvents for incremental token rendering
+/// (streaming mode from the agent). Chunks are filtered by conversationId so
+/// only the screen that sent the request renders its own response.
 ///
 /// Multi-session chat:
 ///   Each chat session has a unique [_conversationId] (UUIDv4).
@@ -64,7 +65,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool _isLoading = false;
   String _streamBuffer = '';
-  StreamSubscription<String>? _streamSub;
+  StreamSubscription<StreamChunkEvent>? _streamSub;
   StreamSubscription<PushMessage>? _pushSub;
 
   static const String _welcomeText =
@@ -89,8 +90,14 @@ class _ChatScreenState extends State<ChatScreen> {
     _store = context.read<ConversationStore>();
     _rpcService = context.read<RpcService>();
     _streamSub?.cancel();
-    _streamSub = _rpcService!.streamChunks.listen((chunk) {
-      setState(() => _streamBuffer += chunk);
+    // Filter stream chunks to only this conversation's chunks.
+    // Because _conversationId is read at event-fire time (not captured),
+    // this correctly handles conversation switches without re-subscribing.
+    _streamSub = _rpcService!.streamChunkEvents.listen((event) {
+      if (event.conversationId != _conversationId) return;
+      if (!_isLoading)
+        return; // ignore late-arriving chunks after response received
+      setState(() => _streamBuffer += event.chunk);
       _scrollToBottom();
     });
     // Subscribe to proactive push messages from scheduled tasks.
@@ -312,6 +319,10 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
 
     final rpcService = context.read<RpcService>();
+    // Capture the conversation this request belongs to.
+    // If the user starts a new conversation while this call is in-flight,
+    // the response must NOT appear in the new conversation.
+    final sendConvId = _conversationId;
     final result = await rpcService.call(
       command: text,
       conversationId: _conversationId,
@@ -319,6 +330,8 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     if (!mounted) return;
+    // Discard the response if the user has navigated to a different conversation.
+    if (_conversationId != sendConvId) return;
     setState(() {
       _isLoading = false;
       _streamBuffer = '';

@@ -121,6 +121,7 @@ Score:''';
     List<Map<String, dynamic>> tools = const [],
     Future<String> Function(String toolName, Map<String, dynamic> args)?
         toolExecutor,
+    Future<void> Function(String chunk)? onChunk,
   }) async {
     await _maybeRefreshSettings();
 
@@ -174,6 +175,7 @@ TOOL USE RULES — follow these exactly, every time:
         messages: messages,
         tools: tools,
         toolExecutor: toolExecutor,
+        onChunk: onChunk,
       );
     }
 
@@ -189,7 +191,7 @@ TOOL USE RULES — follow these exactly, every time:
     if (useLocal) {
       _log.fine(
           'Routing to LOCAL LLM (privacyScore=$privacyScore threshold=$_privacyThreshold localOnly=$_localOnly)');
-      return _callOllama(prompt: fullPrompt);
+      return _callOllama(prompt: fullPrompt, onChunk: onChunk);
     } else {
       // Hybrid: try local first, escalate to external if knowledge gap detected
       _log.fine('Attempting local LLM first (might escalate to external)');
@@ -276,19 +278,89 @@ TOOL USE RULES — follow these exactly, every time:
   ///
   /// Uses the chat endpoint internally so the same model weights handle
   /// both plain chat and tool-calling conversations.
+  /// When [onChunk] is provided, uses Ollama streaming mode so tokens arrive
+  /// incrementally instead of all at once.
   Future<String> _callOllama({
     required String prompt,
     int maxTokens = 2048,
     double temperature = 0.7,
+    Future<void> Function(String chunk)? onChunk,
   }) async {
+    final messages = [
+      {'role': 'user', 'content': prompt}
+    ];
+    if (onChunk != null) {
+      return _callOllamaStreaming(
+        messages: messages,
+        onChunk: onChunk,
+        maxTokens: maxTokens,
+        temperature: temperature,
+      );
+    }
     final msg = await _callOllamaChat(
-      messages: [
-        {'role': 'user', 'content': prompt}
-      ],
+      messages: messages,
       maxTokens: maxTokens,
       temperature: temperature,
     );
     return (msg['content'] as String? ?? '').trim();
+  }
+
+  /// Streaming variant of [_callOllamaChat] — uses Ollama NDJSON streaming.
+  /// Calls [onChunk] for every token as it is produced.
+  Future<String> _callOllamaStreaming({
+    required List<Map<String, dynamic>> messages,
+    required Future<void> Function(String chunk) onChunk,
+    int maxTokens = 2048,
+    double temperature = 0.7,
+  }) async {
+    final client = http.Client();
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse('\$ollamaBaseUrl/api/chat'),
+      );
+      request.headers['Content-Type'] = 'application/json';
+      request.body = jsonEncode({
+        'model': _localModel,
+        'messages': messages,
+        'stream': true,
+        'options': {
+          'num_predict': maxTokens,
+          'temperature': temperature,
+        },
+      });
+
+      final streamedResp =
+          await client.send(request).timeout(const Duration(seconds: 120));
+
+      if (streamedResp.statusCode != 200) {
+        _log.warning('Ollama streaming returned \${streamedResp.statusCode}');
+        return 'I apologize — the local AI model is temporarily unavailable.';
+      }
+
+      final chunks = <String>[];
+      await for (final line in streamedResp.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        if (line.isEmpty) continue;
+        try {
+          final data = jsonDecode(line) as Map<String, dynamic>;
+          final message = data['message'] as Map<String, dynamic>?;
+          final content = message?['content'] as String? ?? '';
+          if (content.isNotEmpty) {
+            chunks.add(content);
+            await onChunk(content);
+          }
+          if (data['done'] == true) break;
+        } catch (_) {}
+      }
+      return chunks.join().trim();
+    } catch (e) {
+      _log.severe('Ollama streaming call failed: \$e');
+      return 'I apologize — I could not reach the local AI model. Error: \$e';
+    } finally {
+      client.close();
+    }
   }
 
   /// Agentic tool-use loop using Ollama's native tool-calling API.
@@ -306,6 +378,7 @@ TOOL USE RULES — follow these exactly, every time:
     required Future<String> Function(String toolName, Map<String, dynamic> args)
         toolExecutor,
     int maxIterations = 5,
+    Future<void> Function(String chunk)? onChunk,
   }) async {
     final history = List<Map<String, dynamic>>.from(messages);
 
@@ -324,7 +397,18 @@ TOOL USE RULES — follow these exactly, every time:
       if (toolCalls == null || toolCalls.isEmpty) {
         _log.info(
             '[tool-loop] model returned plain text answer (no tool calls) after ${iteration + 1} iteration(s)');
-        return (assistantMsg['content'] as String? ?? '').trim();
+        final rawAnswer = (assistantMsg['content'] as String? ?? '').trim();
+        // Feed the answer through onChunk so the app sees it token-by-token
+        // even though the tool-calling path used a non-streaming call.
+        // We re-stream the text in small bursts (word-by-word) so the UI
+        // still animates smoothly rather than popping in all at once.
+        if (onChunk != null && rawAnswer.isNotEmpty) {
+          final words = rawAnswer.split(' ');
+          for (var i = 0; i < words.length; i++) {
+            await onChunk(i == 0 ? words[i] : ' ${words[i]}');
+          }
+        }
+        return rawAnswer;
       }
 
       _log.info('[tool-loop] model requested ${toolCalls.length} tool call(s)');

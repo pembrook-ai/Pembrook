@@ -123,7 +123,10 @@ class TaskScheduler {
         ..addAll(tasks);
       return tasks;
     } catch (e) {
-      _log.warning('listTasks error: $e');
+      final msg = e.toString();
+      if (!msg.contains('key not found') && !msg.contains('does not exist')) {
+        _log.warning('listTasks error: $e');
+      }
       return [];
     }
   }
@@ -159,7 +162,13 @@ class TaskScheduler {
     } catch (e) {
       // Re-throw so listTasks() can distinguish a real empty index from
       // a transient atServer connection failure.
-      _log.warning('_readIndex error: $e');
+      // Suppress noisy warning for the expected "key not found" case on fresh start.
+      final msg = e.toString();
+      if (msg.contains('key not found') || msg.contains('does not exist')) {
+        _log.fine('_readIndex: index key not yet created (fresh start)');
+      } else {
+        _log.warning('_readIndex error: $e');
+      }
       rethrow;
     }
   }
