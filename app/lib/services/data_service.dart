@@ -117,6 +117,10 @@ class SkillData {
   /// Examples: {'smtp_host': 'smtp.example.com', 'from_address': '...'}
   final Map<String, String> config;
 
+  /// Whether this skill needs outbound network access.
+  /// When true the sandbox runs with --network=bridge instead of --network=none.
+  final bool requiresNetwork;
+
   const SkillData({
     required this.skillId,
     required this.skillAtSign,
@@ -125,16 +129,23 @@ class SkillData {
     this.trustScore = 0.0,
     this.enabled = true,
     this.config = const {},
+    this.requiresNetwork = false,
   });
 
-  SkillData copyWith({bool? enabled}) => SkillData(
+  SkillData copyWith({
+    bool? enabled,
+    Map<String, String>? config,
+    bool? requiresNetwork,
+  }) =>
+      SkillData(
         skillId: skillId,
         skillAtSign: skillAtSign,
         description: description,
         version: version,
         trustScore: trustScore,
         enabled: enabled ?? this.enabled,
-        config: config,
+        config: config ?? this.config,
+        requiresNetwork: requiresNetwork ?? this.requiresNetwork,
       );
 
   Map<String, dynamic> toJson() => {
@@ -145,6 +156,7 @@ class SkillData {
         'trustScore': trustScore,
         'enabled': enabled,
         'config': config,
+        'requiresNetwork': requiresNetwork,
       };
 
   factory SkillData.fromJson(Map<String, dynamic> json) => SkillData(
@@ -156,6 +168,7 @@ class SkillData {
         enabled: json['enabled'] as bool? ?? true,
         config: (json['config'] as Map<String, dynamic>? ?? {})
             .map((k, v) => MapEntry(k, v.toString())),
+        requiresNetwork: json['requiresNetwork'] as bool? ?? false,
       );
 }
 

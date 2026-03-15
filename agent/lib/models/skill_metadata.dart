@@ -81,6 +81,16 @@ class SkillMetadata {
   /// Owner's custom overrides for this skill (tighter than declared)
   final Map<String, dynamic> ownerPolicyOverrides;
 
+  /// Credential / configuration key-value pairs injected into the skill
+  /// payload before sandbox execution.  Examples:
+  ///   email:    smtpHost, smtpPort, smtpUser, smtpPassword, fromAddress,
+  ///             imapHost, imapPort, imapUser, imapPassword
+  ///   calendar: accessToken
+  ///   web_search: searchApiUrl, braveApiKey
+  ///
+  /// These are stored encrypted on @owner's atServer and never logged.
+  final Map<String, String> config;
+
   const SkillMetadata({
     required this.skillId,
     required this.skillAtSign,
@@ -92,6 +102,7 @@ class SkillMetadata {
     required this.installedAt,
     this.lastAuditResult = 'unknown',
     this.ownerPolicyOverrides = const {},
+    this.config = const {},
   });
 
   Map<String, dynamic> toJson() => {
@@ -105,6 +116,7 @@ class SkillMetadata {
         'installedAt': installedAt.toIso8601String(),
         'lastAuditResult': lastAuditResult,
         'ownerPolicyOverrides': ownerPolicyOverrides,
+        'config': config,
       };
 
   factory SkillMetadata.fromJson(Map<String, dynamic> json) => SkillMetadata(
@@ -121,5 +133,7 @@ class SkillMetadata {
         lastAuditResult: json['lastAuditResult'] as String? ?? 'unknown',
         ownerPolicyOverrides:
             json['ownerPolicyOverrides'] as Map<String, dynamic>? ?? {},
+        config: (json['config'] as Map<String, dynamic>? ?? {})
+            .map((k, v) => MapEntry(k, v.toString())),
       );
 }

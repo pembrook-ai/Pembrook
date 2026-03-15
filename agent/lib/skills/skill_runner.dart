@@ -120,7 +120,13 @@ class SkillRunner {
 
     // ── 4. Execute in sandbox ────────────────────────────────
     _log.info('Running skill: $skillId for $initiatorAtSign');
-    final sandboxResult = await sandboxManager.run(meta, payload);
+
+    // Merge stored config as defaults — LLM-provided payload values win.
+    // Config holds credentials (smtpHost, smtpPassword, accessToken, etc.)
+    // that were saved by the owner in the Skills config screen.
+    final mergedPayload = <String, dynamic>{...meta.config, ...payload};
+
+    final sandboxResult = await sandboxManager.run(meta, mergedPayload);
 
     // ── 5. Audit ─────────────────────────────────────────────
     await _audit(

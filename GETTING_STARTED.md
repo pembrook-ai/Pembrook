@@ -314,23 +314,25 @@ Three skills ship with SafeClaw in the `skills/` directory:
 | `calendar` | `skills/calendar/` | Read / create / update calendar events (CalDAV) | Yes |
 | `web_search` | `skills/web_search/` | SearXNG or Brave web search + page fetcher | Yes |
 
-> **Note:** The default Docker sandbox runs with `--network=none`.  
-> Skills that need network access (all three above) require a network-enabled sandbox profile or an allow-listed egress rule.
+> **Note:** Skills that need network access must be registered with **Requires network access** turned on (Step 2).  
+> Without this, the sandbox runs with `--network=none` and SMTP/IMAP/HTTPS calls will fail silently.
 
 ### Step 1 — Build the skill Docker image
 
-Run this once per skill, from the repo root, on the same host where the agent container runs:
+Dockerfiles are in each skill's directory. Run from the repo root on the same host as the agent:
 
 ```bash
-# Example: email skill
-docker build \
-  -t safeclaw-skill-email:latest \
-  -f skills/email/Dockerfile \
-  .
+# Email skill
+docker build -t safeclaw-skill-email:latest -f skills/email/Dockerfile .
+
+# Calendar skill
+docker build -t safeclaw-skill-calendar:latest -f skills/calendar/Dockerfile .
+
+# Web search skill
+docker build -t safeclaw-skill-web_search:latest -f skills/web_search/Dockerfile .
 ```
 
-Repeat with `email` → `calendar` / `web_search` for the other built-in skills.
-
+> The first build pulls the Dart SDK layer (~1 GB) — subsequent builds are cached.  
 > The image must be present on the **Docker host** the agent container uses.  
 > The agent gets access to Docker via the `/var/run/docker.sock` volume defined in `docker-compose.yml`.
 
@@ -342,15 +344,56 @@ Repeat with `email` → `calendar` / `web_search` for the other built-in skills.
    | Field | Example | Notes |
    |---|---|---|
    | Skill ID | `email` | Must match the image name: `safeclaw-skill-<id>:latest` |
-   | Skill atSign | `@ai6bh` | Can be your services atSign — no dedicated atSign needed |
+   | Skill atSign | `@myservices` | Can be your services atSign — no dedicated atSign needed |
    | Description | `Send and read emails via SMTP/IMAP` | Shown in the agent's tool list |
    | Version | `1.0.0` | Semantic version |
+   | Requires network access | ✅ on | **Turn on for email, calendar, web_search** |
 4. Tap **Register**
 
+### Step 2b — Configure the skill (credentials)
+
+After registering, tap the **⚙ tune** icon on the skill card to enter its credentials.  
+These are stored **encrypted on your atServer** and never appear in logs.
+
+**Email skill fields:**
+
+| Field | Example |
+|---|---|
+| SMTP Host | `smtp.gmail.com` |
+| SMTP Port | `587` |
+| SMTP Username | `you@gmail.com` |
+| SMTP Password | `your-app-password` |
+| From Address | `you@gmail.com` |
+| IMAP Host | `imap.gmail.com` |
+| IMAP Port | `993` |
+| IMAP Username | `you@gmail.com` |
+| IMAP Password | `your-app-password` |
+
+**Calendar skill fields:**
+
+| Field | Example |
+|---|---|
+| Google OAuth2 Access Token | `ya29.xxxx` |
+| Calendar ID | `primary` |
+
+> Obtaining a Google OAuth2 access token: create an OAuth client in [Google Cloud Console](https://console.cloud.google.com/), enable the Calendar API, and run the installed-app OAuth flow to get a refresh/access token.
+
+**Web Search skill fields:**
+
+| Field | Example | Notes |
+|---|---|---|
+| SearXNG Base URL | `https://searx.example.com` | Your self-hosted SearXNG instance |
+| Brave API Key | `BSA...` | Alternative: Brave Search API key |
+
+> Use one or the other — if both are set, SearXNG takes precedence.
+
+Tap **Save** in the sheet.  The config is immediately re-synced to the agent via RPC.
+
 What happens behind the scenes:
-1. The app writes the skill metadata to an AtKey on `@owner`'s atServer (for audit)
+1. The app writes the skill metadata (including config) to an AtKey on `@owner`'s atServer (for audit)
 2. The app sends a `_sys.skill.install` RPC command to `@agent`
 3. The agent registers the skill in its `SkillRegistry` and can now spawn the container on demand
+4. At invocation time, the agent merges the stored config into the skill payload before spawning the container
 
 ### Step 3 — Use the skill
 
@@ -377,7 +420,7 @@ The app sends `_sys.skill.uninstall` to the agent, which removes it from the liv
 
 | Command | Payload | Effect |
 |---|---|---|
-| `_sys.skill.install` | `{skillId, skillAtSign, description, version, enabled, trustScore}` | Add or update skill in registry |
+| `_sys.skill.install` | `{skillId, skillAtSign, description, version, enabled, trustScore, requiresNetwork, config}` | Add or update skill in registry |
 | `_sys.skill.uninstall` | `{skillId}` | Remove skill from registry |
 | `_sys.skill.list` | *(empty)* | Returns array of all registered skills |
 

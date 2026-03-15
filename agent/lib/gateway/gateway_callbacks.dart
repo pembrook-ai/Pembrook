@@ -193,7 +193,8 @@ class GatewayCallbacks implements AtRpcCallbacks {
     _log.info('Sys command: $command from $fromAtSign');
 
     if (skillRegistry == null) {
-      return _errorResponse(reqId, 'SkillRegistry not wired — cannot manage skills');
+      return _errorResponse(
+          reqId, 'SkillRegistry not wired — cannot manage skills');
     }
 
     try {
@@ -225,22 +226,29 @@ class GatewayCallbacks implements AtRpcCallbacks {
 
     // Convert SkillData (app model) → SkillMetadata (agent model).
     // Fields not present in the app model get safe defaults.
+    final requiresNetwork = payload['requiresNetwork'] as bool? ?? false;
+
     final meta = SkillMetadata(
       skillId: skillId,
       skillAtSign: payload['skillAtSign'] as String? ?? fromAtSign,
-      developerAtSign: fromAtSign, // owner is the "developer" for app-registered skills
+      developerAtSign:
+          fromAtSign, // owner is the "developer" for app-registered skills
       signatureHash: 'app-registered-${_uuid.v4()}',
       version: payload['version'] as String? ?? '1.0.0',
-      declaredCapabilities: const SkillCapabilities(),
+      declaredCapabilities: SkillCapabilities(
+        // Grant network access when the owner explicitly requested it.
+        networkEndpoints: requiresNetwork ? const ['*'] : const [],
+      ),
       trustScore: (payload['trustScore'] as num?)?.toDouble() ?? 0.5,
       installedAt: DateTime.now().toUtc(),
       lastAuditResult: 'app-registered',
       ownerPolicyOverrides: {
-        if (payload['config'] is Map)
-          ...Map<String, dynamic>.from(payload['config'] as Map),
         'enabled': payload['enabled'] ?? true,
         'description': payload['description'] ?? '',
       },
+      // Credentials stored encrypted on @owner's atServer; injected at invocation.
+      config: (payload['config'] as Map<String, dynamic>? ?? {})
+          .map((k, v) => MapEntry(k, v.toString())),
     );
 
     await skillRegistry!.installSkill(meta);

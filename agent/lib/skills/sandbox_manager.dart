@@ -104,10 +104,16 @@ class SandboxManager {
           requestId ?? DateTime.now().millisecondsSinceEpoch.toString(),
     });
 
+    // Use --network=bridge when the skill declared network endpoints;
+    // otherwise keep the default --network=none sandbox.
+    final networkFlag = meta.declaredCapabilities.networkEndpoints.isNotEmpty
+        ? '--network=bridge'
+        : '--network=none';
+
     final args = [
       'run',
       '--rm',
-      '--network=none',
+      networkFlag,
       '--memory=256m',
       '--cpus=0.5',
       '--read-only',
