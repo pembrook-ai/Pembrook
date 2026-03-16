@@ -5,6 +5,14 @@
 /// (streaming mode from the agent). Chunks are filtered by conversationId so
 /// only the screen that sent the request renders its own response.
 ///
+/// Multi-device sync:
+///   All @owner devices receive the same atPlatform stream notifications.
+///   When the agent signals 'done: true' on a stream chunk for a conversation
+///   this device did NOT initiate, the screen reloads ConversationStore from
+///   the remote AtKey so the completed exchange appears in history on all devices.
+///   When the app resumes from background (AppLifecycleState.resumed) the store
+///   is also reloaded from the remote atServer.
+///
 /// Multi-session chat:
 ///   Each chat session has a unique [_conversationId] (UUIDv4).
 ///   Tapping the "New conversation" button (➕) saves the current session to
@@ -53,7 +61,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final List<_Message> _messages = [];
   final TextEditingController _inputCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
@@ -80,6 +88,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final Map<String, String> _bgStreamBuffers = {};
   StreamSubscription<StreamChunkEvent>? _streamSub;
   StreamSubscription<PushMessage>? _pushSub;
+  // Fires when another device completes a conversation; triggers history reload.
+  StreamSubscription<String>? _convCompletedSub;
 
   static const String _welcomeText =
       'Hello! I\'m your Pembrook AI assistant. All our communication is '
@@ -88,6 +98,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _conversationId = _uuid.v4();
     _messages.add(_Message(text: _welcomeText, isUser: false));
     // Load the stored conversation list on first launch.
@@ -105,6 +116,15 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  /// Reload conversation history from the remote AtKey when the app is foregrounded.
+  /// This handles "picked up a second device" — history is always fresh from the server.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _store?.load();
+    }
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -115,17 +135,91 @@ class _ChatScreenState extends State<ChatScreen> {
     // Because _conversationId is read at event-fire time (not captured),
     // this correctly handles conversation switches without re-subscribing.
     _streamSub = _rpcService!.streamChunkEvents.listen((event) {
-      if (!_streamingEnabled) return; // streaming disabled in Settings
-      if (event.conversationId != _activeStreamConvId) return;
+      if (!_streamingEnabled) return;
+      final isOurRequest = event.conversationId == _activeStreamConvId;
+      // Accept chunks for the currently displayed conversation from any device
+      // (same conv, different device — isRemoteOnCurrentConv).
+      // Also buffer chunks for any OTHER conversation arriving while we are
+      // idle (_activeStreamConvId == null) — they will be shown/discarded
+      // once the completion signal arrives and we know what to do with them.
+      final isRemoteOnCurrentConv = event.conversationId == _conversationId &&
+          _activeStreamConvId == null;
+      final isOtherRemoteConv = event.conversationId != _conversationId &&
+          _activeStreamConvId == null;
+      if (!isOurRequest && !isRemoteOnCurrentConv && !isOtherRemoteConv) return;
       if (event.conversationId == _conversationId) {
-        // Chunk for the currently displayed conversation.
+        // Chunk for the currently displayed conversation (ours or remote).
         setState(() => _streamBuffer += event.chunk);
         _scrollToBottom();
       } else {
-        // Chunk for a backgrounded in-flight conversation — buffer it.
+        // Buffer chunk for a backgrounded or unknown remote conversation.
         _bgStreamBuffers[event.conversationId] =
             (_bgStreamBuffers[event.conversationId] ?? '') + event.chunk;
       }
+    });
+    // Reload conversation history when any conversation completes anywhere.
+    // All @owner devices receive the same stream notifications from @agent.
+    _convCompletedSub?.cancel();
+    _convCompletedSub =
+        _rpcService!.conversationCompletedEvents.listen((convId) {
+      // Delay so the originating device has time to write the AtKey before
+      // we read it.
+      Future.delayed(const Duration(seconds: 3), () async {
+        if (!mounted) return;
+        await _store?.load();
+        if (!mounted) return;
+
+        if (convId == _conversationId) {
+          // Completed conversation IS the one currently on screen — refresh messages.
+          final updated = _store?.get(convId);
+          if (updated != null) {
+            setState(() {
+              _streamBuffer = '';
+              _conversationId = updated.id;
+              _messages
+                ..clear()
+                ..addAll(updated.messages.map((s) => _Message(
+                      text: s.text,
+                      isUser: s.isUser,
+                      timestamp: s.timestamp,
+                    )));
+            });
+            _scrollToBottom();
+          }
+        } else {
+          // Completed conversation is a DIFFERENT conversation (Device B used its
+          // own UUID).  Discard any buffered chunks for it — we'll use the store.
+          _bgStreamBuffers.remove(convId);
+          final completed = _store?.get(convId);
+          if (completed == null) return;
+          final hasUserMessages = _messages.any((m) => m.isUser);
+          if (!hasUserMessages) {
+            // Device A is idle (just the welcome message) — auto-switch to show
+            // the newly completed conversation.
+            setState(() {
+              _streamBuffer = '';
+              _conversationId = completed.id;
+              _messages
+                ..clear()
+                ..addAll(completed.messages.map((s) => _Message(
+                      text: s.text,
+                      isUser: s.isUser,
+                      timestamp: s.timestamp,
+                    )));
+            });
+            _scrollToBottom();
+          } else {
+            // Device A has its own active chat — show a non-intrusive notification.
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('New reply: "${completed.title}"'),
+              action: SnackBarAction(
+                label: 'View',
+                onPressed: () => _loadConversation(completed),
+              ),
+            ));
+          }
+        }
+      });
     });
     // Subscribe to proactive push messages from scheduled tasks.
     // listenToPushMessages() also drains any messages that arrived while
@@ -147,11 +241,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // Persist the current conversation before the screen disposes.
     _saveCurrentConversation();
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
     _streamSub?.cancel();
+    _convCompletedSub?.cancel();
     // Release before cancel so RpcService re-enables buffering immediately.
     _rpcService?.releasePushListener();
     _pushSub?.cancel();
@@ -198,7 +294,7 @@ class _ChatScreenState extends State<ChatScreen> {
               isUser: s.isUser,
               timestamp: s.timestamp,
             )));
-      // Clear the visible stream buffer (switching display).
+      // Clear the visible stream buffer and remote-receive flag (switching display).
       // Do NOT touch _activeStreamConvId or _isLoading — a request may still
       // be in-flight for a different conversation; we keep blocking sends and
       // routing chunks until its response arrives.
@@ -446,7 +542,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _messages
         ..clear()
         ..add(_Message(text: _welcomeText, isUser: false));
-      // Clear the visible stream buffer (switching display).
+      // Clear the visible stream buffer and remote-receive flag.
       // Do NOT touch _activeStreamConvId or _isLoading — a request may still
       // be in-flight; we keep blocking sends and routing chunks until it lands.
       _streamBuffer = '';

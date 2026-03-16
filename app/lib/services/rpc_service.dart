@@ -19,6 +19,12 @@
 ///   sent by the Orchestrator as 'pembrook.stream.<reqId>.<i>.pembrook' notifications.
 ///   Each event carries a [conversationId] so ChatScreen can filter to its own chunks.
 ///   The final full response still arrives via the normal AtRpc reply.
+///
+/// Cross-device sync:
+///   [conversationCompletedEvents] — a Stream<String> that fires a conversationId
+///   whenever the agent sends a 'done: true' stream chunk.  Other devices receive
+///   this notification too (atPlatform broadcasts to all subscribers of @owner) and
+///   use it as a trigger to reload the shared conversation_history AtKey.
 
 import 'dart:async';
 import 'dart:convert';
@@ -85,6 +91,12 @@ class RpcService extends ChangeNotifier {
   final StreamController<StreamChunkEvent> _streamChunkController =
       StreamController<StreamChunkEvent>.broadcast();
 
+  // Fires the conversationId whenever a 'done: true' stream chunk is received.
+  // Used by other devices to detect that a conversation was completed elsewhere
+  // and to reload the shared conversation_history AtKey.
+  final StreamController<String> _convCompletedController =
+      StreamController<String>.broadcast();
+
   // Stream of proactive push messages from scheduled tasks.
   final StreamController<PushMessage> _pushController =
       StreamController<PushMessage>.broadcast();
@@ -101,6 +113,13 @@ class RpcService extends ChangeNotifier {
   /// ChatScreen should filter: `streamChunkEvents.where((e) => e.conversationId == _conversationId)`
   Stream<StreamChunkEvent> get streamChunkEvents =>
       _streamChunkController.stream;
+
+  /// Fires a conversationId each time the agent signals 'done: true' on a
+  /// stream chunk.  All devices subscribed to @owner receive this notification,
+  /// so those that didn't originate the request can use it as a cue to reload
+  /// the shared conversation_history AtKey and show the completed exchange.
+  Stream<String> get conversationCompletedEvents =>
+      _convCompletedController.stream;
 
   /// Subscribe to push messages, draining any that arrived while away.
   ///
@@ -235,16 +254,22 @@ class RpcService extends ChangeNotifier {
         final value = notification.value!;
         String chunk;
         String convId = '';
+        bool isDone = false;
         if (value.startsWith('{')) {
           final map = _tryDecode(value);
           chunk = map?['chunk'] as String? ?? value;
           convId = map?['conversationId'] as String? ?? '';
+          isDone = map?['done'] as bool? ?? false;
         } else {
           chunk = value;
         }
         if (chunk.isNotEmpty) {
           _streamChunkController
               .add(StreamChunkEvent(conversationId: convId, chunk: chunk));
+        }
+        // Signal completion so other devices can reload conversation history.
+        if (isDone && convId.isNotEmpty) {
+          _convCompletedController.add(convId);
         }
       } catch (_) {}
     });
@@ -308,6 +333,7 @@ class RpcService extends ChangeNotifier {
     _streamSubscription?.cancel();
     _pushSubscription?.cancel();
     _streamChunkController.close();
+    _convCompletedController.close();
     _pushController.close();
     super.dispose();
   }

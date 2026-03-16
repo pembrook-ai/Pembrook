@@ -615,6 +615,18 @@ class Orchestrator {
     if (streamingEnabled) {
       await _flushTokenBuf();
       if (_pendingChunks.isNotEmpty) await Future.wait(_pendingChunks);
+      // Send a sentinel 'done: true' chunk so OTHER devices that share the
+      // same @owner atSign can detect the exchange completed and reload the
+      // shared conversation_history AtKey.  The originating device ignores
+      // this (it filters by _conversationId in ChatScreen).
+      await sendStreamChunk(
+        ownerAtSign: fromAtSign,
+        reqId: reqId,
+        chunkIndex: _chunkIndex++,
+        chunk: '',
+        conversationId: conversationId,
+        done: true,
+      );
     }
 
     final elapsed = DateTime.now().difference(startTime).inMilliseconds;
