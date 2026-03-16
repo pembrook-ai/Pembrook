@@ -3,7 +3,8 @@
 /// Returns a [ConversationSummary] via [Navigator.pop] when the user taps a
 /// session — [ChatScreen] then calls [_loadConversation] to restore it.
 ///
-/// Pull-to-refresh reloads from SharedPreferences.
+/// Pull-to-refresh fetches the latest conversations from the remote atServer
+/// (falls back to local cache if offline).
 /// Swipe-to-dismiss or the delete icon removes a session permanently.
 
 import 'package:flutter/material.dart';

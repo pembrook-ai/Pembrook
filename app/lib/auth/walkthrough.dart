@@ -311,6 +311,10 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
     // ignore: use_build_context_synchronously
     await context.read<DataService>().initialise(atClient);
     // ignore: use_build_context_synchronously
+    // Migrate conversation history from SharedPreferences → AtKey and load
+    // the latest from the remote atServer so multi-device sync works.
+    await context.read<ConversationStore>().initialise(atClient);
+    // ignore: use_build_context_synchronously
     context.go('/home');
   }
 }

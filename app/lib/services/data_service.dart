@@ -4,13 +4,14 @@
 ///   - Audit log entries    (read from @owner — written there by the agent)
 ///   - Pending HITL requests
 ///   - Installed skills     (read/write — owner declares skills, shared w/ @agent)
-///   - Conversation history (stored locally in SharedPreferences)
+///   - Conversation history (AtKey-backed, SharedPreferences used as offline cache)
 ///
 /// SKILL KEY PATTERN (on @owner's atServer, sharedWith @agent):
 ///   skill_meta.<skillId>.pembrook@<owner>  →  JSON-encoded SkillData
 ///
-/// CONVERSATION HISTORY (local SharedPreferences):
-///   Key: 'conversations'  →  JSON array of ConversationSummary objects
+/// CONVERSATION HISTORY (synced across all owner devices via AtKey):
+///   conversation_history.pembrook@<owner>  →  JSON array of ConversationSummary objects
+///   SharedPreferences key 'conversations'  →  same JSON (offline / startup cache)
 ///
 /// Agent atSign: loaded from SharedPreferences 'agentAtSign' (same source as
 /// RpcService so they stay in sync when the user updates Settings).
@@ -471,21 +472,63 @@ class ConversationSummary {
       );
 }
 
-/// Persists conversation history in SharedPreferences.
+/// Persists conversation history — synced across all owner devices via AtKey.
+///
+/// On load: tries the remote AtKey first; falls back to SharedPreferences for
+/// offline / unauthenticated startup.  On save/delete: writes to both stores.
+///
+/// AtKey: `conversation_history.pembrook@<owner>` (self-key, owner-only).
+/// SharedPreferences key: `'conversations'` (local offline cache).
 ///
 /// Stores up to [maxConversations] sessions.  Oldest sessions are pruned
 /// when the limit is exceeded.
 class ConversationStore extends ChangeNotifier {
   static const String _prefsKey = 'conversations';
+  static const String _atKeyName = 'conversation_history';
+  static const String _namespace = 'pembrook';
   static const int maxConversations = 100;
 
+  AtClient? _atClient;
   List<ConversationSummary> _conversations = [];
 
   List<ConversationSummary> get conversations =>
       List.unmodifiable(_conversations);
 
-  /// Load all conversations from SharedPreferences.
+  /// Call after authentication to enable cross-device AtKey sync.
+  ///
+  /// Sets the [AtClient] and immediately loads the latest conversation history
+  /// from the remote atServer (falling back to the local cache if offline).
+  Future<void> initialise(AtClient atClient) async {
+    _atClient = atClient;
+    await load();
+  }
+
+  /// Load conversations — tries remote AtKey first, then SharedPreferences.
   Future<void> load() async {
+    final client = _atClient;
+    if (client != null) {
+      try {
+        final key = AtKey()
+          ..key = _atKeyName
+          ..namespace = _namespace;
+        final atValue = await client.get(
+          key,
+          getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
+        );
+        if (atValue.value != null) {
+          final raw = atValue.value as String;
+          _loadFromJson(raw);
+          // Keep local cache in sync so the next offline startup has fresh data.
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_prefsKey, raw);
+          return;
+        }
+      } catch (_) {
+        // Network/AtKey unavailable — fall through to SharedPreferences.
+      }
+    }
+
+    // Offline / unauthenticated fallback.
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_prefsKey);
     if (raw == null || raw.isEmpty) {
@@ -493,12 +536,15 @@ class ConversationStore extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    _loadFromJson(raw);
+  }
+
+  void _loadFromJson(String raw) {
     try {
       final list = jsonDecode(raw) as List<dynamic>;
       _conversations = list
           .map((e) => ConversationSummary.fromJson(e as Map<String, dynamic>))
           .toList();
-      // Sort newest-first.
       _conversations.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     } catch (_) {
       _conversations = [];
@@ -546,10 +592,28 @@ class ConversationStore extends ChangeNotifier {
   }
 
   Future<void> _persist() async {
+    final json = jsonEncode(_conversations.map((c) => c.toJson()).toList());
+
+    // 1. Local cache — immediate, offline-safe.
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _prefsKey,
-      jsonEncode(_conversations.map((c) => c.toJson()).toList()),
-    );
+    await prefs.setString(_prefsKey, json);
+
+    // 2. Remote AtKey — synced to all owner devices via atPlatform.
+    final client = _atClient;
+    if (client != null) {
+      try {
+        final key = AtKey()
+          ..key = _atKeyName
+          ..namespace = _namespace
+          ..metadata = (Metadata()..ttr = -1);
+        await client.put(
+          key,
+          json,
+          putRequestOptions: PutRequestOptions()..useRemoteAtServer = true,
+        );
+      } catch (_) {
+        // AtKey write failure is non-fatal; local cache still saved.
+      }
+    }
   }
 }
