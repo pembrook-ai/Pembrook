@@ -28,34 +28,51 @@ See [PHASES.md](PHASES.md) for detailed per-phase implementation status.
 
 ## Architecture Overview
 
-```
-Owner (@owner)
-  │  ┌─── Flutter App (macOS/iOS/Windows/Linux/Android/Web)
-  │  │         │  AtRpcClient
-  │  │         ▼
-  │  └──── atPlatform Network (E2E encrypted, zero ports)
-  │                │  AtRpc
-  ▼                ▼
-Messaging       Agent Gateway (@agent)
-Bridges           │  allowList: {@owner, @services}
-(@services)       │
-                  ├── Policy Engine (check every action)
-                  │
-                  ├── Agent Orchestrator
-                  │     ├── LLM Router
-                  │     │     ├── Local LLM (Ollama, localhost:11434)
-                  │     │     │     multi-step: tool_call_id, maxIterations=10,
-                  │     │     │     task anchoring, ~80-char token batching
-                  │     │     └── Query Sanitizer → External LLM (optional)
-                  │     ├── Memory Service (AtKeys on @agent)
-                  │     ├── Audit Service (immutable AtKeys on @owner)
-                  │     ├── Skill Executor → Sandbox Manager → Skills (@services)
-                  │     └── MCP Client → atPlatform → MCP Servers (@services)
-                  │
-                  └── Automation
-                        ├── Task Scheduler
-                        ├── Heartbeat Engine
-                        └── Notification Manager
+```mermaid
+flowchart TD
+    subgraph owner["Owner Devices"]
+        APP["Flutter App\n@owner"]
+    end
+
+    subgraph services["Services (@services)"]
+        BRIDGE["Messaging Bridges\nEmail · iMessage · Signal"]
+        MCP["MCP Servers\nbrowser · home · database"]
+        SKILLS["Skill Containers\n(Docker sandboxed)"]
+    end
+
+    subgraph cloud["atPlatform Cloud Relay (E2E encrypted · zero-knowledge)"]
+        AT[" "]
+    end
+
+    subgraph agent["Agent Daemon (@agent)"]
+        direction TB
+        GW["Gateway\nAtRpc server · allowList"]
+        PE["Policy Engine\nallow / deny / HITL"]
+        ORC["Orchestrator"]
+        LLM["LLM Router"]
+        OLLAMA["Ollama\n(local · private)"]
+        EXTLLM["External LLM\n(sanitised queries only)"]
+        MEM["Memory Service\nAtKeys on @agent"]
+        AUD["Audit Service\nAtKeys on @owner"]
+        SCHED["Automation\nScheduler · Heartbeat"]
+    end
+
+    APP -- "AtRpc (encrypted)" --> AT
+    BRIDGE -- "AtRpc (encrypted)" --> AT
+    MCP -- "AtRpc (encrypted)" --> AT
+    AT -- "AtRpc (encrypted)" --> GW
+
+    GW --> PE
+    PE --> ORC
+    ORC --> LLM
+    LLM --> OLLAMA
+    LLM -. "privacy-safe queries" .-> EXTLLM
+    ORC --> MEM
+    ORC --> AUD
+    ORC -- "AtRpc" --> AT
+    AT -- "AtRpc" --> SKILLS
+    AT -- "AtRpc" --> MCP
+    ORC --> SCHED
 ```
 
 All connections are **outbound-only** to the atPlatform. No component has any open inbound port.
