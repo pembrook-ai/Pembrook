@@ -5,6 +5,14 @@
 /// (streaming mode from the agent). Chunks are filtered by conversationId so
 /// only the screen that sent the request renders its own response.
 ///
+/// Multi-device sync:
+///   All @owner devices receive the same atPlatform stream notifications.
+///   When the agent signals 'done: true' on a stream chunk for a conversation
+///   this device did NOT initiate, the screen reloads ConversationStore from
+///   the remote AtKey so the completed exchange appears in history on all devices.
+///   When the app resumes from background (AppLifecycleState.resumed) the store
+///   is also reloaded from the remote atServer.
+///
 /// Multi-session chat:
 ///   Each chat session has a unique [_conversationId] (UUIDv4).
 ///   Tapping the "New conversation" button (➕) saves the current session to
@@ -53,7 +61,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final List<_Message> _messages = [];
   final TextEditingController _inputCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
@@ -80,6 +88,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final Map<String, String> _bgStreamBuffers = {};
   StreamSubscription<StreamChunkEvent>? _streamSub;
   StreamSubscription<PushMessage>? _pushSub;
+  // Fires when another device completes a conversation; triggers history reload.
+  StreamSubscription<String>? _convCompletedSub;
 
   static const String _welcomeText =
       'Hello! I\'m your Pembrook AI assistant. All our communication is '
@@ -88,6 +98,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _conversationId = _uuid.v4();
     _messages.add(_Message(text: _welcomeText, isUser: false));
     // Load the stored conversation list on first launch.
@@ -103,6 +114,15 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
     });
+  }
+
+  /// Reload conversation history from the remote AtKey when the app is foregrounded.
+  /// This handles "picked up a second device" — history is always fresh from the server.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _store?.load();
+    }
   }
 
   @override
@@ -127,6 +147,17 @@ class _ChatScreenState extends State<ChatScreen> {
             (_bgStreamBuffers[event.conversationId] ?? '') + event.chunk;
       }
     });
+    // Reload conversation history when a conversation completes on another device.
+    // All @owner devices receive the same stream notifications from @agent.
+    // When 'done: true' arrives for a conv this device didn't start, it means
+    // another device (or bridge) just finished an exchange — refresh the list.
+    _convCompletedSub?.cancel();
+    _convCompletedSub = _rpcService!.conversationCompletedEvents.listen((convId) {
+      if (convId != _conversationId) {
+        // A different device finished a conversation — reload history from AtKey.
+        _store?.load();
+      }
+    });
     // Subscribe to proactive push messages from scheduled tasks.
     // listenToPushMessages() also drains any messages that arrived while
     // this screen was unmounted (e.g. user was on Settings/Skills screen).
@@ -147,11 +178,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // Persist the current conversation before the screen disposes.
     _saveCurrentConversation();
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
     _streamSub?.cancel();
+    _convCompletedSub?.cancel();
     // Release before cancel so RpcService re-enables buffering immediately.
     _rpcService?.releasePushListener();
     _pushSub?.cancel();
