@@ -136,10 +136,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // this correctly handles conversation switches without re-subscribing.
     _streamSub = _rpcService!.streamChunkEvents.listen((event) {
       if (!_streamingEnabled) return; // streaming disabled in Settings
-      if (event.conversationId != _activeStreamConvId) return;
+      final isOurRequest = event.conversationId == _activeStreamConvId;
+      // Also accept chunks for the currently displayed conversation when a
+      // different device originated the request (_activeStreamConvId == null).
+      final isRemoteOnCurrentConv = event.conversationId == _conversationId &&
+          _activeStreamConvId == null;
+      if (!isOurRequest && !isRemoteOnCurrentConv) return;
       if (event.conversationId == _conversationId) {
-        // Chunk for the currently displayed conversation.
-        setState(() => _streamBuffer += event.chunk);
+        // Chunk for the currently displayed conversation (ours or remote).
+        setState(() {
+          _streamBuffer += event.chunk;
+        });
         _scrollToBottom();
       } else {
         // Chunk for a backgrounded in-flight conversation — buffer it.
@@ -149,14 +156,35 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
     // Reload conversation history when a conversation completes on another device.
     // All @owner devices receive the same stream notifications from @agent.
-    // When 'done: true' arrives for a conv this device didn't start, it means
-    // another device (or bridge) just finished an exchange — refresh the list.
     _convCompletedSub?.cancel();
-    _convCompletedSub = _rpcService!.conversationCompletedEvents.listen((convId) {
-      if (convId != _conversationId) {
-        // A different device finished a conversation — reload history from AtKey.
-        _store?.load();
-      }
+    _convCompletedSub =
+        _rpcService!.conversationCompletedEvents.listen((convId) {
+      // Always reload the store regardless of which conversation just finished.
+      // Add a 3-second delay so Device A has time to write the conversation_history
+      // AtKey before Device B tries to read it.
+      Future.delayed(const Duration(seconds: 3), () async {
+        if (!mounted) return;
+        await _store?.load();
+        // If the completed conversation is currently displayed, rebuild
+        // _messages from the freshly loaded store and clear stream state.
+        if (convId == _conversationId && mounted) {
+          final updated = _store?.get(convId);
+          if (updated != null) {
+            setState(() {
+              _streamBuffer = '';
+              _conversationId = updated.id;
+              _messages
+                ..clear()
+                ..addAll(updated.messages.map((s) => _Message(
+                      text: s.text,
+                      isUser: s.isUser,
+                      timestamp: s.timestamp,
+                    )));
+            });
+            _scrollToBottom();
+          }
+        }
+      });
     });
     // Subscribe to proactive push messages from scheduled tasks.
     // listenToPushMessages() also drains any messages that arrived while
@@ -231,7 +259,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               isUser: s.isUser,
               timestamp: s.timestamp,
             )));
-      // Clear the visible stream buffer (switching display).
+      // Clear the visible stream buffer and remote-receive flag (switching display).
       // Do NOT touch _activeStreamConvId or _isLoading — a request may still
       // be in-flight for a different conversation; we keep blocking sends and
       // routing chunks until its response arrives.
@@ -479,7 +507,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _messages
         ..clear()
         ..add(_Message(text: _welcomeText, isUser: false));
-      // Clear the visible stream buffer (switching display).
+      // Clear the visible stream buffer and remote-receive flag.
       // Do NOT touch _activeStreamConvId or _isLoading — a request may still
       // be in-flight; we keep blocking sends and routing chunks until it lands.
       _streamBuffer = '';
