@@ -160,7 +160,8 @@ TOOL USE RULES — follow these exactly, every time:
 - To list scheduled tasks: ALWAYS call list_tasks. Never say "no tasks" without calling it first.
 - To stop or remove a task: ALWAYS call list_tasks then cancel_task. Never say "cancelled" without calling cancel_task.
 - To fetch live web content: ALWAYS call fetch_webpage. Never guess at current news, weather, prices, etc.
-- Do NOT answer task management questions from memory or conversation history. Always use the appropriate tool.''';
+- Do NOT answer task management questions from memory or conversation history. Always use the appropriate tool.
+- For multi-step tasks (e.g. "look up X then email it"): call the first tool, then USE the result to call the next tool. Do not stop after the first tool call. Continue until ALL steps are complete before giving a final answer.''';
 
       final messages = <Map<String, dynamic>>[
         {'role': 'system', 'content': toolSystemPrompt},
@@ -175,6 +176,7 @@ TOOL USE RULES — follow these exactly, every time:
         messages: messages,
         tools: tools,
         toolExecutor: toolExecutor,
+        maxIterations: 10,
         onChunk: onChunk,
       );
     }
@@ -420,6 +422,14 @@ TOOL USE RULES — follow these exactly, every time:
   }) async {
     final history = List<Map<String, dynamic>>.from(messages);
 
+    // Extract the original user request for task anchoring — after each tool
+    // result we remind the model what it still needs to do.
+    final originalUserMsg = messages.lastWhere(
+          (m) => m['role'] == 'user',
+          orElse: () => {'content': ''},
+        )['content'] as String? ??
+        '';
+
     for (var iteration = 0; iteration < maxIterations; iteration++) {
       _log.info(
           '[tool-loop] iteration=${iteration + 1}/$maxIterations — calling model');
@@ -450,6 +460,7 @@ TOOL USE RULES — follow these exactly, every time:
       for (final call in toolCalls) {
         final fn = call['function'] as Map<String, dynamic>;
         final toolName = fn['name'] as String;
+        final toolCallId = call['id'] as String? ?? toolName;
         final rawArgs = fn['arguments'];
         final args = (rawArgs is Map)
             ? Map<String, dynamic>.from(rawArgs)
@@ -467,9 +478,22 @@ TOOL USE RULES — follow these exactly, every time:
         _log.info('Tool result for $toolName: ${result.length} chars');
 
         // Ollama expects the tool result as a message with role 'tool'.
+        // tool_call_id links this result back to the specific call.
         history.add({
           'role': 'tool',
+          'tool_call_id': toolCallId,
+          'name': toolName,
           'content': result,
+        });
+      }
+
+      // Task anchoring: after tool results, remind the model of the original
+      // request so it doesn't stop after the first tool call on multi-step tasks.
+      if (originalUserMsg.isNotEmpty) {
+        history.add({
+          'role': 'user',
+          'content': 'Remember the original request: "$originalUserMsg". '
+              'Have you completed ALL steps? If not, call the next required tool now.',
         });
       }
     }
