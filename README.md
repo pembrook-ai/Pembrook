@@ -4,7 +4,8 @@ A privacy-first, zero-trust AI agent built on the [atPlatform](https://docs.atsi
 
 See [ATPLATFORM_GUIDELINES.md](ATPLATFORM_GUIDELINES.md) for the complete atPlatform SDK reference.  
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for internal design, data-flow, component contracts, and implementation decisions.  
-See [GETTING_STARTED.md](GETTING_STARTED.md) for full setup instructions including chat history, skills, MCP servers, and bridges.
+See [GETTING_STARTED.md](GETTING_STARTED.md) for full setup instructions including chat history, skills, MCP servers, and bridges.  
+See [PHASES.md](PHASES.md) for detailed per-phase implementation status.
 
 ---
 
@@ -36,18 +37,20 @@ Owner (@owner)
   │                │  AtRpc
   ▼                ▼
 Messaging       Agent Gateway (@agent)
-Bridges           │  allowList: {@owner, @bridge_*}
-(@bridge_*)       │
+Bridges           │  allowList: {@owner, @services}
+(@services)       │
                   ├── Policy Engine (check every action)
                   │
                   ├── Agent Orchestrator
                   │     ├── LLM Router
                   │     │     ├── Local LLM (Ollama, localhost:11434)
+                  │     │     │     multi-step: tool_call_id, maxIterations=10,
+                  │     │     │     task anchoring, ~80-char token batching
                   │     │     └── Query Sanitizer → External LLM (optional)
                   │     ├── Memory Service (AtKeys on @agent)
                   │     ├── Audit Service (immutable AtKeys on @owner)
-                  │     ├── Skill Executor → Sandbox Manager → Skills (@skill_*)
-                  │     └── MCP Client → atPlatform → MCP Servers (@mcp_*)
+                  │     ├── Skill Executor → Sandbox Manager → Skills (@services)
+                  │     └── MCP Client → atPlatform → MCP Servers (@services)
                   │
                   └── Automation
                         ├── Task Scheduler
@@ -80,24 +83,26 @@ pembrook/
 │   ├── pubspec.yaml
 │   └── lib/
 │       ├── auth/              # AuthScreen + all 4 auth workflows
-│       ├── chat/              # ChatScreen + real-time streaming
-│       ├── settings/          # LLM settings, atSign management
+│       ├── chat/              # ChatScreen + real-time streaming + multi-device sync
+│       ├── settings/          # LLM settings, atSign management, font scale
 │       ├── policy/            # YAML policy editor
-│       ├── skills/            # Skill browser
+│       ├── skills/            # Skill browser + install/configure/remove
 │       ├── audit/             # Audit log viewer
 │       ├── hitl/              # HITL approval dialogs
-│       └── services/          # RpcService, DataService
-├── bridge/                    # Messaging bridge agents (Phase 6)
-├── mcp_servers/               # MCP server wrappers (Phase 4)
-│   ├── home/                  # Home Automation (@mcp_home)
-│   ├── database/              # Database (@mcp_db)
-│   └── browser/               # Web Browser (@mcp_browser)
-├── skills/                    # Built-in skill packages (Phase 3)
-│   ├── calendar/              # Calendar skill (@skill_cal)
-│   ├── email/                 # Email skill (@skill_email)
-│   └── web_search/            # Web search skill (@skill_search)
+│       └── services/          # RpcService, DataService (ConversationStore)
+├── bridge/                    # Messaging bridge agents (Phase 6) — share @services
+├── mcp_servers/               # MCP server wrappers (Phase 4) — share @services
+│   ├── home/                  # Home Automation
+│   ├── database/              # Database
+│   └── browser/               # Web Browser
+├── skills/                    # Built-in skill packages (Phase 3) — share @services
+│   ├── calendar/              # Google Calendar via CalDAV
+│   ├── email/                 # SMTP send + IMAP read/delete  ← implemented
+│   └── web_search/            # SearXNG / Brave Search
 ├── docker-compose.yml         # Starts agent + Ollama + MCP servers
-└── Dockerfile.agent           # Compiles and packages the agent
+├── docker-compose.gpu.yml     # GPU overlay (Linux + NVIDIA)
+├── Dockerfile.agent           # Compiles and packages the agent (gosu entrypoint)
+└── entrypoint-agent.sh        # chgrp docker.sock then exec gosu pembrook
 ```
 
 ---
@@ -106,22 +111,17 @@ pembrook/
 
 Register all atSigns at [my.atsign.com](https://my.atsign.com) before first run.
 
-| atSign | Purpose | Phase |
-|---|---|---|
-| `@owner` | Human owner — primary identity | 1 |
-| `@agent` | AI agent core — all agent operations | 1 |
-| `@bridge_whatsapp` | WhatsApp relay | 6 |
-| `@bridge_telegram` | Telegram relay | 6 |
-| `@bridge_discord` | Discord relay | 6 |
-| `@bridge_slack` | Slack relay | 6 |
-| `@skill_cal` | Calendar skill | 3 |
-| `@skill_email` | Email skill | 3 |
-| `@skill_search` | Web search skill | 3 |
-| `@mcp_home` | Home automation MCP server | 4 |
-| `@mcp_db` | Database MCP server | 4 |
-| `@mcp_browser` | Browser automation MCP server | 4 |
+**Minimum required atSigns: 3**
 
-> Replace all placeholder atSigns above with your actual provisioned atSigns before deployment.
+| atSign | Role | Notes |
+|---|---|---|
+| `@owner` | Human owner — primary identity | Used by the Flutter app on all your devices |
+| `@agent` | AI agent daemon | Runs in Docker; stores skills, memory, audit logs |
+| `@services` | Shared services identity | Used by ALL bridges, ALL MCP servers, AND all skill containers |
+
+> A single `@services` atSign is sufficient for every service component (bridges, MCP servers, skills). There is no need to provision a separate atSign per bridge or per skill. The `@agent` allowList contains `@owner` and `@services`.
+
+Advanced operators may provision individual atSigns per bridge or per skill for stricter isolation, but this is entirely optional.
 
 ---
 
@@ -137,15 +137,17 @@ Key format: `keyname.pembrook@atsign`
 
 | Key Pattern | Owner atServer | Purpose | TTL |
 |---|---|---|---|
-| `conversation.$convId.pembrook@owner` | `@owner` | Chat history (app) | 90 days |
+| `conversation_history.pembrook@owner` | `@owner` | **Cross-device sync** — full chat history list | — |
+| `conversation.$convId.pembrook@owner` | `@owner` | Individual chat exchange (app) | 90 days |
 | `conversation.$convId.pembrook@agent` | `@agent` | Agent-side conversation | 90 days |
 | `context.user_preferences.pembrook@agent` | `@agent` | Owner preferences | — |
 | `context.user_profile.pembrook@agent` | `@agent` | Personal info | — |
 | `settings.llm.pembrook@agent` | `@agent` | LLM config (model, threshold) | — |
-| `settings.app.pembrook@owner` | `@owner` | App UI preferences | — |
+| `settings.app.pembrook@owner` | `@owner` | App UI preferences (synced) | — |
 | `settings.heartbeat.pembrook@agent` | `@agent` | Heartbeat cadence | — |
 | `policy.$policyId.pembrook@agent` | `@agent` | Policy rules (YAML) | — |
-| `skill_meta.$skillId.pembrook@agent` | `@agent` | Installed skill registry | — |
+| `skill_index.pembrook@agent` | `@agent` | JSON list of installed skill IDs | — |
+| `skill_meta.$skillId.pembrook@agent` | `@agent` | Installed skill metadata | — |
 | `skill_state.$skillId.pembrook@agent` | `@agent` | Per-skill persistent state | — |
 | `schedule.$taskId.pembrook@agent` | `@agent` | Scheduled task definition | — |
 | `task.$taskId.pembrook@agent` | `@agent` | Active task state | — |
@@ -157,7 +159,8 @@ Key format: `keyname.pembrook@atsign`
 | `summary.$period.pembrook@agent` | `@agent` | Compressed conversation summaries | — |
 | `digest.$date.pembrook@owner` | `@owner` | Daily notification digest | 30 days |
 
-> Audit keys use `Metadata()..immutable = true` — once written, they cannot be modified.
+> `conversation_history.pembrook@owner` is a self-key on `@owner`'s atServer. Because atPlatform sync propagates all self-keys to every authenticated device, this key is the sole source of truth for conversation history on all of an owner's devices.  
+> Audit keys use `Metadata()..immutable = true` — once written, they cannot be modified.  
 > Audit keys are stored on `@owner`'s atServer so the agent cannot delete its own logs.
 
 ---
@@ -182,6 +185,19 @@ Key format: `keyname.pembrook@atsign`
   "chunk": "You have a team standup at 9am...",
   "done": false,
   "chunkIndex": 3
+}
+```
+
+### Agent → Flutter App (stream-end sentinel)
+
+Sent once, after all content chunks have been flushed. Every authenticated device receives this notification via atPlatform broadcast, enabling cross-device sync.
+
+```json
+{
+  "conversationId": "conv-uuid-1234",
+  "chunk": "",
+  "done": true,
+  "chunkIndex": 12
 }
 ```
 
@@ -238,31 +254,52 @@ Owner types → Flutter app
       → PolicyEngine.checkPolicy() — identity + capability + temporal check
         → Orchestrator.processRequest()
           → MemoryService.loadConversation() — AtKey get()
-          → LlmRouter.classifyIntent() — Ollama POST
-          → LlmRouter.scorePrivacy() — Ollama POST
-          → LlmRouter.generateResponse() — Ollama POST (streaming)
-            → Gateway streams response chunks → atPlatform
-              → Flutter app notification subscription
-                → Chat UI displays tokens
-          → MemoryService.saveExchange() — AtKey put()
+          → LlmRouter.generateResponse() — Ollama streaming (tool-aware)
+              Chunks batched at ~80 chars, sent as AtRpc notifications
+              → all @owner devices receive live tokens
+          → [tool calls, up to maxIterations=10]
+              → SkillRunner / PolicyEngine / HitlManager
+              → result appended; original task re-injected; loop continues
+          → After all chunks flushed:
+              → done:true sentinel sent → all @owner devices notified
+          → ConversationStore.save() — writes conversation_history AtKey
           → AuditService.log() — immutable AtKey on @owner
+```
+
+## Data Flow: Multi-Device Sync
+
+```
+Device A sends chat → agent responds → done:true sentinel broadcast
+  → Device B (same @owner, different device):
+      Receives all streaming chunks (displayed if screen is idle)
+      Receives done:true notification
+        → RpcService fires conversationCompletedEvents stream
+          → ChatScreen._convCompletedSub triggers (3s delay for AtKey propagation)
+            → ConversationStore.load() re-reads conversation_history AtKey
+            → If Device B was idle: auto-switches to show completed exchange
+            → If Device B was active in another chat: SnackBar with [View] button
+
+Device A resumes from background:
+  → WidgetsBindingObserver.didChangeAppLifecycleState(resumed)
+    → ConversationStore.load() re-reads conversation_history AtKey
 ```
 
 ## Data Flow: Skill Invocation
 
 ```
 Orchestrator identifies skill need
-  → SkillRegistry.getSkill() — AtKey read
+  → SkillRegistry.getSkill() — in-memory cache (loaded at startup via loadCache())
   → PolicyEngine.checkPolicy(skill capabilities)
     → If HITL required:
         → HitlManager.requestApproval() — notify @owner
           → Owner approves in Flutter app → AtRpc response
     → SandboxManager.executeInSandbox()
-        → Docker: --rm --network=none --memory=256m --cpus=0.5
-          → Skill AtRpc server receives task from Orchestrator
-          → Skill reads/writes only its declared namespace
-          → Returns result via AtRpc
-      → SandboxManager destroys container
+        → Docker via unix socket (/var/run/docker.sock)
+          Network skills (email, calendar, web_search): --network=bridge
+          All other skills:                             --network=none
+          → --rm --memory=256m --cpus=0.5
+          → Skill reads payload from stdin, writes JSON result to stdout
+          → Container destroyed after execution
       → AuditService.log(sandbox events)
 ```
 
@@ -273,7 +310,12 @@ Orchestrator identifies skill need
 ### Local (Docker Compose)
 
 ```bash
-# 1. Provision atSigns at my.atsign.com and save .atKeys files to ~/.atsign/keys/
+# 1. Provision 3 atSigns at my.atsign.com:
+#      @owner   — your identity / Flutter app
+#      @agent   — the AI daemon
+#      @services — bridges, MCP servers, skills (one atSign for all)
+#    Save the three .atKeys files to ~/.atsign/keys/
+
 # 2. Configure the agent (run once, or when settings change):
 dart run agent/bin/init_config.dart \
   --atsign @youragent \
@@ -327,12 +369,25 @@ nmap -p- localhost  # should show 0 open ports (Ollama binds loopback only)
 
 | Phase | Components | Status |
 |---|---|---|
-| **Phase 1** | Gateway + Orchestrator + Ollama + Flutter App | 🚧 In Progress |
-| **Phase 2** | Memory Service + Audit + Policy Engine | 📋 Planned |
-| **Phase 3** | Skill System + Sandbox + Calendar/Email/Search skills | 📋 Planned |
+| **Phase 1** | Gateway + Orchestrator + Ollama + Flutter App | ✅ Complete |
+| **Phase 2** | Memory Service + Audit + Policy Engine | ✅ Complete |
+| **Phase 3** | Skill System + Sandbox + Email/Calendar/Search skills | 🚧 In Progress |
 | **Phase 4** | MCP Integration + Home/DB/Browser MCP servers | 📋 Planned |
 | **Phase 5** | Heartbeat + Scheduler + Notifications | 📋 Planned |
 | **Phase 6** | Messaging Bridges (WhatsApp, Telegram, Discord, Slack) | 📋 Planned |
+
+Phase 3 detail:
+
+| Component | Status |
+|---|---|
+| SkillRegistry (AtKey CRUD + in-memory cache + `skill_index` key) | ✅ |
+| SandboxManager (Docker via unix socket, gosu entrypoint) | ✅ |
+| SkillRunner + PolicyEngine integration + HITL | ✅ |
+| Email skill (`send_email`, `list_inbox`, `read_email`, `delete_email`) | ✅ |
+| Calendar skill (CalDAV / Google Calendar) | 🚧 Stub |
+| Web search skill (SearXNG / Brave) | 🚧 Stub |
+| Multi-step tool chaining (`tool_call_id`, `maxIterations=10`, task anchoring) | ✅ |
+| Multi-device sync (`conversation_history` AtKey + `done:true` sentinel) | ✅ |
 
 ---
 
