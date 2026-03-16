@@ -3,7 +3,7 @@
 /// Stores bridge configuration as encrypted AtKeys on @owner, shared with
 /// @agent, so the agent can supply credentials to bridge processes at startup:
 ///
-///   `bridge.$platform.config.safeclaw@<ownerAtSign>` sharedWith `@agent`
+///   `bridge.$platform.config.pembrook@<ownerAtSign>` sharedWith `@agent`
 ///
 /// Each bridge value is a JSON object with platform-specific fields.
 /// The bridge processes read these via @agent at startup (or can use
@@ -194,7 +194,7 @@ class _BridgeCard extends StatefulWidget {
 }
 
 class _BridgeCardState extends State<_BridgeCard> {
-  static const String _namespace = 'safeclaw';
+  static const String _namespace = 'pembrook';
 
   late final Map<String, TextEditingController> _controllers;
   bool _expanded = false;

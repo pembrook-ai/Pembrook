@@ -9,11 +9,11 @@
 /// This is a critical security property: the agent CANNOT auto-approve its
 /// own actions. Owner approval is cryptographically signed by @owner's atSign.
 ///
-/// HITL pending AtKey: hitl.pending.$actionId.safeclaw@agent  (TTL: 5 min)
-/// HITL response AtKey: @owner:hitl.response.$actionId.safeclaw@agent
+/// HITL pending AtKey: hitl.pending.$actionId.pembrook@agent  (TTL: 5 min)
+/// HITL response AtKey: @owner:hitl.response.$actionId.pembrook@agent
 ///
 /// Notification to owner:
-///   Key: hitl.request.$actionId.safeclaw@owner (sharedWith @owner)
+///   Key: hitl.request.$actionId.pembrook@owner (sharedWith @owner)
 ///   Value: HitlRequest JSON
 
 import 'dart:async';
@@ -49,7 +49,7 @@ class HitlManager {
     // TTL: 5 minutes — auto-cleaned if not responded to
     final pendingKey = AtKey()
       ..key = 'hitl.pending.${request.actionId}'
-      ..namespace = 'safeclaw'
+      ..namespace = 'pembrook'
       ..metadata = (Metadata()..ttl = 300000 // 5 minutes in ms
           );
 
@@ -62,7 +62,7 @@ class HitlManager {
     // ── 2. Notify owner via encrypted notification ─────────────────────
     final notifKey = AtKey()
       ..key = 'hitl.request.${request.actionId}'
-      ..namespace = 'safeclaw'
+      ..namespace = 'pembrook'
       ..sharedWith = _ownerAtSign
       ..metadata = (Metadata()
             ..ttl = 300000

@@ -5,8 +5,8 @@
 ///   else if (needsExternalKnowledge) → SANITIZE → EXTERNAL LLM
 ///   else → LOCAL LLM with full context
 ///
-/// Settings loaded from AtKey: settings.llm.safeclaw@agent
-/// API keys loaded from AtKey: apikey.$provider.safeclaw@agent
+/// Settings loaded from AtKey: settings.llm.pembrook@agent
+/// API keys loaded from AtKey: apikey.$provider.pembrook@agent
 ///   (stored encrypted — NEVER in .env files)
 ///
 /// Ollama API: POST http://localhost:11434/api/generate
@@ -121,6 +121,7 @@ Score:''';
     List<Map<String, dynamic>> tools = const [],
     Future<String> Function(String toolName, Map<String, dynamic> args)?
         toolExecutor,
+    Future<void> Function(String chunk)? onChunk,
   }) async {
     await _maybeRefreshSettings();
 
@@ -135,7 +136,7 @@ Score:''';
         .toList();
 
     final systemPrompt = systemOverride ??
-        '''You are SafeClaw, a helpful and privacy-focused AI assistant.
+        '''You are Pem, a helpful and privacy-focused AI assistant. Pem is short for Pembrook.
 You operate exclusively for your owner. Be concise and accurate.
 Never suggest storing personal data outside the atPlatform.
 Current date: ${DateTime.now().toUtc().toIso8601String()}''';
@@ -174,6 +175,7 @@ TOOL USE RULES — follow these exactly, every time:
         messages: messages,
         tools: tools,
         toolExecutor: toolExecutor,
+        onChunk: onChunk,
       );
     }
 
@@ -189,7 +191,7 @@ TOOL USE RULES — follow these exactly, every time:
     if (useLocal) {
       _log.fine(
           'Routing to LOCAL LLM (privacyScore=$privacyScore threshold=$_privacyThreshold localOnly=$_localOnly)');
-      return _callOllama(prompt: fullPrompt);
+      return _callOllama(prompt: fullPrompt, onChunk: onChunk);
     } else {
       // Hybrid: try local first, escalate to external if knowledge gap detected
       _log.fine('Attempting local LLM first (might escalate to external)');
@@ -276,19 +278,127 @@ TOOL USE RULES — follow these exactly, every time:
   ///
   /// Uses the chat endpoint internally so the same model weights handle
   /// both plain chat and tool-calling conversations.
+  /// When [onChunk] is provided, uses Ollama streaming mode so tokens arrive
+  /// incrementally instead of all at once.
   Future<String> _callOllama({
     required String prompt,
     int maxTokens = 2048,
     double temperature = 0.7,
+    Future<void> Function(String chunk)? onChunk,
   }) async {
+    final messages = [
+      {'role': 'user', 'content': prompt}
+    ];
+    if (onChunk != null) {
+      final msg = await _callOllamaStreamingMsg(
+        messages: messages,
+        onChunk: onChunk,
+        maxTokens: maxTokens,
+        temperature: temperature,
+      );
+      return (msg['content'] as String? ?? '').trim();
+    }
     final msg = await _callOllamaChat(
-      messages: [
-        {'role': 'user', 'content': prompt}
-      ],
+      messages: messages,
       maxTokens: maxTokens,
       temperature: temperature,
     );
     return (msg['content'] as String? ?? '').trim();
+  }
+
+  /// Streaming variant of [_callOllamaChat].
+  ///
+  /// Returns the same Map shape as [_callOllamaChat] (role/content/tool_calls)
+  /// so it can drop-in replace it in the tool loop.  When [onChunk] is
+  /// provided each content token is fired immediately (fire-and-forget) so the
+  /// NDJSON consumer loop is never blocked by at-platform latency.
+  ///
+  /// Ollama streaming + tools: when the model decides to call a tool, content
+  /// tokens are empty and tool_calls appear in the final done:true chunk.
+  /// When the model returns a plain text answer, tokens stream and there are
+  /// no tool_calls.  Either way we capture both from the stream.
+  Future<Map<String, dynamic>> _callOllamaStreamingMsg({
+    required List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>> tools = const [],
+    Future<void> Function(String chunk)? onChunk,
+    int maxTokens = 2048,
+    double temperature = 0.7,
+  }) async {
+    final client = http.Client();
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse('$ollamaBaseUrl/api/chat'),
+      );
+      request.headers['Content-Type'] = 'application/json';
+      final body = <String, dynamic>{
+        'model': _localModel,
+        'messages': messages,
+        'stream': true,
+        'options': {
+          'num_predict': maxTokens,
+          'temperature': temperature,
+        },
+      };
+      if (tools.isNotEmpty) body['tools'] = tools;
+      request.body = jsonEncode(body);
+
+      final streamedResp =
+          await client.send(request).timeout(const Duration(seconds: 120));
+
+      if (streamedResp.statusCode != 200) {
+        _log.warning('Ollama streaming returned ${streamedResp.statusCode}');
+        return {
+          'role': 'assistant',
+          'content':
+              'I apologize — the local AI model is temporarily unavailable.'
+        };
+      }
+
+      final contentChunks = <String>[];
+      List<dynamic>? toolCalls;
+
+      await for (final line in streamedResp.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        if (line.isEmpty) continue;
+        try {
+          final data = jsonDecode(line) as Map<String, dynamic>;
+          final message = data['message'] as Map<String, dynamic>?;
+          if (message != null) {
+            final content = message['content'] as String? ?? '';
+            if (content.isNotEmpty) {
+              contentChunks.add(content);
+              if (onChunk != null) {
+                // Fire-and-forget: do NOT await — blocking here stalls the
+                // NDJSON loop for each at-platform round-trip (~300ms).
+                onChunk(content); // ignore: unawaited_futures
+              }
+            }
+            // tool_calls only appear in the done:true chunk when using tools.
+            final tc = message['tool_calls'] as List<dynamic>?;
+            if (tc != null && tc.isNotEmpty) toolCalls = tc;
+          }
+          if (data['done'] == true) break;
+        } catch (_) {}
+      }
+
+      final result = <String, dynamic>{
+        'role': 'assistant',
+        'content': contentChunks.join(),
+      };
+      if (toolCalls != null) result['tool_calls'] = toolCalls;
+      return result;
+    } catch (e) {
+      _log.severe('Ollama streaming call failed: $e');
+      return {
+        'role': 'assistant',
+        'content':
+            'I apologize — I could not reach the local AI model. Error: $e'
+      };
+    } finally {
+      client.close();
+    }
   }
 
   /// Agentic tool-use loop using Ollama's native tool-calling API.
@@ -306,15 +416,22 @@ TOOL USE RULES — follow these exactly, every time:
     required Future<String> Function(String toolName, Map<String, dynamic> args)
         toolExecutor,
     int maxIterations = 5,
+    Future<void> Function(String chunk)? onChunk,
   }) async {
     final history = List<Map<String, dynamic>>.from(messages);
 
     for (var iteration = 0; iteration < maxIterations; iteration++) {
       _log.info(
           '[tool-loop] iteration=${iteration + 1}/$maxIterations — calling model');
-      final assistantMsg = await _callOllamaChat(
+
+      // Single streaming call: tokens flow to the app immediately while we
+      // also capture tool_calls from the final done:true chunk.  onChunk is
+      // passed on every iteration; tool-call iterations produce no content
+      // tokens, so the app receives nothing until the final text answer.
+      final assistantMsg = await _callOllamaStreamingMsg(
         messages: history,
         tools: tools,
+        onChunk: onChunk,
       );
       history.add(assistantMsg);
 
@@ -367,14 +484,14 @@ TOOL USE RULES — follow these exactly, every time:
 
   /// Call an external LLM with a SANITIZED query (no PII).
   ///
-  /// API key is loaded from encrypted AtKey: apikey.$provider.safeclaw@agent
+  /// API key is loaded from encrypted AtKey: apikey.$provider.pembrook@agent
   Future<String> _callExternalLlm(String sanitizedQuery) async {
     // Retrieve API key from encrypted AtKey (NEVER from .env files)
     String? apiKey;
     try {
       final keyAtKey = AtKey()
         ..key = 'apikey.$_externalProvider'
-        ..namespace = 'safeclaw';
+        ..namespace = 'pembrook';
       final atValue = await atClient.get(
         keyAtKey,
         getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
@@ -479,7 +596,7 @@ TOOL USE RULES — follow these exactly, every time:
     try {
       final settingsKey = AtKey()
         ..key = 'settings.llm'
-        ..namespace = 'safeclaw';
+        ..namespace = 'pembrook';
       final atValue = await atClient.get(
         settingsKey,
         getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,

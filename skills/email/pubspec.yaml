@@ -1,4 +1,4 @@
-# SafeClaw Email Skill — Phase 3.
+# Pembrook Email Skill — Phase 3.
 #
 # Runs inside a Docker sandbox.
 # Sends emails via SMTP and reads IMAP inbox.
@@ -10,11 +10,11 @@
 #   - read_email(uid, imapHost, ...)
 #   - delete_email(uid, imapHost, ...)
 #
-# Docker image: safeclaw-skill-email:latest
+# Docker image: pembrook-skill-email:latest
 # atSign: @skill_email (placeholder)
 
-name: safeclaw_skill_email
-description: Email skill for SafeClaw.
+name: pembrook_skill_email
+description: Email skill for Pembrook.
 publish_to: none
 
 version: 1.0.0+1

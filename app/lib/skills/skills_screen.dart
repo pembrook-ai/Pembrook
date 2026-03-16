@@ -94,6 +94,7 @@ class SkillsScreen extends StatelessWidget {
     final atSignCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     final versionCtrl = TextEditingController(text: '1.0.0');
+    const _networkSkills = {'email', 'calendar', 'web_search'};
     var requiresNetwork = false;
 
     final result = await showDialog<bool>(
@@ -109,13 +110,30 @@ class SkillsScreen extends StatelessWidget {
                 children: [
                   TextFormField(
                     controller: idCtrl,
+                    onChanged: (v) {
+                      final id = v.trim().toLowerCase();
+                      if (_networkSkills.contains(id)) {
+                        setState(() => requiresNetwork = true);
+                      }
+                    },
                     decoration: const InputDecoration(
                       labelText: 'Skill ID',
                       hintText: 'e.g. email',
+                      helperText:
+                          'Short name only — maps to pembrook-skill-<id>:latest',
                       prefixIcon: Icon(Icons.extension),
                     ),
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? 'Required' : null,
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Required';
+                      final id = v.trim();
+                      if (id.contains(':')) {
+                        return 'Enter the short ID only (e.g. "email"), not the full image name';
+                      }
+                      if (RegExp(r'[^a-zA-Z0-9_\-]').hasMatch(id)) {
+                        return 'Only letters, numbers, hyphens and underscores allowed';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 12),
                   TextFormField(

@@ -1,8 +1,9 @@
-/// ChatScreen — the main SafeClaw conversation UI.
+/// ChatScreen — the main Pembrook conversation UI.
 ///
 /// Sends messages to @agent via RpcService.call() and renders the response.
-/// Subscribes to RpcService.streamChunks for incremental token rendering
-/// (streaming mode from the agent).
+/// Subscribes to RpcService.streamChunkEvents for incremental token rendering
+/// (streaming mode from the agent). Chunks are filtered by conversationId so
+/// only the screen that sent the request renders its own response.
 ///
 /// Multi-session chat:
 ///   Each chat session has a unique [_conversationId] (UUIDv4).
@@ -19,6 +20,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../services/data_service.dart';
@@ -64,11 +66,23 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool _isLoading = false;
   String _streamBuffer = '';
-  StreamSubscription<String>? _streamSub;
+  // Mirrors the 'streamingEnabled' SharedPreferences setting.
+  // Re-read at the start of every _send() so changes in Settings take effect
+  // on the next message without requiring a restart.
+  bool _streamingEnabled = true;
+  // Explicitly tracks which conversationId is currently streaming.
+  // Set just before rpcService.call(), cleared when the response arrives.
+  // NOT cleared on conversation switch — stays alive so backgrounded responses
+  // can still be routed correctly.
+  String? _activeStreamConvId;
+  // Stream chunk buffers for in-flight requests whose conversation is not
+  // currently displayed (user switched away mid-flight).
+  final Map<String, String> _bgStreamBuffers = {};
+  StreamSubscription<StreamChunkEvent>? _streamSub;
   StreamSubscription<PushMessage>? _pushSub;
 
   static const String _welcomeText =
-      'Hello! I\'m your SafeClaw AI assistant. All our communication is '
+      'Hello! I\'m your Pembrook AI assistant. All our communication is '
       'end-to-end encrypted via the atPlatform. How can I help you today?';
 
   @override
@@ -81,6 +95,14 @@ class _ChatScreenState extends State<ChatScreen> {
       _store = context.read<ConversationStore>();
       _store?.load();
     });
+    // Read streaming pref so the initial state mirrors Settings.
+    SharedPreferences.getInstance().then((prefs) {
+      if (mounted) {
+        setState(() {
+          _streamingEnabled = prefs.getBool('streamingEnabled') ?? true;
+        });
+      }
+    });
   }
 
   @override
@@ -89,9 +111,21 @@ class _ChatScreenState extends State<ChatScreen> {
     _store = context.read<ConversationStore>();
     _rpcService = context.read<RpcService>();
     _streamSub?.cancel();
-    _streamSub = _rpcService!.streamChunks.listen((chunk) {
-      setState(() => _streamBuffer += chunk);
-      _scrollToBottom();
+    // Filter stream chunks to only this conversation's chunks.
+    // Because _conversationId is read at event-fire time (not captured),
+    // this correctly handles conversation switches without re-subscribing.
+    _streamSub = _rpcService!.streamChunkEvents.listen((event) {
+      if (!_streamingEnabled) return; // streaming disabled in Settings
+      if (event.conversationId != _activeStreamConvId) return;
+      if (event.conversationId == _conversationId) {
+        // Chunk for the currently displayed conversation.
+        setState(() => _streamBuffer += event.chunk);
+        _scrollToBottom();
+      } else {
+        // Chunk for a backgrounded in-flight conversation — buffer it.
+        _bgStreamBuffers[event.conversationId] =
+            (_bgStreamBuffers[event.conversationId] ?? '') + event.chunk;
+      }
     });
     // Subscribe to proactive push messages from scheduled tasks.
     // listenToPushMessages() also drains any messages that arrived while
@@ -164,8 +198,11 @@ class _ChatScreenState extends State<ChatScreen> {
               isUser: s.isUser,
               timestamp: s.timestamp,
             )));
+      // Clear the visible stream buffer (switching display).
+      // Do NOT touch _activeStreamConvId or _isLoading — a request may still
+      // be in-flight for a different conversation; we keep blocking sends and
+      // routing chunks until its response arrives.
       _streamBuffer = '';
-      _isLoading = false;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
@@ -179,7 +216,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final wide = MediaQuery.of(context).size.width >= 600;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SafeClaw'),
+        title: const Text('Pembrook'),
         actions: [
           IconButton(
             icon: const Icon(Icons.forum_outlined),
@@ -220,7 +257,8 @@ class _ChatScreenState extends State<ChatScreen> {
             },
           ),
           Expanded(child: _buildMessages()),
-          if (_streamBuffer.isNotEmpty) _StreamingBubble(text: _streamBuffer),
+          if (_streamBuffer.isNotEmpty && _streamingEnabled)
+            _StreamingBubble(text: _streamBuffer),
           _buildInput(),
         ],
       ),
@@ -266,7 +304,7 @@ class _ChatScreenState extends State<ChatScreen> {
               maxLines: null,
               textInputAction: TextInputAction.newline,
               decoration: const InputDecoration(
-                hintText: 'Message SafeClaw…',
+                hintText: 'Message Pembrook…',
                 border: InputBorder.none,
               ),
               onSubmitted: (_) => _send(),
@@ -299,6 +337,10 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _inputCtrl.text.trim();
     if (text.isEmpty || _isLoading) return;
 
+    // Re-read pref on every send so Settings changes take effect immediately.
+    final prefs = await SharedPreferences.getInstance();
+    _streamingEnabled = prefs.getBool('streamingEnabled') ?? true;
+
     _inputCtrl.clear();
     setState(() {
       _messages.add(_Message(
@@ -308,32 +350,88 @@ class _ChatScreenState extends State<ChatScreen> {
       ));
       _isLoading = true;
       _streamBuffer = '';
+      _activeStreamConvId = _conversationId; // open streaming window
     });
     _scrollToBottom();
 
     final rpcService = context.read<RpcService>();
+    // Capture the conversation this request belongs to.
+    // If the user starts a new conversation while this call is in-flight,
+    // the response must NOT appear in the new conversation.
+    final sendConvId = _conversationId;
     final result = await rpcService.call(
       command: text,
       conversationId: _conversationId,
       payload: {'message': text},
+      streamingEnabled: _streamingEnabled,
     );
 
     if (!mounted) return;
-    setState(() {
-      _isLoading = false;
-      _streamBuffer = '';
-      _messages.add(_Message(
-        text: result.success
-            ? result.response
-            : '⚠️ ${result.error ?? "Unknown error"}',
-        isUser: false,
-        timestamp: DateTime.now(),
-      ));
-    });
-    _scrollToBottom();
 
-    // Auto-save after each exchange.
-    _saveCurrentConversation();
+    // Close the streaming window unconditionally — we have the full response.
+    _activeStreamConvId = null;
+
+    // Pick up streamed content: from the visible buffer if user stayed in this
+    // conversation, or from the background buffer if they switched away.
+    // Ignored entirely when streaming is disabled — always use RPC reply.
+    final streamedText = _streamingEnabled
+        ? (sendConvId == _conversationId
+            ? _streamBuffer.trim()
+            : (_bgStreamBuffers.remove(sendConvId) ?? '').trim())
+        : '';
+    final responseText = result.success
+        ? (streamedText.isNotEmpty ? streamedText : result.response)
+        : '⚠️ ${result.error ?? "Unknown error"}';
+
+    if (sendConvId == _conversationId) {
+      // Response arrived for the conversation currently on screen.
+      setState(() {
+        _isLoading = false;
+        _streamBuffer = '';
+        _messages.add(_Message(
+          text: responseText,
+          isUser: false,
+          timestamp: DateTime.now(),
+        ));
+      });
+      _scrollToBottom();
+      _saveCurrentConversation();
+    } else {
+      // User switched away while the request was in-flight.
+      // Append the response to the backgrounded conversation in
+      // ConversationStore so it's there when the user returns, then
+      // surface a SnackBar with a direct "View" action.
+      setState(() => _isLoading = false);
+      final existing = _store?.get(sendConvId);
+      if (existing != null) {
+        final updated = ConversationSummary(
+          id: existing.id,
+          title: existing.title,
+          createdAt: existing.createdAt,
+          messages: [
+            ...existing.messages,
+            StoredMessage(
+              text: responseText,
+              isUser: false,
+              timestamp: DateTime.now(),
+            ),
+          ],
+        );
+        await _store?.save(updated);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Pembrook responded in a previous conversation'),
+          action: SnackBarAction(
+            label: 'View',
+            onPressed: () {
+              final summary = _store?.get(sendConvId);
+              if (summary != null) _loadConversation(summary);
+            },
+          ),
+        ));
+      }
+    }
   }
 
   // ──────────────────────────────────────────────────────────
@@ -348,8 +446,10 @@ class _ChatScreenState extends State<ChatScreen> {
       _messages
         ..clear()
         ..add(_Message(text: _welcomeText, isUser: false));
+      // Clear the visible stream buffer (switching display).
+      // Do NOT touch _activeStreamConvId or _isLoading — a request may still
+      // be in-flight; we keep blocking sends and routing chunks until it lands.
       _streamBuffer = '';
-      _isLoading = false;
     });
   }
 
@@ -395,7 +495,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     size: 40,
                     color: Theme.of(context).colorScheme.onPrimaryContainer),
                 const SizedBox(height: 8),
-                Text('SafeClaw',
+                Text('Pembrook',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           color:
                               Theme.of(context).colorScheme.onPrimaryContainer,

@@ -38,7 +38,7 @@ class AuthScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                'SafeClaw',
+                'Pembrook',
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),

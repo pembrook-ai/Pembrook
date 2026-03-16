@@ -17,8 +17,8 @@
 /// Streaming design:
 ///   For streaming LLM output, the orchestrator sends incremental response
 ///   chunks to the owner via notificationService.notify() with key pattern:
-///     @owner:safeclaw.stream.$reqId.safeclaw@agent
-///   The Flutter app subscribes to 'safeclaw\\.stream\\..*' to receive chunks.
+///     @owner:pembrook.stream.$reqId.pembrook@agent
+///   The Flutter app subscribes to 'pembrook\\.stream\\..*' to receive chunks.
 
 import 'dart:async';
 import 'dart:convert';
@@ -184,6 +184,221 @@ class Orchestrator {
     },
   ];
 
+  // ── Skill tool definitions (keyed by built-in skillId) ───────────────────────
+  // Merged with _kTools at request time based on which skills are installed.
+  static final _kSkillToolDefs = <String, List<Map<String, dynamic>>>{
+    'email': [
+      {
+        'type': 'function',
+        'function': {
+          'name': 'send_email',
+          'description': 'Send an email to one or more recipients via SMTP.',
+          'parameters': {
+            'type': 'object',
+            'required': ['to', 'subject', 'body'],
+            'properties': {
+              'to': {
+                'type': 'string',
+                'description':
+                    'Recipient email address (or comma-separated list)',
+              },
+              'cc': {
+                'type': 'string',
+                'description': 'Optional CC addresses',
+              },
+              'subject': {
+                'type': 'string',
+                'description': 'Email subject line',
+              },
+              'body': {
+                'type': 'string',
+                'description': 'Plain-text email body',
+              },
+            },
+          },
+        },
+      },
+      {
+        'type': 'function',
+        'function': {
+          'name': 'list_inbox',
+          'description': 'List recent emails in the IMAP inbox.',
+          'parameters': {
+            'type': 'object',
+            'properties': {
+              'maxMessages': {
+                'type': 'integer',
+                'description': 'Maximum messages to return (default 20)',
+              },
+            },
+          },
+        },
+      },
+      {
+        'type': 'function',
+        'function': {
+          'name': 'read_email',
+          'description': 'Read the full body of an email by its IMAP UID.',
+          'parameters': {
+            'type': 'object',
+            'required': ['uid'],
+            'properties': {
+              'uid': {
+                'type': 'integer',
+                'description': 'Message UID from list_inbox',
+              },
+            },
+          },
+        },
+      },
+      {
+        'type': 'function',
+        'function': {
+          'name': 'delete_email',
+          'description':
+              'Permanently delete an email by its IMAP UID. Requires owner approval.',
+          'parameters': {
+            'type': 'object',
+            'required': ['uid'],
+            'properties': {
+              'uid': {
+                'type': 'integer',
+                'description': 'Message UID to delete',
+              },
+            },
+          },
+        },
+      },
+    ],
+    'calendar': [
+      {
+        'type': 'function',
+        'function': {
+          'name': 'list_events',
+          'description':
+              'List upcoming Google Calendar events in a date range.',
+          'parameters': {
+            'type': 'object',
+            'properties': {
+              'start': {
+                'type': 'string',
+                'description': 'ISO-8601 start time (default: now)',
+              },
+              'end': {
+                'type': 'string',
+                'description': 'ISO-8601 end time (default: 7 days from now)',
+              },
+              'maxResults': {
+                'type': 'integer',
+                'description': 'Max events to return (default 10)',
+              },
+            },
+          },
+        },
+      },
+      {
+        'type': 'function',
+        'function': {
+          'name': 'create_event',
+          'description': 'Create a new Google Calendar event.',
+          'parameters': {
+            'type': 'object',
+            'required': ['title', 'start', 'end'],
+            'properties': {
+              'title': {
+                'type': 'string',
+                'description': 'Event title / summary',
+              },
+              'start': {
+                'type': 'string',
+                'description': 'ISO-8601 start time',
+              },
+              'end': {
+                'type': 'string',
+                'description': 'ISO-8601 end time',
+              },
+              'description': {
+                'type': 'string',
+                'description': 'Optional event description',
+              },
+              'attendees': {
+                'type': 'array',
+                'items': {'type': 'string'},
+                'description': 'Attendee email addresses',
+              },
+              'timeZone': {
+                'type': 'string',
+                'description': 'IANA time zone (default UTC)',
+              },
+              'location': {
+                'type': 'string',
+                'description': 'Event location',
+              },
+            },
+          },
+        },
+      },
+      {
+        'type': 'function',
+        'function': {
+          'name': 'delete_event',
+          'description':
+              'Delete a Google Calendar event by ID. Requires owner approval.',
+          'parameters': {
+            'type': 'object',
+            'required': ['eventId'],
+            'properties': {
+              'eventId': {
+                'type': 'string',
+                'description': 'Calendar event ID from list_events',
+              },
+            },
+          },
+        },
+      },
+    ],
+    'web_search': [
+      {
+        'type': 'function',
+        'function': {
+          'name': 'web_search',
+          'description':
+              'Search the web using a privacy-respecting engine (SearXNG or Brave). '
+                  'Prefer this over fetch_webpage when you need to find current '
+                  'information by query rather than fetching a known URL.',
+          'parameters': {
+            'type': 'object',
+            'required': ['q'],
+            'properties': {
+              'q': {'type': 'string', 'description': 'Search query'},
+              'numResults': {
+                'type': 'integer',
+                'description': 'Max results to return (default 10)',
+              },
+            },
+          },
+        },
+      },
+    ],
+  };
+
+  /// Maps LLM tool function names → the skillId that handles them.
+  static const _toolToSkillId = <String, String>{
+    'send_email': 'email',
+    'list_inbox': 'email',
+    'read_email': 'email',
+    'delete_email': 'email',
+    'list_events': 'calendar',
+    'create_event': 'calendar',
+    'delete_event': 'calendar',
+    'web_search': 'web_search',
+  };
+
+  // Mutable context captured at the start of each processRequest invocation.
+  // Used by _executeTool to route skill tool calls without changing its signature.
+  String _toolFromAtSign = '';
+  String _toolConvId = '';
+
   Orchestrator({
     required this.atClient,
     required this.llmRouter,
@@ -212,11 +427,14 @@ class Orchestrator {
     required String fromAtSign,
     required String platform,
     required int reqId,
+    bool streamingEnabled = true,
   }) async {
     _log.info('Processing request convId=$conversationId '
         'from=$fromAtSign platform=$platform');
 
     final startTime = DateTime.now();
+    _toolFromAtSign = fromAtSign;
+    _toolConvId = conversationId;
 
     // ── 1. Load context from Memory Service ───────────────────────────────
     Conversation? conversation;
@@ -243,6 +461,9 @@ class Orchestrator {
     final privacyScore = await llmRouter.scorePrivacy(command);
     _log.info('Privacy score: $privacyScore | intent: ${intentType.name}');
 
+    // Build the active tool list: built-in tools + tools for installed, enabled skills.
+    final activeTools = await _buildTools();
+
     // ── 4. Execute by intent ──────────────────────────────────────────────
     String responseText;
     // Audit capture vars — filled in per-branch below.
@@ -250,19 +471,64 @@ class Orchestrator {
     String? _auditSkillId;
     String? _auditMcpServer;
 
+    // Per-request streaming chunk counter shared across all branches.
+    var _chunkIndex = 0;
+
+    // ── Token batching ────────────────────────────────────────────────────
+    // Each sendStreamChunk() is an at-platform notification (encrypted,
+    // atServer round-trip). Sending one per token is very slow.
+    // Buffer tokens and flush every ~80 chars OR every 400 ms instead.
+    //
+    // _pendingChunks tracks in-flight sendStreamChunk futures so we can
+    // await them all BEFORE the RPC reply goes out. Without this the RPC
+    // reply races the notifications, arrives first, sets _isLoading=false
+    // in the app, and the !_isLoading guard discards every chunk.
+    const _flushChars = 80;
+    final _tokenBuf = <String>[];
+    final _pendingChunks = <Future<void>>[];
+
+    Future<void> _flushTokenBuf() {
+      if (_tokenBuf.isEmpty) return Future.value();
+      final text = _tokenBuf.join();
+      _tokenBuf.clear();
+      final f = sendStreamChunk(
+        ownerAtSign: fromAtSign,
+        reqId: reqId,
+        chunkIndex: _chunkIndex++,
+        chunk: text,
+        conversationId: conversationId,
+      );
+      _pendingChunks.add(f);
+      return f;
+    }
+
+    // Called fire-and-forget from inside _callOllamaStreaming.
+    // Runs synchronously up to the first await, so _tokenBuf mutations
+    // and size checks happen before any suspension.
+    Future<void> _batchChunk(String chunk) async {
+      _tokenBuf.add(chunk);
+      final bufLen = _tokenBuf.fold<int>(0, (s, t) => s + t.length);
+      if (bufLen >= _flushChars) {
+        await _flushTokenBuf();
+      }
+    }
+
     switch (intentType) {
       case IntentType.chat:
       case IntentType.task:
       case IntentType.unknown:
-        // Route to LLM — pass web tools so tool-capable models (qwen2.5, llama3.1)
-        // can fetch live content instead of apologising about knowledge cutoffs.
+        // Route to LLM — pass web tools + active skill tools so tool-capable
+        // models (qwen2.5, llama3.1) can invoke skills and fetch live content.
         responseText = await llmRouter.generateResponse(
           query: command,
           conversationHistory: conversation.messages,
           privacyScore: privacyScore,
-          tools: _kTools,
+          tools: activeTools,
           toolExecutor: _executeTool,
+          onChunk: streamingEnabled ? _batchChunk : null,
         );
+        if (streamingEnabled)
+          await _flushTokenBuf(); // drain any buffered remainder
 
       case IntentType.skillInvocation:
         if (skillRunner == null) {
@@ -318,14 +584,16 @@ class Orchestrator {
 
       case IntentType.automation:
         // Route through LLM with full tool set so the model can call
-        // schedule_task or notify_owner as appropriate.
+        // schedule_task, notify_owner, or skill tools as appropriate.
         responseText = await llmRouter.generateResponse(
           query: command,
           conversationHistory: conversation.messages,
           privacyScore: privacyScore,
-          tools: _kTools,
+          tools: activeTools,
           toolExecutor: _executeTool,
+          onChunk: streamingEnabled ? _batchChunk : null,
         );
+        if (streamingEnabled) await _flushTokenBuf();
 
       case IntentType.multiStepPlan:
         // Decompose and execute each step via LLM
@@ -335,16 +603,26 @@ class Orchestrator {
           privacyScore: privacyScore,
           systemOverride: 'Break this request into steps and execute each one. '
               'Show your reasoning.',
+          onChunk: streamingEnabled ? _batchChunk : null,
         );
+        if (streamingEnabled) await _flushTokenBuf();
+    }
+
+    // Drain any remainder and wait for ALL in-flight sendStreamChunk
+    // notifications to complete before sending the RPC reply.
+    // Without this the RPC reply races the notifications, arrives first,
+    // sets _isLoading=false in the app, and the guard discards every chunk.
+    if (streamingEnabled) {
+      await _flushTokenBuf();
+      if (_pendingChunks.isNotEmpty) await Future.wait(_pendingChunks);
     }
 
     final elapsed = DateTime.now().difference(startTime).inMilliseconds;
 
     // ── 5. Stream response to owner in real-time ──────────────────────────
-    // NOTE: For true streaming, llmRouter.generateResponse() can be modified
-    // to call a streaming callback that sends chunks via notificationService.
-    // The current implementation returns the full response at once.
-    // Streaming is a Phase 1 enhancement — see llm_router.dart.
+    // NOTE: Streaming IS now active — tokens are sent live via sendStreamChunk
+    // inside the onChunk callbacks above.  The full responseText is still
+    // returned so the RPC reply and memory save paths work unchanged.
 
     // ── 6. Persist exchange to Memory Service ─────────────────────────────
     try {
@@ -393,9 +671,9 @@ class Orchestrator {
   /// Stream response chunks to the owner in real-time.
   ///
   /// Call this during streaming LLM generation to send incremental tokens.
-  /// The Flutter app subscribes to 'safeclaw\\.stream\\..*' to receive them.
+  /// The Flutter app subscribes to 'pembrook\\.stream\\..*' to receive them.
   ///
-  /// Chunk key pattern: @owner:safeclaw.stream.$reqId.$chunkIndex.safeclaw@agent
+  /// Chunk key pattern: @owner:pembrook.stream.$reqId.$chunkIndex.pembrook@agent
   Future<void> sendStreamChunk({
     required String ownerAtSign,
     required int reqId,
@@ -405,8 +683,8 @@ class Orchestrator {
     bool done = false,
   }) async {
     final key = AtKey()
-      ..key = 'safeclaw.stream.$reqId.$chunkIndex'
-      ..namespace = 'safeclaw'
+      ..key = 'pembrook.stream.$reqId.$chunkIndex'
+      ..namespace = 'pembrook'
       ..sharedWith = ownerAtSign
       ..metadata = (Metadata()
         ..ttl = 60000 // 1 minute TTL — transient streaming key
@@ -454,6 +732,26 @@ class Orchestrator {
   /// Tool executor called by the LLM agentic loop.
   ///
   /// Each tool in [_kTools] must have a corresponding case here.
+  /// Returns the merged tool list for the LLM: built-in tools plus any tools
+  /// for skills that are currently installed and enabled.
+  Future<List<Map<String, dynamic>>> _buildTools() async {
+    final tools = List<Map<String, dynamic>>.from(_kTools);
+    if (skillRunner == null) return tools;
+    // Use the in-memory cache — updated synchronously on install/remove,
+    // so no atServer round-trip needed and no race with just-installed skills.
+    final skills = skillRunner!.registry.cachedSkills.values;
+    for (final skill in skills) {
+      final isEnabled = skill.ownerPolicyOverrides['enabled'] != false;
+      if (!isEnabled) continue;
+      final skillTools = _kSkillToolDefs[skill.skillId];
+      if (skillTools != null) tools.addAll(skillTools);
+    }
+    _log.fine('_buildTools: ${tools.length} total tools '
+        '(${tools.length - _kTools.length} from skills: '
+        '${skills.map((s) => s.skillId).join(', ')})');
+    return tools;
+  }
+
   Future<String> _executeTool(
       String toolName, Map<String, dynamic> args) async {
     _log.info('[TOOL] Executing tool="$toolName" args=$args');
@@ -470,6 +768,22 @@ class Orchestrator {
       case 'notify_owner':
         return _toolNotifyOwner(args);
       default:
+        // Check if this is a skill tool call.
+        final skillId = _toolToSkillId[toolName];
+        if (skillId != null && skillRunner != null) {
+          _log.info('[TOOL] Routing $toolName → skill:$skillId');
+          final result = await skillRunner!.invoke(
+            skillId: skillId,
+            initiatorAtSign: _toolFromAtSign,
+            payload: {...args, 'action': toolName},
+            conversationId: _toolConvId,
+          );
+          if (result.success && result.result != null) {
+            return jsonEncode(result.result);
+          }
+          return 'Skill "$skillId" failed: '
+              '${result.error ?? result.denialReason ?? "unknown error"}';
+        }
         _log.warning('[TOOL] Unknown tool requested: $toolName');
         return 'Unknown tool: $toolName';
     }
@@ -591,11 +905,34 @@ class Orchestrator {
     } catch (_) {
       return 'Error: invalid URL — $url';
     }
+
+    // Reject non-HTTP schemes (mailto:, tel:, etc.)
+    if (uri.scheme != 'http' && uri.scheme != 'https') {
+      return 'Error: fetch_webpage only supports http/https URLs, not "${uri.scheme}:". '
+          'To send email use the send_email tool instead.';
+    }
+
+    // Rewrite Google / Bing search URLs → DuckDuckGo HTML (scraper-friendly).
+    if ((uri.host.contains('google.com') || uri.host.contains('bing.com')) &&
+        (uri.path == '/search' || uri.queryParameters.containsKey('q'))) {
+      final q = uri.queryParameters['q'] ?? '';
+      if (q.isNotEmpty) {
+        uri = Uri.parse(
+            'https://html.duckduckgo.com/html/?q=${Uri.encodeQueryComponent(q)}');
+        _log.info('[fetch_webpage] Rewrote search URL → $uri');
+      }
+    }
+
     try {
       _log.info('[fetch_webpage] GET $uri');
       final resp = await http.get(uri, headers: {
-        'User-Agent': 'SafeClaw-Agent/1.0 (fetch_webpage tool)',
-        'Accept': 'text/html,application/xhtml+xml',
+        // Use a real browser UA so sites don't serve bot-blocking pages.
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/124.0.0.0 Safari/537.36',
+        'Accept':
+            'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
       }).timeout(const Duration(seconds: 15));
 
       if (resp.statusCode != 200) {

@@ -1,4 +1,4 @@
-// Placeholder widget tests for SafeClaw.
+// Placeholder widget tests for Pembrook.
 // Real tests are added as the app matures.
 import 'package:flutter_test/flutter_test.dart';
 

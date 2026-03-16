@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# start.sh — Build all SafeClaw images and start (or refresh) the stack.
+# start.sh — Build all Pembrook images and start (or refresh) the stack.
 #
 # Safe to run against an already-running stack — docker compose up --build -d
 # only restarts a container when its image has actually changed.  Use
@@ -25,9 +25,9 @@
 #   4. Prints a short status summary.
 #
 # Skill images built (tagged for use by SandboxManager at runtime):
-#   safeclaw-skill-email:latest
-#   safeclaw-skill-calendar:latest
-#   safeclaw-skill-web-search:latest
+#   pembrook-skill-email:latest
+#   pembrook-skill-calendar:latest
+#   pembrook-skill-web-search:latest
 
 set -euo pipefail
 
@@ -75,7 +75,7 @@ done
 # ── Banner ────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}║        SafeClaw  —  Start All Services       ║${NC}"
+echo -e "${BOLD}║        Pembrook  —  Start All Services       ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -139,15 +139,15 @@ if [[ "$BUILD_SKILLS" == "true" ]]; then
     success "$name image ready: $tag"
   }
 
-  build_skill "Email skill"      "safeclaw-skill-email:latest"      "$PROJECT_ROOT/skills/email"
-  build_skill "Calendar skill"   "safeclaw-skill-calendar:latest"   "$PROJECT_ROOT/skills/calendar"
-  build_skill "Web Search skill" "safeclaw-skill-web-search:latest" "$PROJECT_ROOT/skills/web_search"
+  build_skill "Email skill"      "pembrook-skill-email:latest"      "$PROJECT_ROOT/skills/email"
+  build_skill "Calendar skill"   "pembrook-skill-calendar:latest"   "$PROJECT_ROOT/skills/calendar"
+  build_skill "Web Search skill" "pembrook-skill-web-search:latest" "$PROJECT_ROOT/skills/web_search"
 else
   info "Skipping skill image builds (--no-skills)"
 fi
 
 # ── Start the compose stack ───────────────────────────────────────────────────
-header "Starting SafeClaw stack"
+header "Starting Pembrook stack"
 
 COMPOSE_ARGS=("--build" "-d")
 [[ "$FORCE_RECREATE" == "true" ]] && COMPOSE_ARGS+=("--force-recreate")
@@ -176,7 +176,7 @@ header "Stack status"
 docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Service}}"
 
 echo ""
-echo -e "${GREEN}SafeClaw is running.${NC}"
+echo -e "${GREEN}Pembrook is running.${NC}"
 echo ""
 echo -e "  Tail agent logs :  ${CYAN}docker compose logs -f agent${NC}"
 echo -e "  Stop everything :  ${CYAN}docker compose down${NC}"

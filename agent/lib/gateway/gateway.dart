@@ -5,7 +5,7 @@
 ///   - allowList controls which atSigns can send commands:
 ///       @owner (direct Flutter app / CLI)
 ///       @services (shared atSign for messaging bridges + MCP servers)
-///       Any additional atSigns stored in `settings.allowed_users.safeclaw`
+///       Any additional atSigns stored in `settings.allowed_users.pembrook`
 ///   - Zero open ports: connects OUTBOUND to atPlatform and listens on
 ///     the encrypted notification channel
 ///   - Rate limiting per sender (in-memory, resets on restart)
@@ -13,14 +13,14 @@
 ///   - All responses stream back via AtRpc to the originating atSign
 ///   - allowList is refreshed every 5 minutes from AtKey + env var fallback
 ///
-/// AtRpc domain namespace: 'safeclaw'
+/// AtRpc domain namespace: 'pembrook'
 /// AtRpc key pattern delivered to @owner:
-///   @owner:safeclaw.rpc_.*@agent
+///   @owner:pembrook.rpc_.*@agent
 ///
 /// AllowList persistence:
-///   AtKey: settings.allowed_users.safeclaw@agent  →  JSON array of atSigns
+///   AtKey: settings.allowed_users.pembrook@agent  →  JSON array of atSigns
 ///   Env var fallback: ALLOWED_USERS=@owner,@services (comma-separated)
-///   Owner atSign from: settings.owner_atsign.safeclaw@agent OR OWNER_AT_SIGN env var
+///   Owner atSign from: settings.owner_atsign.pembrook@agent OR OWNER_AT_SIGN env var
 ///
 /// Multi-instance horizontal scaling:
 ///   Use ServiceFactoryWithNoOpSyncService() + unique hive paths per instance,
@@ -87,7 +87,7 @@ class Gateway {
     try {
       final ownerKey = AtKey()
         ..key = _kOwnerAtSignKey
-        ..namespace = 'safeclaw'
+        ..namespace = 'pembrook'
         ..sharedBy = agentAtSign;
       final ownerValue = await atClient.get(ownerKey);
       final ownerAtSign = ownerValue.value as String?;
@@ -105,7 +105,7 @@ class Gateway {
     try {
       final allowedKey = AtKey()
         ..key = _kAllowedUsersKey
-        ..namespace = 'safeclaw'
+        ..namespace = 'pembrook'
         ..sharedBy = agentAtSign;
       final allowedValue = await atClient.get(allowedKey);
       final raw = allowedValue.value as String?;
@@ -170,7 +170,7 @@ class Gateway {
     _rpc = AtRpc(
       atClient: atClient,
       baseNameSpace: namespace,
-      domainNameSpace: 'safeclaw',
+      domainNameSpace: 'pembrook',
       callbacks: callbacks,
       allowList: _allowList,
     );
@@ -180,7 +180,7 @@ class Gateway {
 
     _log.info(
       'Gateway started on ${atClient.getCurrentAtSign()} '
-      'namespace=$namespace domainNameSpace=safeclaw '
+      'namespace=$namespace domainNameSpace=pembrook '
       'allowList=${_allowList.toList()..sort()}',
     );
   }

@@ -4,11 +4,11 @@
 /// AtKey that automatically syncs across all of the owner's devices via
 /// the atPlatform sync service.
 ///
-/// Key patterns (namespace: safeclaw):
-///   conversation.$convId.safeclaw@agent     — full conversation (TTL 90 days)
-///   context.user_preferences.safeclaw@agent — owner preferences
-///   context.user_profile.safeclaw@agent     — personal info (owner-managed)
-///   summary.$period.safeclaw@agent          — compressed summaries
+/// Key patterns (namespace: pembrook):
+///   conversation.$convId.pembrook@agent     — full conversation (TTL 90 days)
+///   context.user_preferences.pembrook@agent — owner preferences
+///   context.user_profile.pembrook@agent     — personal info (owner-managed)
+///   summary.$period.pembrook@agent          — compressed summaries
 ///
 /// Source tagging (SECURITY CRITICAL):
 ///   Every memory entry includes:
@@ -53,7 +53,7 @@ class MemoryService {
     try {
       final key = AtKey()
         ..key = 'conversation.$conversationId'
-        ..namespace = 'safeclaw';
+        ..namespace = 'pembrook';
 
       final atValue = await atClient.get(
         key,
@@ -126,7 +126,7 @@ class MemoryService {
   Future<void> _saveConversation(Conversation conversation) async {
     final key = AtKey()
       ..key = 'conversation.${conversation.id}'
-      ..namespace = 'safeclaw'
+      ..namespace = 'pembrook'
       ..metadata = (Metadata()
         ..ttl = kConversationTtlMs
         ..ttr = -1);
@@ -147,7 +147,7 @@ class MemoryService {
     try {
       final key = AtKey()
         ..key = 'context.user_preferences'
-        ..namespace = 'safeclaw';
+        ..namespace = 'pembrook';
       final atValue = await atClient.get(
         key,
         getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
@@ -164,7 +164,7 @@ class MemoryService {
   Future<void> saveUserPreferences(Map<String, dynamic> preferences) async {
     final key = AtKey()
       ..key = 'context.user_preferences'
-      ..namespace = 'safeclaw';
+      ..namespace = 'pembrook';
     await atClient.put(
       key,
       jsonEncode(preferences),
@@ -180,7 +180,7 @@ class MemoryService {
   /// Conversations older than [olderThan] AND longer than
   /// [maxMessagesBeforeSummarize] are compressed:
   ///   1. Trusted messages are sent to the local LLM for summarization.
-  ///   2. The summary is stored as `memory.summary.$id.safeclaw@agent`.
+  ///   2. The summary is stored as `memory.summary.$id.pembrook@agent`.
   ///   3. The conversation is trimmed to the summary + last 5 messages.
   Future<void> summarizeOldConversations({
     Duration olderThan = const Duration(days: 7),
@@ -246,7 +246,7 @@ class MemoryService {
         // Persist the summary as a separate AtKey for the app audit view.
         final summaryKey = AtKey()
           ..key = 'memory.summary.${conv.id}'
-          ..namespace = 'safeclaw'
+          ..namespace = 'pembrook'
           ..metadata = (Metadata()
             ..ttl = kSummaryTtlMs
             ..ttr = -1);
@@ -302,12 +302,12 @@ class MemoryService {
   // ── Skill State (Phase 3) ─────────────────────────────────────────────────
 
   /// Load persistent state for a skill.
-  /// Key: skill_state.$skillId.safeclaw@agent
+  /// Key: skill_state.$skillId.pembrook@agent
   Future<Map<String, dynamic>> loadSkillState(String skillId) async {
     try {
       final key = AtKey()
         ..key = 'skill_state.$skillId'
-        ..namespace = 'safeclaw';
+        ..namespace = 'pembrook';
       final atValue = await atClient.get(key);
       if (atValue.value == null) return {};
       return jsonDecode(atValue.value as String) as Map<String, dynamic>;
@@ -321,7 +321,7 @@ class MemoryService {
       String skillId, Map<String, dynamic> state) async {
     final key = AtKey()
       ..key = 'skill_state.$skillId'
-      ..namespace = 'safeclaw';
+      ..namespace = 'pembrook';
     await atClient.put(
       key,
       jsonEncode(state),

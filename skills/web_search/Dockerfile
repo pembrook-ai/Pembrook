@@ -1,8 +1,8 @@
-# SafeClaw Web Search Skill
+# Pembrook Web Search Skill
 # Multi-stage build: compile to native binary, then copy into minimal runtime.
 #
 # Build (run from repo root):
-#   docker build -t safeclaw-skill-web-search:latest skills/web_search/
+#   docker build -t pembrook-skill-web-search:latest skills/web_search/
 #
 # NOTE: This skill requires HTTPS egress to your SearXNG instance or
 # api.search.brave.com. Run with --network=bridge or a custom network profile.

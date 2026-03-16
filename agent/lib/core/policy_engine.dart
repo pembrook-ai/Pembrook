@@ -10,12 +10,13 @@
 ///   Everything else is denied.
 ///
 /// Policies are stored as AtKeys:
-///   policy.$policyId.safeclaw@agent
+///   policy.$policyId.pembrook@agent
 ///
 /// Owner writes policies via the Flutter app and they sync automatically
 /// across all devices and to the agent's atServer.
 
 import 'dart:convert';
+import 'dart:io';
 import 'package:at_client/at_client.dart';
 import 'package:logging/logging.dart';
 
@@ -30,11 +31,12 @@ class PolicyEngine {
   DateTime _lastPolicyRefresh = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _policyCacheTtl = Duration(minutes: 5);
 
-  // Owner atSign — loaded from settings AtKey (settings.owner_atsign.safeclaw@agent).
-  // Defaults to '@owner' as a safety baseline if the AtKey is not yet set.
-  String _ownerAtSign = '@owner';
+  // Full allow list — mirrors Gateway's allow list.
+  // Loaded from AtKeys + env vars (OWNER_AT_SIGN, ALLOWED_USERS) as fallback.
+  // Refreshed every 5 minutes.
+  final Set<String> _allowList = {};
   DateTime _ownerAtSignLastRefresh = DateTime.fromMillisecondsSinceEpoch(0);
-  static const Duration _ownerAtSignCacheTtl = Duration(minutes: 30);
+  static const Duration _ownerAtSignCacheTtl = Duration(minutes: 5);
 
   PolicyEngine({required this.atClient});
 
@@ -84,7 +86,7 @@ class PolicyEngine {
   // ── Private helpers ───────────────────────────────────────────────────────
 
   bool _isIdentityAllowed(String atSign) {
-    if (atSign == _ownerAtSign) return true;
+    if (_allowList.contains(atSign)) return true;
     if (atSign.startsWith('@bridge_')) return true;
     if (atSign.startsWith('@skill_')) return true;
     if (atSign.startsWith('@mcp_')) return true;
@@ -145,27 +147,65 @@ class PolicyEngine {
     return cond.isNotEmpty;
   }
 
-  /// Refresh the owner atSign from settings AtKey (cached for 30 min).
+  /// Refresh the allow list from AtKeys + env vars (cached for 5 min).
+  /// Mirrors the Gateway's _refreshAllowList logic so both are consistent.
   Future<void> _maybeRefreshOwnerAtSign() async {
     final now = DateTime.now();
     if (now.difference(_ownerAtSignLastRefresh) < _ownerAtSignCacheTtl) return;
+
+    final fresh = <String>{};
+
+    // 1. AtKey: settings.owner_atsign
     try {
-      final key = AtKey()
+      final ownerKey = AtKey()
         ..key = 'settings.owner_atsign'
-        ..namespace = 'safeclaw';
-      final atValue = await atClient.get(
-        key,
+        ..namespace = 'pembrook';
+      final ownerVal = await atClient.get(
+        ownerKey,
         getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
       );
-      if (atValue.value != null && (atValue.value as String).isNotEmpty) {
-        final resolved = atValue.value as String;
-        if (resolved != _ownerAtSign) {
-          _log.info('Owner atSign updated: $_ownerAtSign → $resolved');
-          _ownerAtSign = resolved;
+      if (ownerVal.value != null && (ownerVal.value as String).isNotEmpty) {
+        fresh.add((ownerVal.value as String).trim());
+      }
+    } catch (_) {}
+
+    // 2. AtKey: settings.allowed_users  (JSON array)
+    try {
+      final usersKey = AtKey()
+        ..key = 'settings.allowed_users'
+        ..namespace = 'pembrook';
+      final usersVal = await atClient.get(
+        usersKey,
+        getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
+      );
+      if (usersVal.value != null) {
+        final list = jsonDecode(usersVal.value as String) as List<dynamic>;
+        for (final s in list) {
+          if (s is String && s.isNotEmpty) fresh.add(s.trim());
         }
       }
-    } catch (e) {
-      _log.fine('Could not refresh owner atSign (using: $_ownerAtSign): $e');
+    } catch (_) {}
+
+    // 3. Env var fallback: OWNER_AT_SIGN
+    final envOwner = Platform.environment['OWNER_AT_SIGN'] ?? '';
+    if (envOwner.isNotEmpty) fresh.add(envOwner.trim());
+
+    // 4. Env var fallback: ALLOWED_USERS=@a,@b,@c
+    final envUsers = Platform.environment['ALLOWED_USERS'] ?? '';
+    for (final s in envUsers.split(',')) {
+      final t = s.trim();
+      if (t.isNotEmpty) fresh.add(t);
+    }
+
+    if (fresh.isEmpty) {
+      // No config at all — keep the current list (safer than wiping it).
+      _log.warning(
+          'PolicyEngine: allow list sources empty; retaining current list: $_allowList');
+    } else if (fresh != _allowList) {
+      _log.info('PolicyEngine: allow list updated → $fresh');
+      _allowList
+        ..clear()
+        ..addAll(fresh);
     }
     _ownerAtSignLastRefresh = now;
   }
@@ -178,7 +218,7 @@ class PolicyEngine {
     _cachedPolicies.clear();
 
     try {
-      // List all policy keys: policy.*.safeclaw@agent
+      // List all policy keys: policy.*.pembrook@agent
       final keys = await atClient.getKeys(
         regex: r'^policy\.',
       );

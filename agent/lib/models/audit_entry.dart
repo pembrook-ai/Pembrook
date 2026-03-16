@@ -4,7 +4,7 @@
 /// cannot delete its own logs. They use Metadata()..immutable = true so they
 /// cannot be modified after creation.
 ///
-/// AtKey pattern: audit.$timestamp.$actionId.safeclaw@owner
+/// AtKey pattern: audit.$timestamp.$actionId.pembrook@owner
 /// Key belongs to @owner — @agent writes via sharedWith, owner reads all.
 
 /// Policy decision outcomes.

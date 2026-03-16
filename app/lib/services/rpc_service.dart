@@ -6,17 +6,18 @@
 ///   success.<reqId>.<domainNS>.<rpcsNS>.<baseNS>  ← from @agent
 ///
 /// AtRpc namespaces (must match agent/lib/gateway/gateway.dart exactly):
-///   baseNameSpace   = 'safeclaw'
+///   baseNameSpace   = 'pembrook'
 ///   rpcsNameSpace   = '__rpcs'   (AtRpc default)
-///   domainNameSpace = 'safeclaw'
+///   domainNameSpace = 'pembrook'
 ///
 /// Agent atSign: read from SharedPreferences key 'agentAtSign'.
 ///   Set once in SettingsScreen.  Call [updateAgentAtSign] after saving
 ///   there so the client is recreated immediately without a restart.
 ///
 /// Streaming:
-///   [streamChunks] — a Stream<String> yielding incremental tokens sent by
-///   the Orchestrator as 'safeclaw.stream.<reqId>.safeclaw' notifications.
+///   [streamChunkEvents] — a Stream<StreamChunkEvent> yielding incremental tokens
+///   sent by the Orchestrator as 'pembrook.stream.<reqId>.<i>.pembrook' notifications.
+///   Each event carries a [conversationId] so ChatScreen can filter to its own chunks.
 ///   The final full response still arrives via the normal AtRpc reply.
 
 import 'dart:async';
@@ -38,6 +39,14 @@ class RpcCallResult {
     required this.conversationId,
     this.error,
   });
+}
+
+/// A streaming chunk event — carries the conversationId it belongs to so
+/// each ChatScreen can filter and only render its own conversation's chunks.
+class StreamChunkEvent {
+  final String conversationId;
+  final String chunk;
+  const StreamChunkEvent({required this.conversationId, required this.chunk});
 }
 
 /// A proactive push message sent by the agent from a scheduled task.
@@ -63,16 +72,18 @@ class RpcService extends ChangeNotifier {
 
   String _agentAtSign = '@agent';
 
-  static const String _baseNS = 'safeclaw';
+  static const String _baseNS = 'pembrook';
   static const String _rpcsNS = '__rpcs';
-  static const String _domainNS = 'safeclaw';
+  static const String _domainNS = 'pembrook';
 
   /// How long to wait for an agent response before giving up.
   static const Duration _callTimeout = Duration(seconds: 90);
 
   // Stream of incremental text chunks from the agent (streaming mode).
-  final StreamController<String> _streamChunkController =
-      StreamController<String>.broadcast();
+  // Each event carries the conversationId it belongs to so individual
+  // ChatScreens can filter to only their own conversation's chunks.
+  final StreamController<StreamChunkEvent> _streamChunkController =
+      StreamController<StreamChunkEvent>.broadcast();
 
   // Stream of proactive push messages from scheduled tasks.
   final StreamController<PushMessage> _pushController =
@@ -86,7 +97,10 @@ class RpcService extends ChangeNotifier {
   // Suppresses buffering so messages aren't shown twice on remount.
   bool _hasPushListener = false;
 
-  Stream<String> get streamChunks => _streamChunkController.stream;
+  /// Stream of chunk events keyed by conversationId.
+  /// ChatScreen should filter: `streamChunkEvents.where((e) => e.conversationId == _conversationId)`
+  Stream<StreamChunkEvent> get streamChunkEvents =>
+      _streamChunkController.stream;
 
   /// Subscribe to push messages, draining any that arrived while away.
   ///
@@ -136,10 +150,16 @@ class RpcService extends ChangeNotifier {
   // ──────────────────────────────────────────────────────────
 
   /// Send a command to @agent and wait for its response.
+  ///
+  /// [streamingEnabled] — when false, the agent skips sending stream chunk
+  /// notifications and returns the full response only in the RPC reply.
+  /// This matches the Flutter "Show tokens as they arrive" preference and
+  /// saves significant latency when the user has streaming turned off.
   Future<RpcCallResult> call({
     required String command,
     required String conversationId,
     Map<String, dynamic> payload = const {},
+    bool streamingEnabled = true,
   }) async {
     if (_rpcClient == null) {
       return const RpcCallResult(
@@ -155,6 +175,7 @@ class RpcService extends ChangeNotifier {
         'command': command,
         'conversationId': conversationId,
         'platform': _platformName(),
+        'streamingEnabled': streamingEnabled,
         ...payload,
       }).timeout(_callTimeout);
 
@@ -205,7 +226,7 @@ class RpcService extends ChangeNotifier {
   void _subscribeToStream() {
     _streamSubscription?.cancel();
     _streamSubscription = _atClient!.notificationService
-        .subscribe(regex: r'safeclaw\.stream\..*', shouldDecrypt: true)
+        .subscribe(regex: r'pembrook\.stream\..*', shouldDecrypt: true)
         .listen((notification) {
       if (notification.value == null) return;
       try {
@@ -213,20 +234,25 @@ class RpcService extends ChangeNotifier {
         // Handle both: plain string and {"chunk": "..."} JSON envelope.
         final value = notification.value!;
         String chunk;
+        String convId = '';
         if (value.startsWith('{')) {
           final map = _tryDecode(value);
           chunk = map?['chunk'] as String? ?? value;
+          convId = map?['conversationId'] as String? ?? '';
         } else {
           chunk = value;
         }
-        if (chunk.isNotEmpty) _streamChunkController.add(chunk);
+        if (chunk.isNotEmpty) {
+          _streamChunkController
+              .add(StreamChunkEvent(conversationId: convId, chunk: chunk));
+        }
       } catch (_) {}
     });
 
     // Also subscribe to scheduled-task push messages from the agent.
     _pushSubscription?.cancel();
     _pushSubscription = _atClient!.notificationService
-        .subscribe(regex: r'safeclaw\.push\..*', shouldDecrypt: true)
+        .subscribe(regex: r'pembrook\.push\..*', shouldDecrypt: true)
         .listen((notification) {
       if (notification.value == null) return;
       try {

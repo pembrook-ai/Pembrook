@@ -1,7 +1,7 @@
-/// Data models for SafeClaw agent.
+/// Data models for Pembrook agent.
 ///
 /// These models are serialized to/from JSON and stored as AtKey values.
-/// All storage uses the 'safeclaw' namespace.
+/// All storage uses the 'pembrook' namespace.
 
 // ── Enums ─────────────────────────────────────────────────────────────────
 
@@ -36,8 +36,8 @@ enum IntentType {
 
 /// A single message in a conversation.
 ///
-/// AtKey: conversation.$conversationId.safeclaw@owner (app-side)
-///         conversation.$conversationId.safeclaw@agent (agent-side)
+/// AtKey: conversation.$conversationId.pembrook@owner (app-side)
+///         conversation.$conversationId.pembrook@agent (agent-side)
 class ConversationMessage {
   final String id;
   final String role; // 'user' | 'assistant' | 'system'
@@ -112,7 +112,7 @@ class Conversation {
 
 // ── LLM Settings ──────────────────────────────────────────────────────────
 
-/// LLM configuration stored as AtKey: settings.llm.safeclaw@agent
+/// LLM configuration stored as AtKey: settings.llm.pembrook@agent
 class LlmSettings {
   final String localModel; // e.g. 'llama3.2', 'mistral', 'phi-3'
   final String externalProvider; // 'claude' | 'openai' | 'google' | 'none'

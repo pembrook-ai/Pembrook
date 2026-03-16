@@ -216,7 +216,7 @@ Future<Map<String, dynamic>> _getPage(Map<String, dynamic> payload) async {
   final uri = Uri.parse(url);
   final response = await http.get(uri, headers: {
     'User-Agent':
-        'Mozilla/5.0 (compatible; SafeClawBot/1.0; +https://github.com/safeclaw)',
+        'Mozilla/5.0 (compatible; PembrookBot/1.0; +https://github.com/pembrook)',
     'Accept': 'text/html,application/xhtml+xml',
   });
 

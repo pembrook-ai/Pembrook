@@ -1,6 +1,6 @@
-name: safeclaw_bridge_whatsapp
+name: pembrook_bridge_whatsapp
 description: >-
-  SafeClaw bridge — routes WhatsApp messages to/from the @agent atSign
+  Pembrook bridge — routes WhatsApp messages to/from the @agent atSign
   via the atNetwork (zero open ports, E2E encrypted).
   
   ARCHITECTURE:
@@ -13,7 +13,7 @@ description: >-
     4. Receives the @agent response and sends it back via WhatsApp.
 
   atSign: @bridge_whatsapp (placeholder)
-  Namespace: safeclaw
+  Namespace: pembrook
 
 publish_to: none
 

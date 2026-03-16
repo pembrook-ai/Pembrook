@@ -1,6 +1,6 @@
-# SafeClaw — Implementation Phases
+# Pembrook — Implementation Phases
 
-This document is the canonical reference for SafeClaw's phased implementation plan.
+This document is the canonical reference for Pembrook's phased implementation plan.
 It records what is **done**, what is a **stub**, and what is **planned** for each phase,
 together with the acceptance criteria that close each phase.
 
@@ -15,7 +15,7 @@ together with the acceptance criteria that close each phase.
 | File | Status | Notes |
 |------|--------|-------|
 | `docker-compose.yml` | ✅ Done | Wires `agent`, `ollama` services; mounts `~/.atsign/` for keys |
-| `Dockerfile.agent` | ✅ Done | Multi-stage Dart build; runs `safeclaw_agent` binary |
+| `Dockerfile.agent` | ✅ Done | Multi-stage Dart build; runs `pembrook_agent` binary |
 | `agent/pubspec.yaml` | ✅ Done | All Phase 1–2 deps declared; `dart pub get` resolves cleanly |
 | `app/pubspec.yaml` | ✅ Done | Flutter app deps; `flutter pub get` resolves cleanly |
 
@@ -127,7 +127,7 @@ The implementation must:
 1. Load conversations older than a configurable threshold (default: 50 messages).
 2. Serialize the messages into a prompt and call `llmRouter.generateResponse()` with a
    `systemOverride` that instructs the model to produce a concise factual summary.
-3. Write the summary to an AtKey: `memory.summary.$conversationId.safeclaw@agent`.
+3. Write the summary to an AtKey: `memory.summary.$conversationId.pembrook@agent`.
 4. Truncate (or archive) the raw messages from active memory to keep the context window bounded.
 
 **Dependencies:** `LlmRouter` is already a constructor parameter — no new wiring needed.
@@ -158,11 +158,11 @@ is reinstalled. The agent cannot read them.
 Changes required:
 
 1. On **save**: write settings as JSON to the encrypted AtKey
-   `settings.app.safeclaw@agent` using `atClient.put()`.
+   `settings.app.pembrook@agent` using `atClient.put()`.
 2. On **startup**: read from the AtKey first; fall back to `SharedPreferences`
    for offline / first-run.
 3. The agent's `LlmRouter._maybeRefreshSettings()` already reads from
-   `settings.llm.safeclaw@agent` — ensure the app writes to that same key for
+   `settings.llm.pembrook@agent` — ensure the app writes to that same key for
    LLM-specific settings (model name, privacy threshold, local-only flag).
 
 #### 2d — Dynamic owner atSign
@@ -170,7 +170,7 @@ Changes required:
 **File:** `agent/lib/core/policy_engine.dart`
 
 `@owner` is currently hard-coded in the identity check. The owner atSign must
-be read from the AtKey `settings.owner_atsign.safeclaw@agent` at startup (with
+be read from the AtKey `settings.owner_atsign.pembrook@agent` at startup (with
 `@owner` as fallback for backwards compatibility).
 
 #### 2e — Policy editor in Flutter app  *(stretch goal)*
@@ -179,7 +179,7 @@ be read from the AtKey `settings.owner_atsign.safeclaw@agent` at startup (with
 `app/lib/policy/policy_list_screen.dart`
 
 Provide a YAML editor in the app that reads/writes policy AtKeys
-(`policy.rules.safeclaw@agent`) so the owner can add custom allow/deny rules
+(`policy.rules.pembrook@agent`) so the owner can add custom allow/deny rules
 without manually editing AtKeys.
 
 ### Files Changed / Created
@@ -218,7 +218,7 @@ and echoes back a "not implemented" payload. Full implementation:
 
 1. Parse JSON-line requests from `stdin`.
 2. Authenticate with Google Calendar API (OAuth2 token stored in AtKey
-   `skill.calendar.token.safeclaw@skill_calendar`).
+   `skill.calendar.token.pembrook@skill_calendar`).
 3. Support `list_events`, `create_event`, `delete_event` tool calls.
 4. Write JSON-line responses to `stdout`.
 5. Add `googleapis: ^12.0.0` and `googleapis_auth: ^1.5.0` to `pubspec.yaml`.
@@ -231,8 +231,8 @@ and echoes back a "not implemented" payload. Full implementation:
 
 1. JSON-line request / response protocol (same pattern as calendar).
 2. SMTP send via `mailer` package; IMAP fetch via `enough_mail` package.
-3. Credentials from AtKeys: `skill.email.smtp.safeclaw@skill_email`,
-   `skill.email.imap.safeclaw@skill_email`.
+3. Credentials from AtKeys: `skill.email.smtp.pembrook@skill_email`,
+   `skill.email.imap.pembrook@skill_email`.
 4. Support `send_email`, `list_inbox`, `read_email`, `delete_email`.
 5. Add `mailer: ^6.1.0`, `enough_mail: ^2.7.0` to `pubspec.yaml`.
 
@@ -244,7 +244,7 @@ and echoes back a "not implemented" payload. Full implementation:
 
 1. JSON-line request / response protocol.
 2. Use Brave Search API or SearXNG (self-hosted) — API key / URL from AtKey
-   `skill.web_search.config.safeclaw@skill_web_search`.
+   `skill.web_search.config.pembrook@skill_web_search`.
 3. Support `search`, `fetch_url` (returns readable text via `html` parser).
 4. Add `http: ^1.2.0`, `html: ^0.15.0` to `pubspec.yaml`.
 
@@ -341,7 +341,7 @@ Skeleton `AtRpc` forwarding logic exists. Full implementation:
 **Files:** `bridge/telegram/pubspec.yaml` *(new)*, `bridge/telegram/bin/main.dart` *(new)*
 
 1. Use `teledart` package (official Telegram Bot API wrapper for Dart).
-2. Bot token from AtKey `bridge.telegram.token.safeclaw@bridge_telegram`.
+2. Bot token from AtKey `bridge.telegram.token.pembrook@bridge_telegram`.
 3. `AtRpc` forward to agent; response back to Telegram chat.
 
 ### Bridge: Discord
@@ -349,7 +349,7 @@ Skeleton `AtRpc` forwarding logic exists. Full implementation:
 **Files:** `bridge/discord/pubspec.yaml` *(new)*, `bridge/discord/bin/main.dart` *(new)*
 
 1. Use `nyxx` package (Discord API for Dart).
-2. Bot token from AtKey `bridge.discord.token.safeclaw@bridge_discord`.
+2. Bot token from AtKey `bridge.discord.token.pembrook@bridge_discord`.
 3. Slash command `/ask` routes to agent; response posted in channel thread.
 
 ### Bridge: Slack
@@ -391,8 +391,8 @@ the app.
 
 | AtKey | Owner | Purpose |
 |-------|-------|---------|
-| `policy.$policyId.safeclaw@owner` sharedWith `@agent` | owner | Policy rule JSON |
-| `bridge.$platform.config.safeclaw@owner` sharedWith `@agent` | owner | Bridge token/secret JSON |
+| `policy.$policyId.pembrook@owner` sharedWith `@agent` | owner | Policy rule JSON |
+| `bridge.$platform.config.pembrook@owner` sharedWith `@agent` | owner | Bridge token/secret JSON |
 
 ### Acceptance Criteria
 
@@ -424,15 +424,15 @@ Legend: ✅ Complete · ⚠️ Partial / stub · 🚧 In progress / next · 📋
 
 | AtKey | Owner | Purpose |
 |-------|-------|---------|
-| `settings.owner_atsign.safeclaw@agent` | agent | Dynamic owner atSign (Phase 2) |
-| `settings.llm.safeclaw@agent` | agent | LLM router settings (model, threshold) |
-| `settings.app.safeclaw@agent` | agent | Flutter app settings (Phase 2) |
-| `policy.rules.safeclaw@agent` | agent | YAML policy rules |
-| `memory.summary.$id.safeclaw@agent` | agent | Conversation summaries (Phase 2) |
-| `memory.conversations.$id.safeclaw@agent` | agent | Raw conversation turns |
-| `audit.$timestamp.safeclaw@owner` | owner | Immutable audit records |
-| `hitl.pending.$id.safeclaw@agent` | agent | Pending HITL approvals (TTL 5 min) |
-| `skill.$name.meta.safeclaw@skill_*` | skill | Skill metadata / capabilities |
-| `skill.$name.token.safeclaw@skill_*` | skill | Skill OAuth / API credentials |
-| `apikey.$provider.safeclaw@agent` | agent | External LLM API keys (encrypted) |
-| `bridge.$platform.token.safeclaw@bridge_*` | bridge | Bridge bot tokens (encrypted) |
+| `settings.owner_atsign.pembrook@agent` | agent | Dynamic owner atSign (Phase 2) |
+| `settings.llm.pembrook@agent` | agent | LLM router settings (model, threshold) |
+| `settings.app.pembrook@agent` | agent | Flutter app settings (Phase 2) |
+| `policy.rules.pembrook@agent` | agent | YAML policy rules |
+| `memory.summary.$id.pembrook@agent` | agent | Conversation summaries (Phase 2) |
+| `memory.conversations.$id.pembrook@agent` | agent | Raw conversation turns |
+| `audit.$timestamp.pembrook@owner` | owner | Immutable audit records |
+| `hitl.pending.$id.pembrook@agent` | agent | Pending HITL approvals (TTL 5 min) |
+| `skill.$name.meta.pembrook@skill_*` | skill | Skill metadata / capabilities |
+| `skill.$name.token.pembrook@skill_*` | skill | Skill OAuth / API credentials |
+| `apikey.$provider.pembrook@agent` | agent | External LLM API keys (encrypted) |
+| `bridge.$platform.token.pembrook@bridge_*` | bridge | Bridge bot tokens (encrypted) |

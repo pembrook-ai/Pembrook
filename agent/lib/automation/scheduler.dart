@@ -1,8 +1,8 @@
 /// TaskScheduler — persist and execute scheduled tasks as AtKeys.
 ///
 /// KEY PATTERN:
-///   schedule.$taskId.safeclaw@agent  →  JSON-encoded TaskDefinition
-///   taskrun.$taskId.$ts.safeclaw@agent → JSON run-history entry (TTL 90 d)
+///   schedule.$taskId.pembrook@agent  →  JSON-encoded TaskDefinition
+///   taskrun.$taskId.$ts.pembrook@agent → JSON run-history entry (TTL 90 d)
 ///
 /// All reads/writes use useRemoteAtServer = true.
 ///
@@ -42,7 +42,7 @@ class TaskScheduler {
 
   final Logger _log = Logger('TaskScheduler');
 
-  static const String _namespace = 'safeclaw';
+  static const String _namespace = 'pembrook';
   static const int _runHistoryTtlMs = 90 * 24 * 60 * 60 * 1000; // 90 days
 
   /// Push key TTL: 7 days for task result notifications.
@@ -123,7 +123,10 @@ class TaskScheduler {
         ..addAll(tasks);
       return tasks;
     } catch (e) {
-      _log.warning('listTasks error: $e');
+      final msg = e.toString();
+      if (!msg.contains('key not found') && !msg.contains('does not exist')) {
+        _log.warning('listTasks error: $e');
+      }
       return [];
     }
   }
@@ -159,7 +162,13 @@ class TaskScheduler {
     } catch (e) {
       // Re-throw so listTasks() can distinguish a real empty index from
       // a transient atServer connection failure.
-      _log.warning('_readIndex error: $e');
+      // Suppress noisy warning for the expected "key not found" case on fresh start.
+      final msg = e.toString();
+      if (msg.contains('key not found') || msg.contains('does not exist')) {
+        _log.fine('_readIndex: index key not yet created (fresh start)');
+      } else {
+        _log.warning('_readIndex error: $e');
+      }
       rethrow;
     }
   }
@@ -350,7 +359,7 @@ class TaskScheduler {
 
   /// Send the task execution result as a push notification to @owner.
   ///
-  /// The app subscribes to 'safeclaw\.push\..*' and surfaces these as
+  /// The app subscribes to 'pembrook\.push\..*' and surfaces these as
   /// proactive messages in the chat screen.
   Future<void> _pushResultToOwner(
     String taskId,
@@ -360,7 +369,7 @@ class TaskScheduler {
     try {
       final ts = DateTime.now().millisecondsSinceEpoch;
       final pushKey = AtKey()
-        ..key = 'safeclaw.push.$taskId.$ts'
+        ..key = 'pembrook.push.$taskId.$ts'
         ..namespace = _namespace
         ..sharedWith = _ownerAtSign
         ..metadata = (Metadata()

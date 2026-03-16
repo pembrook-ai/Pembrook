@@ -1,11 +1,11 @@
-name: safeclaw_bridge_slack
+name: pembrook_bridge_slack
 description: >-
-  SafeClaw bridge — routes Slack Bot messages to/from the @agent atSign
+  Pembrook bridge — routes Slack Bot messages to/from the @agent atSign
   via the atNetwork (zero open ports, E2E encrypted).
 
   Uses Slack Events API with HMAC-SHA256 request verification.
   atSign: @bridge_slack
-  Namespace: safeclaw
+  Namespace: pembrook
 
 publish_to: none
 

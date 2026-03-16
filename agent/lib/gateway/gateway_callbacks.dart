@@ -83,6 +83,7 @@ class GatewayCallbacks implements AtRpcCallbacks {
       // owner atSign registered in policy.
       final effectiveSender = payload['senderAtSign'] as String? ?? fromAtSign;
       final platform = payload['platform'] as String? ?? 'app';
+      final streamingEnabled = payload['streamingEnabled'] as bool? ?? true;
 
       if (command.isEmpty) {
         return _errorResponse(request.reqId, 'Empty command');
@@ -144,6 +145,7 @@ class GatewayCallbacks implements AtRpcCallbacks {
         fromAtSign: effectiveSender,
         platform: platform,
         reqId: request.reqId,
+        streamingEnabled: streamingEnabled,
       );
 
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;
@@ -226,7 +228,11 @@ class GatewayCallbacks implements AtRpcCallbacks {
 
     // Convert SkillData (app model) → SkillMetadata (agent model).
     // Fields not present in the app model get safe defaults.
-    final requiresNetwork = payload['requiresNetwork'] as bool? ?? false;
+    // Known network-requiring skills always get bridge networking regardless
+    // of whether the toggle was set in the app.
+    const _networkSkills = {'email', 'calendar', 'web_search'};
+    final requiresNetwork = (payload['requiresNetwork'] as bool? ?? false) ||
+        _networkSkills.contains(skillId);
 
     final meta = SkillMetadata(
       skillId: skillId,

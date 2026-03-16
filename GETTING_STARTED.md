@@ -1,6 +1,6 @@
-# Getting Started with SafeClaw
+# Getting Started with Pembrook
 
-SafeClaw is a privacy-first personal AI agent that runs entirely on infrastructure you control.  
+Pembrook is a privacy-first personal AI agent that runs entirely on infrastructure you control.  
 All communication is end-to-end encrypted via the [atPlatform](https://atsign.com) — no open inbound ports, no cloud relay, no plaintext credentials.
 
 ---
@@ -38,7 +38,7 @@ All communication is end-to-end encrypted via the [atPlatform](https://atsign.co
 
 ## 2. Register your atSigns
 
-SafeClaw uses [atSigns](https://atsign.com) as cryptographic identities.  
+Pembrook uses [atSigns](https://atsign.com) as cryptographic identities.  
 You need **at minimum 2 atSigns**, and **never more than 3** — even for a fully loaded system with all bridges and all MCP servers.
 
 ### Why multiple atSigns?
@@ -86,8 +86,8 @@ Place them in `~/.atsign/keys/` — the standard location used by all atSign app
 ## 3. Clone & Install
 
 ```bash
-git clone https://github.com/cconstab/safeClaw.git
-cd safeClaw
+git clone https://github.com/cconstab/pembrook.git
+cd pembrook
 mkdir -p ~/.atsign/keys
 # Place your .atKeys files in ~/.atsign/keys/
 ```
@@ -153,7 +153,7 @@ dart run bin/init_config.dart \
 
 ## 5. Start the Backend
 
-SafeClaw needs Ollama for LLM inference. There are two options:
+Pembrook needs Ollama for LLM inference. There are two options:
 
 ### Option A — Host Ollama (recommended)
 
@@ -210,8 +210,8 @@ docker compose logs -f agent
 You should see output like:
 ```
 [INFO] Gateway  — AllowList refreshed: [@myowner, @myservices]
-[INFO] Gateway  — Gateway started on @myagent namespace=safeclaw...
-[INFO] Heartbeat — SafeClaw agent is running.
+[INFO] Gateway  — Gateway started on @myagent namespace=pembrook...
+[INFO] Heartbeat — Pembrook agent is running.
 ```
 
 ### Stop:
@@ -301,12 +301,12 @@ The agent only invokes skills that are registered in its `SkillRegistry`.
 
 The Docker image name is derived from the Skill ID:
 ```
-safeclaw-skill-<skillId>:latest
+pembrook-skill-<skillId>:latest
 ```
 
 ### Built-in skills
 
-Three skills ship with SafeClaw in the `skills/` directory:
+Three skills ship with Pembrook in the `skills/` directory:
 
 | Skill ID | Directory | What it does | Network needed? |
 |---|---|---|---|
@@ -323,13 +323,13 @@ Dockerfiles are in each skill's directory. Run from the repo root on the same ho
 
 ```bash
 # Email skill
-docker build -t safeclaw-skill-email:latest -f skills/email/Dockerfile .
+docker build -t pembrook-skill-email:latest -f skills/email/Dockerfile .
 
 # Calendar skill
-docker build -t safeclaw-skill-calendar:latest -f skills/calendar/Dockerfile .
+docker build -t pembrook-skill-calendar:latest -f skills/calendar/Dockerfile .
 
 # Web search skill
-docker build -t safeclaw-skill-web_search:latest -f skills/web_search/Dockerfile .
+docker build -t pembrook-skill-web_search:latest -f skills/web_search/Dockerfile .
 ```
 
 > The first build pulls the Dart SDK layer (~1 GB) — subsequent builds are cached.  
@@ -343,7 +343,7 @@ docker build -t safeclaw-skill-web_search:latest -f skills/web_search/Dockerfile
 3. Fill in:
    | Field | Example | Notes |
    |---|---|---|
-   | Skill ID | `email` | Must match the image name: `safeclaw-skill-<id>:latest` |
+   | Skill ID | `email` | Must match the image name: `pembrook-skill-<id>:latest` |
    | Skill atSign | `@myservices` | Can be your services atSign — no dedicated atSign needed |
    | Description | `Send and read emails via SMTP/IMAP` | Shown in the agent's tool list |
    | Version | `1.0.0` | Semantic version |
@@ -463,7 +463,7 @@ HA_TOKEN=eyJ...long_lived_access_token...
 ```env
 SERVICES_AT_SIGN=@myservices
 SERVICES_KEY_FILE=@myservices_key.atKeys
-DB_PATH=/data/safeclaw.db   # path inside the container
+DB_PATH=/data/pembrook.db   # path inside the container
 ```
 
 > Get a Home Assistant long-lived access token: **HA → Profile → Long-Lived Access Tokens → Create Token**
@@ -496,7 +496,7 @@ docker compose logs -f mcp_home
 
 You should see:
 ```
-[INFO] MCP  — Connected as @myservices on namespace safeclaw
+[INFO] MCP  — Connected as @myservices on namespace pembrook
 [INFO] MCP  — Waiting for commands from @myagent
 ```
 
@@ -587,7 +587,7 @@ No restart is required.
 
 ## 13. Managing Policies
 
-SafeClaw has a built-in policy engine that controls who can do what.  
+Pembrook has a built-in policy engine that controls who can do what.  
 Policies are stored as AtKeys on the agent's atServer and managed from the Flutter app.
 
 **Policy** screen in the app:
@@ -612,7 +612,7 @@ A default "deny all" rule sits at the bottom.
 
 ## 14. Troubleshooting
 
-### Agent fails to start — "container safeclaw-ollama is unhealthy"
+### Agent fails to start — "container pembrook-ollama is unhealthy"
 
 The agent no longer waits for Ollama to be healthy before starting — it retries the Ollama connection at request time. If you see this error it means you're on an older version of `docker-compose.yml`.
 
@@ -716,7 +716,7 @@ Set `Logger.root.level = Level.ALL` in `agent/bin/main.dart` temporarily, or add
                                 └──────┬──────┘
                                        │
                                 ┌──────▼──────────────────────────────┐
-                                │         SafeClaw Agent               │
+                                │         Pembrook Agent               │
                                 │         @agent                       │
                                 │  ┌──────────┐  ┌──────────────────┐ │
                                 │  │ Gateway  │  │   Orchestrator   │ │
@@ -738,7 +738,7 @@ Set `Logger.root.level = Level.ALL` in `agent/bin/main.dart` temporarily, or add
 ## File Layout Reference
 
 ```
-safeClaw/
+pembrook/
 ├── agent/                  ← Dart agent daemon
 │   ├── bin/
 │   │   ├── main.dart       ← entry point

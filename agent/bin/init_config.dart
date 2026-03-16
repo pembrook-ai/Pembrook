@@ -1,4 +1,4 @@
-/// init_config.dart — First-run configuration writer for the SafeClaw agent.
+/// init_config.dart — First-run configuration writer for the Pembrook agent.
 ///
 /// Run from the `agent/` directory:
 ///   dart run bin/init_config.dart \
@@ -10,7 +10,7 @@
 ///     [--ollama-model llama3.2] \
 ///     [--local-only false]
 ///
-/// Writes the following AtKeys to @myagent's atServer (namespace: safeclaw):
+/// Writes the following AtKeys to @myagent's atServer (namespace: pembrook):
 ///   settings.owner_atsign     → the owner atSign string
 ///   settings.allowed_users    → JSON array of permitted sender atSigns
 ///   settings.llm_config       → JSON object with LLM defaults
@@ -28,7 +28,7 @@ import 'package:at_client/at_client.dart';
 import 'package:at_cli_commons/at_cli_commons.dart';
 import 'package:logging/logging.dart';
 
-const String kNamespace = 'safeclaw';
+const String kNamespace = 'pembrook';
 
 void main(List<String> args) async {
   // ── Logging ──────────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ void main(List<String> args) async {
 
   if (parsed['help'] as bool) {
     stdout.writeln(
-        'SafeClaw init_config — write first-run AtKeys to the agent atServer\n');
+        'Pembrook init_config — write first-run AtKeys to the agent atServer\n');
     stdout.writeln(parser.usage);
     exit(0);
   }
@@ -129,7 +129,7 @@ void main(List<String> args) async {
   }
 
   stdout.writeln('');
-  stdout.writeln('SafeClaw init_config');
+  stdout.writeln('Pembrook init_config');
   stdout.writeln('════════════════════');
   stdout.writeln('  Agent atSign  : $agentAtSign');
   stdout.writeln('  Owner atSign  : $ownerAtSign');
@@ -142,7 +142,7 @@ void main(List<String> args) async {
   stdout.writeln('');
 
   // ── Authenticate ─────────────────────────────────────────────────────────
-  final storageDir = Directory.systemTemp.createTempSync('safeclaw_init_');
+  final storageDir = Directory.systemTemp.createTempSync('pembrook_init_');
   try {
     // CLIBase needs --atsign, --key-file, --storage-dir, --namespace.
     final cliArgs = [

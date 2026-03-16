@@ -14,7 +14,7 @@
 ///   delete_event  — delete an event by ID
 ///
 /// OAuth access token is injected by the agent from AtKey
-/// skill.calendar.token.safeclaw@skill_calendar — never stored in container.
+/// skill.calendar.token.pembrook@skill_calendar — never stored in container.
 ///
 /// Common payload fields:
 ///   accessToken  : String  — Google OAuth2 access token

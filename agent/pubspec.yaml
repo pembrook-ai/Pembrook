@@ -1,5 +1,5 @@
-name: safeclaw_agent
-description: SafeClaw AI agent daemon — Gateway, Orchestrator, LLM Router, and all supporting services.
+name: pembrook_agent
+description: Pembrook AI agent daemon — Gateway, Orchestrator, LLM Router, and all supporting services.
 version: 0.1.0
 publish_to: none
 

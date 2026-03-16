@@ -43,7 +43,7 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
   bool _loading = false;
   String? _errorMessage;
 
-  static const String _namespace = 'safeclaw';
+  static const String _namespace = 'pembrook';
   static const _rootDomain = AtRootDomain.atsignDomain;
 
   @override
@@ -221,9 +221,9 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
       context,
       atSign: authRequest.atSign,
       rootDomain: authRequest.rootDomain,
-      appName: 'safeclaw',
+      appName: 'pembrook',
       deviceName: 'phone',
-      namespaces: {'safeclaw': 'rw'},
+      namespaces: {'pembrook': 'rw'},
     );
     if (enroll == null || enroll.atAuthKeys == null) return;
 
@@ -283,7 +283,7 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
 
   Future<void> _finishAuth(AuthResponse response) async {
     final appDir = await getApplicationSupportDirectory();
-    final storageDir = Directory('${appDir.path}/safeclaw_keys');
+    final storageDir = Directory('${appDir.path}/pembrook_keys');
     await storageDir.create(recursive: true);
 
     final pref = AtClientPreference()

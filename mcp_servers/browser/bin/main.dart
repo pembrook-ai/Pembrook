@@ -32,11 +32,11 @@ import 'package:logging/logging.dart';
 
 final _log = Logger('mcp_browser');
 
-const _namespace = 'safeclaw';
+const _namespace = 'pembrook';
 const _requestPattern = r'mcp\.request\.';
 
 const _userAgent =
-    'Mozilla/5.0 (compatible; SafeClawBot/1.0; +https://github.com/safeclaw)';
+    'Mozilla/5.0 (compatible; PembrookBot/1.0; +https://github.com/pembrook)';
 
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -21,8 +21,8 @@
 ///   PORT                — Webhook listen port (default 8080)
 ///
 /// AtKeys:
-///   bridge.slack.token.safeclaw@bridge_slack
-///   bridge.slack.signing_secret.safeclaw@bridge_slack
+///   bridge.slack.token.pembrook@bridge_slack
+///   bridge.slack.signing_secret.pembrook@bridge_slack
 ///
 /// Deploy behind a TLS reverse proxy. Slack requires HTTPS.
 
@@ -40,7 +40,7 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
 import 'package:uuid/uuid.dart';
 
-const _namespace = 'safeclaw';
+const _namespace = 'pembrook';
 String _agentAtSign =
     '@agent'; // overridden at startup from AGENT_AT_SIGN env var
 const _platform = 'slack';
@@ -108,7 +108,7 @@ Future<_Config> _loadConfig(AtClient atClient) async {
 
   Future<String?> _atKey(String sub) async {
     try {
-      final keyStr = 'bridge.slack.$sub.safeclaw'
+      final keyStr = 'bridge.slack.$sub.pembrook'
           '@${atClient.getCurrentAtSign()!.replaceAll('@', '')}';
       final r = await atClient.get(AtKey.fromString(keyStr),
           getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);

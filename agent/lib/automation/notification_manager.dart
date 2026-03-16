@@ -6,10 +6,10 @@
 ///   medium   → queued for daily digest (unless forceImmediate)
 ///   low      → queued for daily digest
 ///
-/// Daily digest: written to AtKey "digest.$date.safeclaw@owner" (TTL 30 d).
+/// Daily digest: written to AtKey "digest.$date.pembrook@owner" (TTL 30 d).
 ///
 /// All notifications go to @owner's atServer via sharedWith = @owner.
-/// The Flutter app subscribes to "safeclaw\.notify\..*" to surface them.
+/// The Flutter app subscribes to "pembrook\.notify\..*" to surface them.
 
 import 'dart:convert';
 import 'dart:io';
@@ -24,7 +24,7 @@ class NotificationManager {
 
   /// Resolved at construction from OWNER_AT_SIGN env var (set by docker-compose).
   final String _ownerAtSign;
-  static const String _namespace = 'safeclaw';
+  static const String _namespace = 'pembrook';
   static const int _digestTtlMs = 30 * 24 * 60 * 60 * 1000; // 30 days
 
   // In-memory queue for medium/low urgency alerts.
@@ -100,7 +100,7 @@ class NotificationManager {
         NotificationParams.forUpdate(
           notifKey,
           value: jsonEncode({
-            'title': 'SafeClaw Daily Digest ($date)',
+            'title': 'Pembrook Daily Digest ($date)',
             'count': _digestQueue.length,
           }),
         ),

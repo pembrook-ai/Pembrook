@@ -1,6 +1,6 @@
-# SafeClaw — Secure AI Agent Platform
+# Pembrook — Secure AI Agent Platform
 
-A privacy-first, zero-trust AI agent built on the [atPlatform](https://docs.atsign.com/core). SafeClaw eliminates the entire class of network-exposure and supply-chain vulnerabilities that plagued OpenClaw, replacing them with cryptographic identity, E2E encryption, and skill sandboxing — all with **zero open inbound ports** on any component.
+A privacy-first, zero-trust AI agent built on the [atPlatform](https://docs.atsign.com/core). Pembrook eliminates the entire class of network-exposure and supply-chain vulnerabilities that plagued OpenClaw, replacing them with cryptographic identity, E2E encryption, and skill sandboxing — all with **zero open inbound ports** on any component.
 
 See [ATPLATFORM_GUIDELINES.md](ATPLATFORM_GUIDELINES.md) for the complete atPlatform SDK reference.  
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for internal design, data-flow, component contracts, and implementation decisions.  
@@ -10,7 +10,7 @@ See [GETTING_STARTED.md](GETTING_STARTED.md) for full setup instructions includi
 
 ## Security at a Glance
 
-| Threat | OpenClaw | SafeClaw |
+| Threat | OpenClaw | Pembrook |
 |---|---|---|
 | Network exposure | Port 18789 open to internet (30,000+ exposed) | **Zero open ports** — all outbound-only |
 | Authentication | None by default | Cryptographic atSign PKAM verification |
@@ -62,7 +62,7 @@ All connections are **outbound-only** to the atPlatform. No component has any op
 ## Repository Layout
 
 ```
-safeClaw/
+pembrook/
 ├── ATPLATFORM_GUIDELINES.md   # atPlatform SDK reference (do not add project specifics here)
 ├── README.md                  # This file — project documentation
 ├── agent/                     # Dart CLI — the AI agent daemon
@@ -127,9 +127,9 @@ Register all atSigns at [my.atsign.com](https://my.atsign.com) before first run.
 
 ## Namespace
 
-All application data uses namespace **`safeclaw`**.
+All application data uses namespace **`pembrook`**.
 
-Key format: `keyname.safeclaw@atsign`
+Key format: `keyname.pembrook@atsign`
 
 ---
 
@@ -137,25 +137,25 @@ Key format: `keyname.safeclaw@atsign`
 
 | Key Pattern | Owner atServer | Purpose | TTL |
 |---|---|---|---|
-| `conversation.$convId.safeclaw@owner` | `@owner` | Chat history (app) | 90 days |
-| `conversation.$convId.safeclaw@agent` | `@agent` | Agent-side conversation | 90 days |
-| `context.user_preferences.safeclaw@agent` | `@agent` | Owner preferences | — |
-| `context.user_profile.safeclaw@agent` | `@agent` | Personal info | — |
-| `settings.llm.safeclaw@agent` | `@agent` | LLM config (model, threshold) | — |
-| `settings.app.safeclaw@owner` | `@owner` | App UI preferences | — |
-| `settings.heartbeat.safeclaw@agent` | `@agent` | Heartbeat cadence | — |
-| `policy.$policyId.safeclaw@agent` | `@agent` | Policy rules (YAML) | — |
-| `skill_meta.$skillId.safeclaw@agent` | `@agent` | Installed skill registry | — |
-| `skill_state.$skillId.safeclaw@agent` | `@agent` | Per-skill persistent state | — |
-| `schedule.$taskId.safeclaw@agent` | `@agent` | Scheduled task definition | — |
-| `task.$taskId.safeclaw@agent` | `@agent` | Active task state | — |
-| `audit.$ts.$actionId.safeclaw@owner` | `@owner` | **Immutable** audit log | — |
-| `hitl.pending.$actionId.safeclaw@agent` | `@agent` | Pending HITL approval | 5 min |
-| `apikey.$provider.safeclaw@agent` | `@agent` | Encrypted external API keys | — |
-| `email.draft.$draftId.safeclaw@agent` | `@agent` | Email drafts awaiting HITL | 7 days |
-| `calendar.$eventId.safeclaw@owner` | `@owner` | Calendar entries | — |
-| `summary.$period.safeclaw@agent` | `@agent` | Compressed conversation summaries | — |
-| `digest.$date.safeclaw@owner` | `@owner` | Daily notification digest | 30 days |
+| `conversation.$convId.pembrook@owner` | `@owner` | Chat history (app) | 90 days |
+| `conversation.$convId.pembrook@agent` | `@agent` | Agent-side conversation | 90 days |
+| `context.user_preferences.pembrook@agent` | `@agent` | Owner preferences | — |
+| `context.user_profile.pembrook@agent` | `@agent` | Personal info | — |
+| `settings.llm.pembrook@agent` | `@agent` | LLM config (model, threshold) | — |
+| `settings.app.pembrook@owner` | `@owner` | App UI preferences | — |
+| `settings.heartbeat.pembrook@agent` | `@agent` | Heartbeat cadence | — |
+| `policy.$policyId.pembrook@agent` | `@agent` | Policy rules (YAML) | — |
+| `skill_meta.$skillId.pembrook@agent` | `@agent` | Installed skill registry | — |
+| `skill_state.$skillId.pembrook@agent` | `@agent` | Per-skill persistent state | — |
+| `schedule.$taskId.pembrook@agent` | `@agent` | Scheduled task definition | — |
+| `task.$taskId.pembrook@agent` | `@agent` | Active task state | — |
+| `audit.$ts.$actionId.pembrook@owner` | `@owner` | **Immutable** audit log | — |
+| `hitl.pending.$actionId.pembrook@agent` | `@agent` | Pending HITL approval | 5 min |
+| `apikey.$provider.pembrook@agent` | `@agent` | Encrypted external API keys | — |
+| `email.draft.$draftId.pembrook@agent` | `@agent` | Email drafts awaiting HITL | 7 days |
+| `calendar.$eventId.pembrook@owner` | `@owner` | Calendar entries | — |
+| `summary.$period.pembrook@agent` | `@agent` | Compressed conversation summaries | — |
+| `digest.$date.pembrook@owner` | `@owner` | Daily notification digest | 30 days |
 
 > Audit keys use `Metadata()..immutable = true` — once written, they cannot be modified.
 > Audit keys are stored on `@owner`'s atServer so the agent cannot delete its own logs.

@@ -104,11 +104,11 @@ Future<Map<String, dynamic>> _handleCommand(
 
 Future<Map<String, dynamic>> _sendEmail(Map<String, dynamic> p) async {
   final smtpHost = _required(p, 'smtpHost') as String;
-  final smtpPort = (p['smtpPort'] as int?) ?? 587;
+  final smtpPort = _parseInt(p['smtpPort'], 587);
   final smtpUser = _required(p, 'smtpUser') as String;
   final smtpPassword = _required(p, 'smtpPassword') as String;
   final fromAddress = _required(p, 'fromAddress') as String;
-  final useSSL = (p['useSSL'] as bool?) ?? (smtpPort == 465);
+  final useSSL = _parseBool(p['useSSL'], smtpPort == 465);
 
   final toRaw = _required(p, 'to');
   final toList = toRaw is List ? toRaw.cast<String>() : [toRaw as String];
@@ -155,10 +155,10 @@ Future<Map<String, dynamic>> _sendEmail(Map<String, dynamic> p) async {
 
 Future<ImapClient> _connectImap(Map<String, dynamic> p) async {
   final host = _required(p, 'imapHost') as String;
-  final port = (p['imapPort'] as int?) ?? 993;
+  final port = _parseInt(p['imapPort'], 993);
   final user = _required(p, 'imapUser') as String;
   final password = _required(p, 'imapPassword') as String;
-  final useSSL = (p['useSSL'] as bool?) ?? (port == 993);
+  final useSSL = _parseBool(p['useSSL'], port == 993);
 
   final client = ImapClient(isLogEnabled: false);
   await client.connectToServer(host, port, isSecure: useSSL);
@@ -167,7 +167,7 @@ Future<ImapClient> _connectImap(Map<String, dynamic> p) async {
 }
 
 Future<Map<String, dynamic>> _listInbox(Map<String, dynamic> p) async {
-  final maxMessages = (p['maxMessages'] as int?) ?? 20;
+  final maxMessages = _parseInt(p['maxMessages'], 20);
   final client = await _connectImap(p);
 
   try {
@@ -235,7 +235,7 @@ Future<Map<String, dynamic>> _readEmail(Map<String, dynamic> p) async {
 }
 
 Future<Map<String, dynamic>> _deleteEmail(Map<String, dynamic> p) async {
-  final uid = _required(p, 'uid') as int;
+  final uid = _parseInt(_required(p, 'uid'), -1);
   final client = await _connectImap(p);
 
   try {
@@ -260,4 +260,19 @@ Object _required(Map<String, dynamic> payload, String key) {
   final v = payload[key];
   if (v == null) throw ArgumentError('Missing required payload field: "$key"');
   return v;
+}
+
+/// Parse an int from either an int or a String value.
+int _parseInt(dynamic v, int fallback) {
+  if (v == null) return fallback;
+  if (v is int) return v;
+  if (v is double) return v.toInt();
+  return int.tryParse(v.toString()) ?? fallback;
+}
+
+/// Parse a bool from either a bool or a String value.
+bool _parseBool(dynamic v, bool fallback) {
+  if (v == null) return fallback;
+  if (v is bool) return v;
+  return v.toString().toLowerCase() == 'true';
 }
