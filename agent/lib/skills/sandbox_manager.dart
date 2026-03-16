@@ -123,7 +123,7 @@ class SandboxManager {
       imageName,
     ];
 
-    _log.fine('docker run $imageName with payload: $command');
+    _log.info('docker run $imageName ($networkFlag)');
 
     final stopwatch = Stopwatch()..start();
     try {
@@ -141,9 +141,25 @@ class SandboxManager {
       final stderr = await stderrFuture;
 
       if (exitCode != 0) {
+        // Try to get the real error from the JSON on stdout first;
+        // the skill container writes {status:error,error:...} to stdout then exits 1.
+        String? jsonError;
+        try {
+          final outLines = stdout
+              .split('\n')
+              .map((l) => l.trim())
+              .where((l) => l.isNotEmpty)
+              .toList();
+          if (outLines.isNotEmpty) {
+            final resp = jsonDecode(outLines.last) as Map<String, dynamic>;
+            jsonError = resp['error'] as String?;
+          }
+        } catch (_) {}
+        final errorMsg = jsonError ?? stderr.trim();
+        _log.warning('$imageName exited $exitCode: $errorMsg');
         return SandboxResult(
           success: false,
-          error: 'Container exited $exitCode: $stderr',
+          error: errorMsg,
           exitCode: exitCode,
           duration: stopwatch.elapsed,
         );
@@ -167,6 +183,7 @@ class SandboxManager {
 
       final response = jsonDecode(lines.last) as Map<String, dynamic>;
 
+      _log.info('$imageName completed: status=${response['status']}');
       return SandboxResult(
         success: response['status'] == 'ok',
         result: response['result'] as Map<String, dynamic>?,

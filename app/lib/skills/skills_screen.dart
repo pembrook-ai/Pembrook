@@ -94,6 +94,7 @@ class SkillsScreen extends StatelessWidget {
     final atSignCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     final versionCtrl = TextEditingController(text: '1.0.0');
+    const _networkSkills = {'email', 'calendar', 'web_search'};
     var requiresNetwork = false;
 
     final result = await showDialog<bool>(
@@ -109,6 +110,12 @@ class SkillsScreen extends StatelessWidget {
                 children: [
                   TextFormField(
                     controller: idCtrl,
+                    onChanged: (v) {
+                      final id = v.trim().toLowerCase();
+                      if (_networkSkills.contains(id)) {
+                        setState(() => requiresNetwork = true);
+                      }
+                    },
                     decoration: const InputDecoration(
                       labelText: 'Skill ID',
                       hintText: 'e.g. email',

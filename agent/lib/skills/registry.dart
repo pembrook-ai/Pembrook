@@ -23,6 +23,14 @@ class SkillRegistry {
   final Logger _log = Logger('SkillRegistry');
   static const String _namespace = 'pembrook';
 
+  /// In-memory cache — updated immediately on install/remove so that
+  /// _buildTools() in the Orchestrator always sees the current state
+  /// without waiting for a remote atServer round-trip.
+  final Map<String, SkillMetadata> _cache = {};
+
+  /// Read-only view of the in-memory cache for use by the Orchestrator.
+  Map<String, SkillMetadata> get cachedSkills => Map.unmodifiable(_cache);
+
   SkillRegistry({required this.atClient});
 
   // ──────────────────────────────────────────────────────────
@@ -44,6 +52,15 @@ class SkillRegistry {
       putRequestOptions: PutRequestOptions()..useRemoteAtServer = true,
     );
 
+    _cache[meta.skillId] = meta; // update in-memory cache immediately
+
+    // Keep the persisted skill index up to date
+    final ids = await _readIndex();
+    if (!ids.contains(meta.skillId)) {
+      ids.add(meta.skillId);
+      await _writeIndex(ids);
+    }
+
     _log.info(
         'Skill installed: ${meta.skillId} (trust=${meta.trustScore.toStringAsFixed(2)})');
     return meta;
@@ -55,6 +72,12 @@ class SkillRegistry {
 
   Future<void> removeSkill(String skillId) async {
     await atClient.delete(_metaKey(skillId));
+    _cache.remove(skillId); // update in-memory cache immediately
+
+    // Keep the persisted skill index up to date
+    final ids = await _readIndex();
+    if (ids.remove(skillId)) await _writeIndex(ids);
+
     _log.info('Skill removed: $skillId');
   }
 
@@ -78,31 +101,68 @@ class SkillRegistry {
   }
 
   // ──────────────────────────────────────────────────────────
+  //  INDEX KEY (persisted list of skill IDs)
+  // ──────────────────────────────────────────────────────────
+
+  /// A single key that holds a JSON-encoded List<String> of installed skillIds.
+  /// Used at startup to enumerate skills without relying on getKeys() local cache.
+  AtKey get _indexKey => AtKey()
+    ..key = 'skill_index'
+    ..namespace = _namespace
+    ..metadata = (Metadata()
+      ..ttl = 0
+      ..ttr = -1);
+
+  Future<List<String>> _readIndex() async {
+    try {
+      final v = await atClient.get(
+        _indexKey,
+        getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
+      );
+      if (v.value == null) return [];
+      return List<String>.from(jsonDecode(v.value as String) as List);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _writeIndex(List<String> ids) async {
+    await atClient.put(
+      _indexKey,
+      jsonEncode(ids),
+      putRequestOptions: PutRequestOptions()..useRemoteAtServer = true,
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────
   //  LIST
   // ──────────────────────────────────────────────────────────
 
   Future<List<SkillMetadata>> listInstalledSkills() async {
     try {
-      final allKeys = await atClient.getKeys(regex: r'^skill_meta\.');
+      final ids = await _readIndex();
       final result = <SkillMetadata>[];
-      for (final keyStr in allKeys) {
-        try {
-          final atKey = AtKey.fromString(keyStr);
-          final v = await atClient.get(
-            atKey,
-            getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
-          );
-          if (v.value != null) {
-            result.add(SkillMetadata.fromJson(
-                jsonDecode(v.value as String) as Map<String, dynamic>));
-          }
-        } catch (_) {}
+      for (final id in ids) {
+        final meta = await getSkill(id);
+        if (meta != null) result.add(meta);
       }
       return result;
     } catch (e) {
       _log.warning('listInstalledSkills error: $e');
       return [];
     }
+  }
+
+  /// Populate the in-memory cache from the remote atServer.
+  /// Call once at startup so skills survive agent restarts without needing
+  /// to re-register in the app.
+  Future<void> loadCache() async {
+    final skills = await listInstalledSkills();
+    _cache.clear();
+    for (final s in skills) {
+      _cache[s.skillId] = s;
+    }
+    _log.info('SkillRegistry cache loaded: ${_cache.keys.toList()}');
   }
 
   // ──────────────────────────────────────────────────────────

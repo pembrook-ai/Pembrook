@@ -737,17 +737,18 @@ class Orchestrator {
   Future<List<Map<String, dynamic>>> _buildTools() async {
     final tools = List<Map<String, dynamic>>.from(_kTools);
     if (skillRunner == null) return tools;
-    try {
-      final skills = await skillRunner!.registry.listInstalledSkills();
-      for (final skill in skills) {
-        final isEnabled = skill.ownerPolicyOverrides['enabled'] != false;
-        if (!isEnabled) continue;
-        final skillTools = _kSkillToolDefs[skill.skillId];
-        if (skillTools != null) tools.addAll(skillTools);
-      }
-    } catch (e) {
-      _log.warning('_buildTools: failed to load skill tools: $e');
+    // Use the in-memory cache — updated synchronously on install/remove,
+    // so no atServer round-trip needed and no race with just-installed skills.
+    final skills = skillRunner!.registry.cachedSkills.values;
+    for (final skill in skills) {
+      final isEnabled = skill.ownerPolicyOverrides['enabled'] != false;
+      if (!isEnabled) continue;
+      final skillTools = _kSkillToolDefs[skill.skillId];
+      if (skillTools != null) tools.addAll(skillTools);
     }
+    _log.fine('_buildTools: ${tools.length} total tools '
+        '(${tools.length - _kTools.length} from skills: '
+        '${skills.map((s) => s.skillId).join(', ')})');
     return tools;
   }
 

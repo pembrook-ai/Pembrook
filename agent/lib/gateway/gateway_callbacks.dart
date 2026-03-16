@@ -228,7 +228,11 @@ class GatewayCallbacks implements AtRpcCallbacks {
 
     // Convert SkillData (app model) → SkillMetadata (agent model).
     // Fields not present in the app model get safe defaults.
-    final requiresNetwork = payload['requiresNetwork'] as bool? ?? false;
+    // Known network-requiring skills always get bridge networking regardless
+    // of whether the toggle was set in the app.
+    const _networkSkills = {'email', 'calendar', 'web_search'};
+    final requiresNetwork = (payload['requiresNetwork'] as bool? ?? false) ||
+        _networkSkills.contains(skillId);
 
     final meta = SkillMetadata(
       skillId: skillId,

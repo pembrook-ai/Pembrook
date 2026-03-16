@@ -87,6 +87,11 @@ services:
       - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
       # Docker socket — allows agent to spawn sandboxed skill containers.
       - /var/run/docker.sock:/var/run/docker.sock
+    # Grant the pembrook user (uid=1001) access to the Docker socket.
+    # The socket GID is 1 on macOS Docker Desktop; set DOCKER_SOCKET_GID in
+    # .env if your host uses a different GID (common on Linux: 999 or 998).
+    group_add:
+      - "${DOCKER_SOCKET_GID:-1}"
     environment:
       # Default: host's Ollama via host.docker.internal (macOS/Windows/Linux).
       # Override in .env with OLLAMA_BASE_URL=http://ollama:11434 when using

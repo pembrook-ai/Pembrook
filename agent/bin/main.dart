@@ -129,6 +129,8 @@ Ensure you have:
 
   // ── Skills ────────────────────────────────────────────────────────────────
   final skillRegistry = SkillRegistry(atClient: atClient);
+  await skillRegistry
+      .loadCache(); // restore persisted skills from remote atServer
   final sandboxManager = SandboxManager();
   final skillRunner = SkillRunner(
     registry: skillRegistry,
