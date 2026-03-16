@@ -112,7 +112,6 @@ class SkillRegistry {
   AtKey _metaKey(String skillId) => AtKey()
     ..key = 'skill_meta.$skillId'
     ..namespace = _namespace
-    ..sharedWith = atClient.getCurrentAtSign()
     ..metadata = (Metadata()
       ..ttl = 0 // permanent
       ..ttr = -1);

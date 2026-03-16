@@ -905,6 +905,12 @@ class Orchestrator {
       return 'Error: invalid URL — $url';
     }
 
+    // Reject non-HTTP schemes (mailto:, tel:, etc.)
+    if (uri.scheme != 'http' && uri.scheme != 'https') {
+      return 'Error: fetch_webpage only supports http/https URLs, not "${uri.scheme}:". '
+          'To send email use the send_email tool instead.';
+    }
+
     // Rewrite Google / Bing search URLs → DuckDuckGo HTML (scraper-friendly).
     if ((uri.host.contains('google.com') || uri.host.contains('bing.com')) &&
         (uri.path == '/search' || uri.queryParameters.containsKey('q'))) {
