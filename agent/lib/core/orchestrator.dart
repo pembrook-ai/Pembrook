@@ -184,6 +184,220 @@ class Orchestrator {
     },
   ];
 
+  // ── Skill tool definitions (keyed by built-in skillId) ───────────────────────
+  // Merged with _kTools at request time based on which skills are installed.
+  static final _kSkillToolDefs = <String, List<Map<String, dynamic>>>{
+    'email': [
+      {
+        'type': 'function',
+        'function': {
+          'name': 'send_email',
+          'description': 'Send an email to one or more recipients via SMTP.',
+          'parameters': {
+            'type': 'object',
+            'required': ['to', 'subject', 'body'],
+            'properties': {
+              'to': {
+                'type': 'string',
+                'description':
+                    'Recipient email address (or comma-separated list)',
+              },
+              'cc': {
+                'type': 'string',
+                'description': 'Optional CC addresses',
+              },
+              'subject': {
+                'type': 'string',
+                'description': 'Email subject line',
+              },
+              'body': {
+                'type': 'string',
+                'description': 'Plain-text email body',
+              },
+            },
+          },
+        },
+      },
+      {
+        'type': 'function',
+        'function': {
+          'name': 'list_inbox',
+          'description': 'List recent emails in the IMAP inbox.',
+          'parameters': {
+            'type': 'object',
+            'properties': {
+              'maxMessages': {
+                'type': 'integer',
+                'description': 'Maximum messages to return (default 20)',
+              },
+            },
+          },
+        },
+      },
+      {
+        'type': 'function',
+        'function': {
+          'name': 'read_email',
+          'description': 'Read the full body of an email by its IMAP UID.',
+          'parameters': {
+            'type': 'object',
+            'required': ['uid'],
+            'properties': {
+              'uid': {
+                'type': 'integer',
+                'description': 'Message UID from list_inbox',
+              },
+            },
+          },
+        },
+      },
+      {
+        'type': 'function',
+        'function': {
+          'name': 'delete_email',
+          'description':
+              'Permanently delete an email by its IMAP UID. Requires owner approval.',
+          'parameters': {
+            'type': 'object',
+            'required': ['uid'],
+            'properties': {
+              'uid': {
+                'type': 'integer',
+                'description': 'Message UID to delete',
+              },
+            },
+          },
+        },
+      },
+    ],
+    'calendar': [
+      {
+        'type': 'function',
+        'function': {
+          'name': 'list_events',
+          'description': 'List upcoming Google Calendar events in a date range.',
+          'parameters': {
+            'type': 'object',
+            'properties': {
+              'start': {
+                'type': 'string',
+                'description': 'ISO-8601 start time (default: now)',
+              },
+              'end': {
+                'type': 'string',
+                'description': 'ISO-8601 end time (default: 7 days from now)',
+              },
+              'maxResults': {
+                'type': 'integer',
+                'description': 'Max events to return (default 10)',
+              },
+            },
+          },
+        },
+      },
+      {
+        'type': 'function',
+        'function': {
+          'name': 'create_event',
+          'description': 'Create a new Google Calendar event.',
+          'parameters': {
+            'type': 'object',
+            'required': ['title', 'start', 'end'],
+            'properties': {
+              'title': {
+                'type': 'string',
+                'description': 'Event title / summary',
+              },
+              'start': {
+                'type': 'string',
+                'description': 'ISO-8601 start time',
+              },
+              'end': {
+                'type': 'string',
+                'description': 'ISO-8601 end time',
+              },
+              'description': {
+                'type': 'string',
+                'description': 'Optional event description',
+              },
+              'attendees': {
+                'type': 'array',
+                'items': {'type': 'string'},
+                'description': 'Attendee email addresses',
+              },
+              'timeZone': {
+                'type': 'string',
+                'description': 'IANA time zone (default UTC)',
+              },
+              'location': {
+                'type': 'string',
+                'description': 'Event location',
+              },
+            },
+          },
+        },
+      },
+      {
+        'type': 'function',
+        'function': {
+          'name': 'delete_event',
+          'description':
+              'Delete a Google Calendar event by ID. Requires owner approval.',
+          'parameters': {
+            'type': 'object',
+            'required': ['eventId'],
+            'properties': {
+              'eventId': {
+                'type': 'string',
+                'description': 'Calendar event ID from list_events',
+              },
+            },
+          },
+        },
+      },
+    ],
+    'web_search': [
+      {
+        'type': 'function',
+        'function': {
+          'name': 'web_search',
+          'description':
+              'Search the web using a privacy-respecting engine (SearXNG or Brave). '
+              'Prefer this over fetch_webpage when you need to find current '
+              'information by query rather than fetching a known URL.',
+          'parameters': {
+            'type': 'object',
+            'required': ['q'],
+            'properties': {
+              'q': {'type': 'string', 'description': 'Search query'},
+              'numResults': {
+                'type': 'integer',
+                'description': 'Max results to return (default 10)',
+              },
+            },
+          },
+        },
+      },
+    ],
+  };
+
+  /// Maps LLM tool function names → the skillId that handles them.
+  static const _toolToSkillId = <String, String>{
+    'send_email': 'email',
+    'list_inbox': 'email',
+    'read_email': 'email',
+    'delete_email': 'email',
+    'list_events': 'calendar',
+    'create_event': 'calendar',
+    'delete_event': 'calendar',
+    'web_search': 'web_search',
+  };
+
+  // Mutable context captured at the start of each processRequest invocation.
+  // Used by _executeTool to route skill tool calls without changing its signature.
+  String _toolFromAtSign = '';
+  String _toolConvId = '';
+
   Orchestrator({
     required this.atClient,
     required this.llmRouter,
@@ -218,6 +432,8 @@ class Orchestrator {
         'from=$fromAtSign platform=$platform');
 
     final startTime = DateTime.now();
+    _toolFromAtSign = fromAtSign;
+    _toolConvId = conversationId;
 
     // ── 1. Load context from Memory Service ───────────────────────────────
     Conversation? conversation;
@@ -243,6 +459,9 @@ class Orchestrator {
     // ── 3. Privacy score ──────────────────────────────────────────────────
     final privacyScore = await llmRouter.scorePrivacy(command);
     _log.info('Privacy score: $privacyScore | intent: ${intentType.name}');
+
+    // Build the active tool list: built-in tools + tools for installed, enabled skills.
+    final activeTools = await _buildTools();
 
     // ── 4. Execute by intent ──────────────────────────────────────────────
     String responseText;
@@ -297,13 +516,13 @@ class Orchestrator {
       case IntentType.chat:
       case IntentType.task:
       case IntentType.unknown:
-        // Route to LLM — pass web tools so tool-capable models (qwen2.5, llama3.1)
-        // can fetch live content instead of apologising about knowledge cutoffs.
+        // Route to LLM — pass web tools + active skill tools so tool-capable
+        // models (qwen2.5, llama3.1) can invoke skills and fetch live content.
         responseText = await llmRouter.generateResponse(
           query: command,
           conversationHistory: conversation.messages,
           privacyScore: privacyScore,
-          tools: _kTools,
+          tools: activeTools,
           toolExecutor: _executeTool,
           onChunk: streamingEnabled ? _batchChunk : null,
         );
@@ -364,12 +583,12 @@ class Orchestrator {
 
       case IntentType.automation:
         // Route through LLM with full tool set so the model can call
-        // schedule_task or notify_owner as appropriate.
+        // schedule_task, notify_owner, or skill tools as appropriate.
         responseText = await llmRouter.generateResponse(
           query: command,
           conversationHistory: conversation.messages,
           privacyScore: privacyScore,
-          tools: _kTools,
+          tools: activeTools,
           toolExecutor: _executeTool,
           onChunk: streamingEnabled ? _batchChunk : null,
         );
@@ -512,6 +731,25 @@ class Orchestrator {
   /// Tool executor called by the LLM agentic loop.
   ///
   /// Each tool in [_kTools] must have a corresponding case here.
+  /// Returns the merged tool list for the LLM: built-in tools plus any tools
+  /// for skills that are currently installed and enabled.
+  Future<List<Map<String, dynamic>>> _buildTools() async {
+    final tools = List<Map<String, dynamic>>.from(_kTools);
+    if (skillRunner == null) return tools;
+    try {
+      final skills = await skillRunner!.registry.listInstalledSkills();
+      for (final skill in skills) {
+        final isEnabled = skill.ownerPolicyOverrides['enabled'] != false;
+        if (!isEnabled) continue;
+        final skillTools = _kSkillToolDefs[skill.skillId];
+        if (skillTools != null) tools.addAll(skillTools);
+      }
+    } catch (e) {
+      _log.warning('_buildTools: failed to load skill tools: $e');
+    }
+    return tools;
+  }
+
   Future<String> _executeTool(
       String toolName, Map<String, dynamic> args) async {
     _log.info('[TOOL] Executing tool="$toolName" args=$args');
@@ -528,6 +766,22 @@ class Orchestrator {
       case 'notify_owner':
         return _toolNotifyOwner(args);
       default:
+        // Check if this is a skill tool call.
+        final skillId = _toolToSkillId[toolName];
+        if (skillId != null && skillRunner != null) {
+          _log.info('[TOOL] Routing $toolName → skill:$skillId');
+          final result = await skillRunner!.invoke(
+            skillId: skillId,
+            initiatorAtSign: _toolFromAtSign,
+            payload: {...args, 'action': toolName},
+            conversationId: _toolConvId,
+          );
+          if (result.success && result.result != null) {
+            return jsonEncode(result.result);
+          }
+          return 'Skill "$skillId" failed: '
+              '${result.error ?? result.denialReason ?? "unknown error"}';
+        }
         _log.warning('[TOOL] Unknown tool requested: $toolName');
         return 'Unknown tool: $toolName';
     }

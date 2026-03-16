@@ -112,10 +112,21 @@ class SkillsScreen extends StatelessWidget {
                     decoration: const InputDecoration(
                       labelText: 'Skill ID',
                       hintText: 'e.g. email',
+                      helperText:
+                          'Short name only — maps to pembrook-skill-<id>:latest',
                       prefixIcon: Icon(Icons.extension),
                     ),
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? 'Required' : null,
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Required';
+                      final id = v.trim();
+                      if (id.contains(':')) {
+                        return 'Enter the short ID only (e.g. "email"), not the full image name';
+                      }
+                      if (RegExp(r'[^a-zA-Z0-9_\-]').hasMatch(id)) {
+                        return 'Only letters, numbers, hyphens and underscores allowed';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 12),
                   TextFormField(

@@ -121,6 +121,12 @@ class SkillRegistry {
     if (meta.skillId.isEmpty) {
       throw ArgumentError('skillId must not be empty');
     }
+    if (meta.skillId.contains(':') ||
+        meta.skillId.contains(' ') ||
+        meta.skillId.contains('.')) {
+      throw ArgumentError(
+          'skillId "${meta.skillId}" contains invalid characters — use the short name only (e.g. "email"), not the full image name');
+    }
     if (meta.trustScore < 0.0 || meta.trustScore > 1.0) {
       throw ArgumentError('trustScore must be between 0.0 and 1.0');
     }
