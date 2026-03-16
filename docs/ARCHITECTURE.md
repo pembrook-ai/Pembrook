@@ -376,14 +376,15 @@ Logger.root.level = Level.INFO;  // ← required, or all logs are silenced
 
 ### Available servers
 
-Both services use `SERVICES_AT_SIGN` / `SERVICES_KEY_FILE` — the same third atSign shared with bridges. No dedicated atSign per MCP server is needed.
+All three servers use `SERVICES_AT_SIGN` / `SERVICES_KEY_FILE` — the same third atSign shared with bridges. No dedicated atSign per MCP server is needed.
 
-| Directory | Key env vars |
-|---|---|
-| `mcp_servers/home/` | `HA_BASE_URL`, `HA_TOKEN` |
-| `mcp_servers/database/` | `DB_PATH` |
+| Directory | Key env vars | Notes |
+|---|---|---|
+| `mcp_servers/home/` | `HA_BASE_URL`, `HA_TOKEN` | `list_entities`, `turn_on`, `turn_off`, `get_state` |
+| `mcp_servers/database/` | `DB_PATH` | `query`, `execute`, `list_tables`, `describe_table` |
+| `mcp_servers/browser/` | `PLAYWRIGHT_WS_URL` (optional) | `browser.fetch`, `browser.extract_text` work without sidecar; Playwright tools need the sidecar |
 
-Both are defined as commented-out service blocks in `docker-compose.yml`.  
+All three are defined as commented-out service blocks in `docker-compose.yml`.  
 Uncomment the relevant service and set the corresponding env vars in `.env` to enable.
 
 ---

@@ -27,10 +27,11 @@ keys/
 !.env.example
 
 # ── Entire sub-projects not needed to build the agent ──────────────────────
+# NOTE: bridge/ and mcp_servers/ are NOT excluded — their Dockerfiles build
+# from the repo root context (context: . in docker-compose.yml) so they
+# must be available in the build context.
 app/
-bridge/
 skills/
-mcp_servers/
 # agent/ is included (needed for the build)
 
 # ── IDE / OS ─────────────────────────────────────────────────────────────────

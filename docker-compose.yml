@@ -99,6 +99,8 @@ services:
       OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
       OWNER_AT_SIGN: "${OWNER_AT_SIGN:-}"
       ALLOWED_USERS: "${ALLOWED_USERS:-}"
+      # atSign shared by MCP servers / bridges — used for tool discovery
+      SERVICES_AT_SIGN: "${SERVICES_AT_SIGN:-}"
       # Timezone for cron scheduling — set TZ in .env to match your local time.
       # e.g. TZ=Europe/London, TZ=America/New_York, TZ=Australia/Sydney
       # Without this, cron expressions like "0 8 * * *" fire at 8am UTC.
@@ -247,6 +249,29 @@ services:
   #     DB_PATH: "${DB_PATH:-/data/pembrook.db}"
   #   networks:
   #     - pembrook_internal
+
+  # ── MCP Browser Server (optional) ─────────────────────────────────────────
+  # Provides browser.fetch and browser.extract_text over the atNetwork.
+  # Full browser automation (screenshot, click, fill_form) requires an
+  # external Playwright sidecar — set PLAYWRIGHT_WS_URL if available.
+  # Shares SERVICES_AT_SIGN with bridges (same third atSign, no extra atSign needed).
+  mcp_browser:
+    build:
+      context: .
+      dockerfile: mcp_servers/browser/Dockerfile
+    container_name: pembrook-mcp-browser
+    restart: unless-stopped
+    command:
+      - "--atsign"
+      - "${SERVICES_AT_SIGN:-@services}"
+      - "--key-file"
+      - "/keys/${SERVICES_KEY_FILE:-services.atKeys}"
+    volumes:
+      - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
+    environment:
+      PLAYWRIGHT_WS_URL: "${PLAYWRIGHT_WS_URL:-}"
+    networks:
+      - pembrook_internal
 
 volumes:
   ollama_data:

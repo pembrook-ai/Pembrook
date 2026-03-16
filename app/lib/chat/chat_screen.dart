@@ -209,14 +209,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             });
             _scrollToBottom();
           } else {
-            // Device A has its own active chat — show a non-intrusive notification.
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('New reply: "${completed.title}"'),
-              action: SnackBarAction(
-                label: 'View',
-                onPressed: () => _loadConversation(completed),
-              ),
-            ));
+            // Another device completed a conversation while this one has its
+            // own active chat — silently stored, available in history.
           }
         }
       });
@@ -515,18 +509,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         );
         await _store?.save(updated);
       }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Pembrook responded in a previous conversation'),
-          action: SnackBarAction(
-            label: 'View',
-            onPressed: () {
-              final summary = _store?.get(sendConvId);
-              if (summary != null) _loadConversation(summary);
-            },
-          ),
-        ));
-      }
+      // Response saved silently — user will see it when they navigate
+      // back to that conversation.
     }
   }
 

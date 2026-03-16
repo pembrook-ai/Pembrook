@@ -372,7 +372,7 @@ nmap -p- localhost  # should show 0 open ports (Ollama binds loopback only)
 | **Phase 1** | Gateway + Orchestrator + Ollama + Flutter App | ✅ Complete |
 | **Phase 2** | Memory Service + Audit + Policy Engine | ✅ Complete |
 | **Phase 3** | Skill System + Sandbox + Email/Calendar/Search skills | 🚧 In Progress |
-| **Phase 4** | MCP Integration + Home/DB/Browser MCP servers | 📋 Planned |
+| **Phase 4** | MCP Integration + Home/DB/Browser MCP servers | ✅ Complete |
 | **Phase 5** | Heartbeat + Scheduler + Notifications | 📋 Planned |
 | **Phase 6** | Messaging Bridges (WhatsApp, Telegram, Discord, Slack) | 📋 Planned |
 

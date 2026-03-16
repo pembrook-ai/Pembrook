@@ -148,6 +148,15 @@ Ensure you have:
     auditService: auditService,
   );
 
+  // MCP server atSigns — populated from SERVICES_AT_SIGN env var.
+  // These are queried for available tools on first chat request.
+  final servicesAtSign = Platform.environment['SERVICES_AT_SIGN'] ?? '';
+  final mcpServerAtSigns =
+      servicesAtSign.isNotEmpty ? [servicesAtSign] : <String>[];
+  if (mcpServerAtSigns.isNotEmpty) {
+    log.info('MCP server atSigns: $mcpServerAtSigns');
+  }
+
   // ── Automation ────────────────────────────────────────────────────────────
   final notificationManager = NotificationManager(atClient: atClient);
   // Note: AtPlatformService provides CRUD helpers used by individual services.
@@ -178,6 +187,7 @@ Ensure you have:
     mcpClient: mcpClient,
     taskScheduler: scheduler,
     notificationManager: notificationManager,
+    mcpServerAtSigns: mcpServerAtSigns,
   );
 
   final heartbeat = HeartbeatEngine(

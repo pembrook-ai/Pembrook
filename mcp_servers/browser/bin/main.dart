@@ -57,6 +57,8 @@ void main(List<String> args) async {
   }
 
   final atClient = cli.atClient;
+  // CLIBase.fromCommandLineArgs() sets Logger.root.level = Level.SHOUT — restore it.
+  Logger.root.level = Level.INFO;
   _log.info(
     'Browser MCP server started as ${atClient.getCurrentAtSign()}',
   );

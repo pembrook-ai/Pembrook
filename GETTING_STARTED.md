@@ -434,10 +434,13 @@ MCP (Model Context Protocol) servers give the agent access to external resources
 
 ### Available MCP servers
 
-| Server | atSign role | Purpose |
+| Server | Purpose | Network needed? |
 |---|---|---|
-| `home` | `@mcp_home` | Home Assistant — control lights, sensors, automations |
-| `database` | `@mcp_db` | SQLite — structured data queries from the agent |
+| `home` | Home Assistant — control lights, sensors, automations | Yes (HA REST API) |
+| `database` | SQLite — structured data queries from the agent | No (local file) |
+| `browser` | HTTP fetch + HTML text extraction; optional Playwright sidecar for screenshots/clicks | Yes (HTTPS) |
+
+All three servers share the same `@services` atSign — no separate atSign per server is needed.
 
 ### Step 1 — Provision a services atSign (if you haven't already)
 
@@ -479,13 +482,15 @@ ALLOWED_USERS=@myowner,@myservices
 
 ### Step 4 — Uncomment and start the MCP service
 
-Edit `docker-compose.yml`: find the commented-out `mcp_home:` (or `mcp_database:`) service block and uncomment it.
+Edit `docker-compose.yml`: find the commented-out `mcp_home:`, `mcp_database:`, or `mcp_browser:` service block and uncomment it.
 
 Then:
 ```bash
 docker compose up -d mcp_home
 # or:
 docker compose up -d mcp_database
+# or:
+docker compose up -d mcp_browser
 ```
 
 ### Step 5 — Verify

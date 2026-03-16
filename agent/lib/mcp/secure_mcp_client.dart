@@ -26,8 +26,8 @@
 ///     "id": "<requestId>"
 ///   }
 ///
-/// Phase 4 will add: tool-list caching, semantic capability matching,
-/// context-aware tool filtering so the orchestrator can browse
+/// `listTools(mcpAtSign)` sends a `tools/list` request and returns the
+/// server's tool definitions, enabling the orchestrator to browse
 /// available tools at runtime.
 
 import 'dart:async';
@@ -212,13 +212,60 @@ class SecureMcpClient {
   }
 
   // ──────────────────────────────────────────────────────────
-  //  LIST TOOLS (Phase 4: cache results per-server)
+  //  LIST TOOLS
   // ──────────────────────────────────────────────────────────
 
-  /// Stub — Phase 4 will query each MCP server and return its tool list.
+  /// Query [mcpAtSign] for its available tools.
+  ///
+  /// Sends a JSON-RPC 2.0 `tools/list` request and returns the tool
+  /// definitions, or an empty list if the server is unreachable.
   Future<List<Map<String, dynamic>>> listTools(String mcpAtSign) async {
-    _log.warning('listTools not yet implemented');
-    return [];
+    final requestId = _uuid.v4();
+    final envelope = {
+      'jsonrpc': '2.0',
+      'method': 'tools/list',
+      'params': {},
+      'id': requestId,
+    };
+
+    _log.info('MCP tools/list: $mcpAtSign (req=$requestId)');
+
+    try {
+      final responseKey = 'mcp.response.$requestId';
+      final responseFuture =
+          _waitForResponse(responseKey, timeout: const Duration(seconds: 30));
+
+      final requestKey = (AtKey.shared(
+        'mcp.request.$requestId',
+        namespace: _namespace,
+        sharedBy: atClient.getCurrentAtSign() ?? '',
+      )..sharedWith(mcpAtSign))
+          .build()
+        ..metadata = (Metadata()
+          ..ttl = 30000
+          ..ttr = -1);
+
+      await atClient.notificationService.notify(
+        NotificationParams.forUpdate(
+          requestKey,
+          value: jsonEncode(envelope),
+        ),
+      );
+
+      final rawResponse = await responseFuture;
+      if (rawResponse == null) {
+        _log.warning('listTools timed out for $mcpAtSign');
+        return [];
+      }
+
+      final decoded = jsonDecode(rawResponse) as Map<String, dynamic>;
+      final result = decoded['result'] as Map<String, dynamic>?;
+      final tools = result?['tools'] as List<dynamic>? ?? [];
+      return tools.cast<Map<String, dynamic>>();
+    } catch (e) {
+      _log.warning('listTools error for $mcpAtSign: $e');
+      return [];
+    }
   }
 
   // ──────────────────────────────────────────────────────────

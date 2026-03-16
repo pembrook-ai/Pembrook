@@ -449,9 +449,18 @@ TOOL USE RULES — follow these exactly, every time:
 
       // No tool calls → model produced a final text answer.
       if (toolCalls == null || toolCalls.isEmpty) {
+        final content = (assistantMsg['content'] as String? ?? '').trim();
+        if (content.isEmpty) {
+          // Model returned neither tool calls nor text — unusual; try again.
+          _log.warning(
+              '[tool-loop] model returned empty content and no tool calls at '
+              'iteration ${iteration + 1} — retrying');
+          history.removeLast(); // drop the useless empty assistant turn
+          continue;
+        }
         _log.info(
-            '[tool-loop] model returned plain text answer (no tool calls) after ${iteration + 1} iteration(s)');
-        return (assistantMsg['content'] as String? ?? '').trim();
+            '[tool-loop] model returned plain text answer after ${iteration + 1} iteration(s)');
+        return content;
       }
 
       _log.info('[tool-loop] model requested ${toolCalls.length} tool call(s)');
@@ -498,10 +507,27 @@ TOOL USE RULES — follow these exactly, every time:
       }
     }
 
-    // Safety: return whatever the last assistant message contained.
-    final last = history.lastWhere((m) => m['role'] == 'assistant',
-        orElse: () => {'content': ''});
-    return (last['content'] as String? ?? '').trim();
+    // Safety: max iterations reached.  The model kept calling tools and never
+    // produced a final text response.  Return the last non-empty assistant
+    // content if one exists, otherwise a diagnostic message.
+    final lastContent = history.reversed
+        .where((m) => m['role'] == 'assistant')
+        .map((m) => (m['content'] as String? ?? '').trim())
+        .firstWhere((s) => s.isNotEmpty, orElse: () => '');
+    if (lastContent.isNotEmpty) return lastContent;
+
+    final toolsUsed = history
+        .where((m) => m['role'] == 'tool')
+        .map((m) => m['name'] as String? ?? 'unknown')
+        .toSet()
+        .join(', ');
+    _log.warning(
+        '[tool-loop] exhausted $maxIterations iterations without a final '
+        'text answer. Tools used: $toolsUsed');
+    return 'I ran into trouble completing this after $maxIterations attempts.'
+        '${toolsUsed.isNotEmpty ? ' I tried using: $toolsUsed.' : ''} '
+        'Please try rephrasing your request, or check that the required '
+        'services are available.';
   }
 
   // ── External LLM ──────────────────────────────────────────────────────────

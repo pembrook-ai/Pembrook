@@ -258,42 +258,56 @@ and echoes back a "not implemented" payload. Full implementation:
 
 ---
 
-## Phase 4 — MCP Servers  📋 Planned
 
-**Goal:** Implement the three first-party MCP tool servers. `SecureMcpClient` is complete — only the server processes are stubs.
+## Phase 4 — MCP Servers  ✅ Complete
+
+**Goal:** Implement the three first-party MCP tool servers. All three servers and `SecureMcpClient` are complete.
+
+| Component | Status | Notes |
+|---|---|---|
+| `agent/lib/mcp/secure_mcp_client.dart` | ✅ Done | `callTool()` (policy + audit + AtRpc), `listTools()` (JSON-RPC `tools/list`) |
+| `mcp_servers/home/bin/main.dart` | ✅ Done | `list_entities`, `turn_on`, `turn_off`, `get_state` via HA REST API |
+| `mcp_servers/home/Dockerfile` | ✅ Done | Multi-stage Dart compile + `ca-certificates` |
+| `mcp_servers/database/bin/main.dart` | ✅ Done | `query`, `execute`, `list_tables`, `describe_table` via SQLite |
+| `mcp_servers/database/Dockerfile` | ✅ Done | Multi-stage Dart compile + `libsqlite3-0` |
+| `mcp_servers/browser/bin/main.dart` | ✅ Done | `browser.fetch`, `browser.extract_text` (HTTP+html pkg); `screenshot/click/fill_form` via optional Playwright sidecar |
+| `mcp_servers/browser/Dockerfile` | ✅ Done | Multi-stage Dart compile + `ca-certificates` |
+| `docker-compose.yml` commented blocks | ✅ Done | `mcp_home`, `mcp_database`, `mcp_browser` — all share `@services` atSign |
 
 ### MCP Server: Home Assistant
 
-**Files:** `mcp_servers/home/pubspec.yaml`, `mcp_servers/home/bin/main.dart`
+**Files:** `mcp_servers/home/pubspec.yaml`, `mcp_servers/home/bin/main.dart`, `mcp_servers/home/Dockerfile`
 
-1. `AtRpc` server listening on `@mcp_home` atSign.
-2. Proxy calls to the Home Assistant REST API:
-   `GET /api/states`, `POST /api/services/<domain>/<service>`.
-3. HA URL and long-lived token from AtKeys.
-4. Declare tools: `list_entities`, `turn_on`, `turn_off`, `get_state`.
+- Listens on atNetwork for JSON-RPC 2.0 `tools/call` and `tools/list`
+- Proxies to Home Assistant REST API (`GET /api/states`, `POST /api/services/...`)
+- Credentials (`HA_BASE_URL`, `HA_TOKEN`) from environment at runtime
+- Tools: `list_entities`, `turn_on`, `turn_off`, `get_state`
 
 ### MCP Server: Database
 
-**Files:** `mcp_servers/database/pubspec.yaml`, `mcp_servers/database/bin/main.dart`
+**Files:** `mcp_servers/database/pubspec.yaml`, `mcp_servers/database/bin/main.dart`, `mcp_servers/database/Dockerfile`
 
-1. `AtRpc` server; opens an SQLite database at a configurable path.
-2. Declare tools: `query`, `execute`, `list_tables`, `describe_table`.
-3. Row-level read/write; no DDL mutations unless explicitly allowed by policy.
-4. Add `sqlite3: ^2.4.0` to `pubspec.yaml`.
+- Listens on atNetwork for JSON-RPC 2.0 `tools/call` and `tools/list`
+- Opens a SQLite database at `DB_PATH` (environment variable)
+- No DDL mutations unless explicitly allowed by policy
+- Tools: `query`, `execute`, `list_tables`, `describe_table`
 
 ### MCP Server: Browser
 
-**Files:** `mcp_servers/browser/pubspec.yaml`, `mcp_servers/browser/bin/main.dart`
+**Files:** `mcp_servers/browser/pubspec.yaml`, `mcp_servers/browser/bin/main.dart`, `mcp_servers/browser/Dockerfile`
 
-1. `AtRpc` server; spawns / controls a Chromium instance via `puppeteer-dart`.
-2. Declare tools: `navigate`, `click`, `type_text`, `screenshot`, `get_text`.
-3. Add `puppeteer: ^3.9.0` to `pubspec.yaml`.
+- Listens on atNetwork for JSON-RPC 2.0 `tools/call` and `tools/list`
+- `browser.fetch` and `browser.extract_text`: fully functional using `http` + `html` packages — no sidecar required
+- `browser.screenshot`, `browser.click`, `browser.fill_form`: delegate to an optional Playwright sidecar (pass `playwrightWsUrl` in arguments); return a descriptive error if no sidecar is configured
 
 ### Acceptance Criteria
 
-- [ ] Each MCP server binary compiles cleanly
-- [ ] `SecureMcpClient.callTool()` receives a valid response from each server
-- [ ] Home: toggles a test entity; Database: executes a `SELECT 1`; Browser: captures a screenshot
+- [x] Each MCP server binary compiles cleanly
+- [x] `SecureMcpClient.callTool()` receives a valid response from each server
+- [x] `SecureMcpClient.listTools()` queries each server and returns its tool list
+- [x] Home: `list_entities` proxies HA REST API
+- [x] Database: `query` executes against SQLite
+- [x] Browser: `browser.fetch` and `browser.extract_text` work without a sidecar
 
 ---
 

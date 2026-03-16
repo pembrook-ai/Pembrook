@@ -52,6 +52,18 @@ class Orchestrator {
   final TaskScheduler? taskScheduler;
   final NotificationManager? notificationManager;
 
+  /// atSigns of MCP servers to query for tools on first `_buildTools()` call.
+  /// e.g. ['@ai6bh'] — the services atSign running mcp_browser, mcp_home, etc.
+  final List<String> mcpServerAtSigns;
+
+  /// Lazily populated on first `_buildTools()` call.
+  /// toolName → atSign that provides it.
+  final Map<String, String> _mcpToolToAtSign = {};
+
+  /// Cached Ollama-format tool definitions, populated on first listTools() call.
+  final Map<String, Map<String, dynamic>> _mcpToolDefs = {};
+  bool _mcpToolsLoaded = false;
+
   final Logger _log = Logger('Orchestrator');
 
   /// Tool definitions offered to the LLM on every chat/task request.
@@ -410,6 +422,7 @@ class Orchestrator {
     this.mcpClient,
     this.taskScheduler,
     this.notificationManager,
+    this.mcpServerAtSigns = const [],
   });
 
   /// Process a single request from the Gateway.
@@ -608,6 +621,15 @@ class Orchestrator {
         if (streamingEnabled) await _flushTokenBuf();
     }
 
+    // Guard: never send an empty reply back to the user.
+    if (responseText.trim().isEmpty) {
+      _log.warning(
+          'Empty responseText after intent=${intentType.name} — substituting fallback');
+      responseText =
+          "I wasn't able to generate a response. Please try again or "
+          'rephrase your request.';
+    }
+
     // Drain any remainder and wait for ALL in-flight sendStreamChunk
     // notifications to complete before sending the RPC reply.
     // Without this the RPC reply races the notifications, arrives first,
@@ -748,19 +770,67 @@ class Orchestrator {
   /// for skills that are currently installed and enabled.
   Future<List<Map<String, dynamic>>> _buildTools() async {
     final tools = List<Map<String, dynamic>>.from(_kTools);
-    if (skillRunner == null) return tools;
-    // Use the in-memory cache — updated synchronously on install/remove,
-    // so no atServer round-trip needed and no race with just-installed skills.
-    final skills = skillRunner!.registry.cachedSkills.values;
-    for (final skill in skills) {
-      final isEnabled = skill.ownerPolicyOverrides['enabled'] != false;
-      if (!isEnabled) continue;
-      final skillTools = _kSkillToolDefs[skill.skillId];
-      if (skillTools != null) tools.addAll(skillTools);
+
+    // ── Skills ────────────────────────────────────────────────────────────
+    if (skillRunner != null) {
+      final skills = skillRunner!.registry.cachedSkills.values;
+      for (final skill in skills) {
+        final isEnabled = skill.ownerPolicyOverrides['enabled'] != false;
+        if (!isEnabled) continue;
+        final skillTools = _kSkillToolDefs[skill.skillId];
+        if (skillTools != null) tools.addAll(skillTools);
+      }
     }
-    _log.fine('_buildTools: ${tools.length} total tools '
-        '(${tools.length - _kTools.length} from skills: '
-        '${skills.map((s) => s.skillId).join(', ')})');
+
+    // ── MCP server tools (lazy-loaded once per process) ────────────────────
+    // MCP servers return tools in MCP format (inputSchema).  Ollama requires
+    // {type:"function", function:{name, description, parameters}} — we convert
+    // on first load and cache the converted defs in _mcpToolDefs.
+    if (mcpClient != null && mcpServerAtSigns.isNotEmpty && !_mcpToolsLoaded) {
+      _mcpToolsLoaded =
+          true; // set before await so concurrent calls don't double-fetch
+      for (final atSign in mcpServerAtSigns) {
+        _log.info('Loading MCP tools from $atSign...');
+        try {
+          final serverTools = await mcpClient!.listTools(atSign);
+          for (final t in serverTools) {
+            final name = t['name'] as String? ?? '';
+            if (name.isNotEmpty) {
+              _mcpToolToAtSign[name] = atSign;
+              // Convert MCP inputSchema → Ollama/OpenAI {type:function} format.
+              final ollamaDef = <String, dynamic>{
+                'type': 'function',
+                'function': {
+                  'name': name,
+                  'description': t['description'] as String? ?? '',
+                  'parameters': (t['inputSchema'] as Map<String, dynamic>?) ??
+                      (t['parameters'] as Map<String, dynamic>?) ??
+                      {'type': 'object', 'properties': <String, dynamic>{}},
+                },
+              };
+              _mcpToolDefs[name] = ollamaDef;
+              tools.add(ollamaDef);
+            }
+          }
+          _log.info('Loaded ${serverTools.length} MCP tools from $atSign: '
+              '${serverTools.map((t) => t['name']).join(', ')}');
+        } catch (e) {
+          _log.warning('Failed to load MCP tools from $atSign: $e');
+        }
+      }
+    } else if (_mcpToolsLoaded && _mcpToolDefs.isNotEmpty) {
+      // Re-inject cached full Ollama-format defs on every subsequent request.
+      for (final def in _mcpToolDefs.values) {
+        final name =
+            (def['function'] as Map<String, dynamic>)['name'] as String;
+        if (!tools.any(
+            (t) => (t['function'] as Map<String, dynamic>?)?['name'] == name)) {
+          tools.add(def);
+        }
+      }
+    }
+
+    _log.fine('_buildTools: ${tools.length} total tools');
     return tools;
   }
 
@@ -795,6 +865,26 @@ class Orchestrator {
           }
           return 'Skill "$skillId" failed: '
               '${result.error ?? result.denialReason ?? "unknown error"}';
+        }
+        // ── MCP tool dispatch ──────────────────────────────────────────────
+        final mcpAtSign = _mcpToolToAtSign[toolName];
+        if (mcpAtSign != null && mcpClient != null) {
+          _log.info('[TOOL] Routing $toolName → MCP:$mcpAtSign');
+          final result = await mcpClient!.callTool(
+            mcpAtSign: mcpAtSign,
+            toolName: toolName,
+            arguments: args,
+            initiatorAtSign: _toolFromAtSign,
+            conversationId: _toolConvId,
+          );
+          if (result.success) {
+            final parts = result.content
+                .map((c) => c['text'] as String? ?? c['data']?.toString() ?? '')
+                .where((s) => s.isNotEmpty)
+                .join('\n');
+            return parts.isNotEmpty ? parts : '(empty MCP response)';
+          }
+          return 'MCP tool "$toolName" failed: ${result.error ?? "unknown error"}';
         }
         _log.warning('[TOOL] Unknown tool requested: $toolName');
         return 'Unknown tool: $toolName';
