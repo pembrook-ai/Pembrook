@@ -275,7 +275,8 @@ class Orchestrator {
         'type': 'function',
         'function': {
           'name': 'list_events',
-          'description': 'List upcoming Google Calendar events in a date range.',
+          'description':
+              'List upcoming Google Calendar events in a date range.',
           'parameters': {
             'type': 'object',
             'properties': {
@@ -363,8 +364,8 @@ class Orchestrator {
           'name': 'web_search',
           'description':
               'Search the web using a privacy-respecting engine (SearXNG or Brave). '
-              'Prefer this over fetch_webpage when you need to find current '
-              'information by query rather than fetching a known URL.',
+                  'Prefer this over fetch_webpage when you need to find current '
+                  'information by query rather than fetching a known URL.',
           'parameters': {
             'type': 'object',
             'required': ['q'],
