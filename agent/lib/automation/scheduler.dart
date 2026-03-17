@@ -192,7 +192,8 @@ class TaskScheduler {
       ids = await _readIndex();
     } catch (e) {
       final msg = e.toString();
-      if (msg.contains('key not found') || msg.contains('does not exist') ||
+      if (msg.contains('key not found') ||
+          msg.contains('does not exist') ||
           msg.contains('null')) {
         ids = []; // No index yet — treat as empty.
       } else {

@@ -517,7 +517,8 @@ TOOL USE RULES — follow these exactly, every time:
       final _diagPrefix = (_lastExecutedResult ?? '').length > 120
           ? (_lastExecutedResult ?? '').substring(0, 120)
           : (_lastExecutedResult ?? '');
-      _log.info('[tools-done] last=$_lastExecutedTool terminal=$_lastToolWasTerminal '
+      _log.info(
+          '[tools-done] last=$_lastExecutedTool terminal=$_lastToolWasTerminal '
           'result_start="$_diagPrefix"');
 
       // Short-circuit: for terminal tools we know the outcome from the tool
@@ -525,19 +526,18 @@ TOOL USE RULES — follow these exactly, every time:
       // errors from conversation history.  Build a clean confirmation in code.
       // Use _lastExecutedResult captured directly in the loop (avoids brittle
       // history.lastWhere look-up).
-      if (_lastToolWasTerminal && _lastExecutedResult != null &&
+      if (_lastToolWasTerminal &&
+          _lastExecutedResult != null &&
           !_lastExecutedResult.startsWith('Error')) {
-        _log.info(
-            'Terminal tool short-circuit: $_lastExecutedTool succeeded '
+        _log.info('Terminal tool short-circuit: $_lastExecutedTool succeeded '
             '(${_lastExecutedResult.length} chars) — returning synthesised reply');
         switch (_lastExecutedTool) {
           case 'schedule_task':
             final taskIdMatch =
                 RegExp(r'Task ID: (\S+)').firstMatch(_lastExecutedResult);
             final taskId = taskIdMatch?.group(1) ?? '';
-            final whenMatch =
-                RegExp(r'I will run ".+?" (.+?) and push')
-                    .firstMatch(_lastExecutedResult);
+            final whenMatch = RegExp(r'I will run ".+?" (.+?) and push')
+                .firstMatch(_lastExecutedResult);
             final when = whenMatch?.group(1) ?? 'as requested';
             return "Done! I've set a reminder $when. I'll notify you when it fires."
                 "${taskId.isNotEmpty ? ' (Task ID: $taskId)' : ''}";
