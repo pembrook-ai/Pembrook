@@ -9,6 +9,12 @@ See [PHASES.md](PHASES.md) for detailed per-phase implementation status.
 
 ---
 
+## Screenshot
+
+![Pembrook chat — URL review via MCP browser](images/screenshot_chat.png)
+
+---
+
 ## Security at a Glance
 
 | Threat | OpenClaw | Pembrook |
