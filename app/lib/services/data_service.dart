@@ -331,8 +331,14 @@ class DataService extends ChangeNotifier {
           final v = await _atClient!.get(atKey,
               getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
           if (v.value != null) {
-            items.add(AuditItem.fromJson(
-                jsonDecode(v.value as String) as Map<String, dynamic>));
+            final item = AuditItem.fromJson(
+                jsonDecode(v.value as String) as Map<String, dynamic>);
+            final t = item.actionType;
+            if (t.startsWith('mcp.') ||
+                t.startsWith('task.run.') ||
+                t.startsWith('skill.')) {
+              items.add(item);
+            }
           }
         } catch (_) {}
       }

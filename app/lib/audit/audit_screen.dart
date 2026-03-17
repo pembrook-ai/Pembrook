@@ -182,20 +182,23 @@ class _AuditCard extends StatelessWidget {
     );
   }
 
-  String _formatActionType(String raw) => switch (raw) {
-        'chat' => 'Chat',
-        'task' => 'Task',
-        'unknown' => 'Message',
-        'skillInvocation' => 'Skill Invocation',
-        'mcpToolCall' => 'MCP Tool Call',
-        'automation' => 'Automation',
-        'multiStepPlan' => 'Multi-step Plan',
-        'command' => 'Command',
-        'hitl_request' => 'HITL Request',
-        'policy_violation' => 'Policy Violation',
-        'rate_limit_exceeded' => 'Rate Limit',
-        _ => raw,
-      };
+  String _formatActionType(String raw) {
+    if (raw.startsWith('mcp.toolCall.')) {
+      return 'MCP: ${raw.substring(13)}';
+    }
+    if (raw == 'mcp.toolCall') return 'MCP Tool Call';
+    if (raw.startsWith('task.run.')) {
+      // taskId format is typically "<name>_<uuid>"; show just the name part.
+      final taskId = raw.substring(9);
+      final label = taskId.contains('_') ? taskId.split('_').first : taskId;
+      return 'Task: $label';
+    }
+    if (raw.startsWith('skill.invoke.')) {
+      return 'Skill: ${raw.substring(13)}';
+    }
+    if (raw == 'skill.invoke') return 'Skill Invocation';
+    return raw;
+  }
 
   String? _targetLine(AuditItem e) {
     if (e.skillId != null) return 'skill: ${e.skillId}';
