@@ -187,7 +187,18 @@ class TaskScheduler {
   }
 
   Future<void> _addToIndex(String taskId) async {
-    final ids = await _readIndex();
+    List<String> ids;
+    try {
+      ids = await _readIndex();
+    } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('key not found') || msg.contains('does not exist') ||
+          msg.contains('null')) {
+        ids = []; // No index yet — treat as empty.
+      } else {
+        rethrow;
+      }
+    }
     if (!ids.contains(taskId)) {
       ids.add(taskId);
       await _writeIndex(ids);
@@ -195,7 +206,12 @@ class TaskScheduler {
   }
 
   Future<void> _removeFromIndex(String taskId) async {
-    final ids = await _readIndex();
+    List<String> ids;
+    try {
+      ids = await _readIndex();
+    } catch (e) {
+      return; // Nothing in the index, nothing to remove.
+    }
     if (ids.remove(taskId)) {
       await _writeIndex(ids);
     }

@@ -156,7 +156,11 @@ Current date: ${DateTime.now().toUtc().toIso8601String()}''';
       final toolSystemPrompt = '''$systemPrompt
 
 TOOL USE RULES — follow these exactly, every time:
-- To create any recurring or scheduled action: ALWAYS call schedule_task. Never just say "I'll set that up" without calling it.
+- schedule_task — use for ANY reminder, alert, or recurring automation:
+  • ONE-SHOT ("remind me in 5 min", "alert me at 3pm"): use the `runAt` field with an ISO-8601 UTC datetime computed from the Current date above. Example: if current time is 2026-03-16T14:30:00Z and user says "in 1 minute", set runAt="2026-03-16T14:31:00Z". NEVER use cronExpression for one-shot tasks.
+  • RECURRING ("every 30 min", "daily at 8am"): use `cronExpression` with standard cron syntax, e.g. "*/30 * * * *" or "0 8 * * *". WARNING: cron fields are [minute hour day month weekday] — "1 * * * *" means "at minute :01 of every hour", NOT "in 1 minute". Do not confuse cron field values with elapsed time.
+  • Once schedule_task returns a Task ID, the task is saved and WILL fire automatically — do NOT call notify_owner afterwards, just confirm to the user in text.
+- notify_owner is ONLY for sending an immediate notification right now. Never call it after schedule_task; the scheduled task delivers its own notification when it fires.
 - To list scheduled tasks: ALWAYS call list_tasks. Never say "no tasks" without calling it first.
 - To stop or remove a task: ALWAYS call list_tasks then cancel_task. Never say "cancelled" without calling cancel_task.
 - To fetch live web content: ALWAYS call fetch_webpage. Never guess at current news, weather, prices, etc.
@@ -466,6 +470,8 @@ TOOL USE RULES — follow these exactly, every time:
       _log.info('[tool-loop] model requested ${toolCalls.length} tool call(s)');
 
       // Execute each tool call and feed results back.
+      String? _lastExecutedTool;
+      String? _lastExecutedResult;
       for (final call in toolCalls) {
         final fn = call['function'] as Map<String, dynamic>;
         final toolName = fn['name'] as String;
@@ -485,6 +491,8 @@ TOOL USE RULES — follow these exactly, every time:
           result = 'Error calling $toolName: $e';
         }
         _log.info('Tool result for $toolName: ${result.length} chars');
+        _lastExecutedTool = toolName;
+        _lastExecutedResult = result;
 
         // Ollama expects the tool result as a message with role 'tool'.
         // tool_call_id links this result back to the specific call.
@@ -498,7 +506,49 @@ TOOL USE RULES — follow these exactly, every time:
 
       // Task anchoring: after tool results, remind the model of the original
       // request so it doesn't stop after the first tool call on multi-step tasks.
-      if (originalUserMsg.isNotEmpty) {
+      // We skip the reminder when the last tool was a terminal action
+      // (schedule_task, cancel_task, notify_owner) — otherwise the model loops,
+      // calling schedule_task repeatedly after it already succeeded.
+      const _terminalTools = {'schedule_task', 'cancel_task', 'notify_owner'};
+      final _lastToolWasTerminal = _lastExecutedTool != null &&
+          _terminalTools.contains(_lastExecutedTool);
+
+      // Diagnostic: always log what we know at this point.
+      final _diagPrefix = (_lastExecutedResult ?? '').length > 120
+          ? (_lastExecutedResult ?? '').substring(0, 120)
+          : (_lastExecutedResult ?? '');
+      _log.info('[tools-done] last=$_lastExecutedTool terminal=$_lastToolWasTerminal '
+          'result_start="$_diagPrefix"');
+
+      // Short-circuit: for terminal tools we know the outcome from the tool
+      // result itself — don't ask the model to rephrase it or it will hallucinate
+      // errors from conversation history.  Build a clean confirmation in code.
+      // Use _lastExecutedResult captured directly in the loop (avoids brittle
+      // history.lastWhere look-up).
+      if (_lastToolWasTerminal && _lastExecutedResult != null &&
+          !_lastExecutedResult.startsWith('Error')) {
+        _log.info(
+            'Terminal tool short-circuit: $_lastExecutedTool succeeded '
+            '(${_lastExecutedResult.length} chars) — returning synthesised reply');
+        switch (_lastExecutedTool) {
+          case 'schedule_task':
+            final taskIdMatch =
+                RegExp(r'Task ID: (\S+)').firstMatch(_lastExecutedResult);
+            final taskId = taskIdMatch?.group(1) ?? '';
+            final whenMatch =
+                RegExp(r'I will run ".+?" (.+?) and push')
+                    .firstMatch(_lastExecutedResult);
+            final when = whenMatch?.group(1) ?? 'as requested';
+            return "Done! I've set a reminder $when. I'll notify you when it fires."
+                "${taskId.isNotEmpty ? ' (Task ID: $taskId)' : ''}";
+          case 'cancel_task':
+            return "Done! The task has been cancelled.";
+          case 'notify_owner':
+            return "Done! Notification sent.";
+        }
+      }
+
+      if (originalUserMsg.isNotEmpty && !_lastToolWasTerminal) {
         history.add({
           'role': 'user',
           'content': 'Remember the original request: "$originalUserMsg". '

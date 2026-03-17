@@ -634,21 +634,27 @@ class Orchestrator {
     // notifications to complete before sending the RPC reply.
     // Without this the RPC reply races the notifications, arrives first,
     // sets _isLoading=false in the app, and the guard discards every chunk.
+    // Wrapped in try/catch: notification failures must NOT prevent the audit
+    // write below — the response has already been streamed to the user.
     if (streamingEnabled) {
-      await _flushTokenBuf();
-      if (_pendingChunks.isNotEmpty) await Future.wait(_pendingChunks);
-      // Send a sentinel 'done: true' chunk so OTHER devices that share the
-      // same @owner atSign can detect the exchange completed and reload the
-      // shared conversation_history AtKey.  The originating device ignores
-      // this (it filters by _conversationId in ChatScreen).
-      await sendStreamChunk(
-        ownerAtSign: fromAtSign,
-        reqId: reqId,
-        chunkIndex: _chunkIndex++,
-        chunk: '',
-        conversationId: conversationId,
-        done: true,
-      );
+      try {
+        await _flushTokenBuf();
+        if (_pendingChunks.isNotEmpty) await Future.wait(_pendingChunks);
+        // Send a sentinel 'done: true' chunk so OTHER devices that share the
+        // same @owner atSign can detect the exchange completed and reload the
+        // shared conversation_history AtKey.  The originating device ignores
+        // this (it filters by _conversationId in ChatScreen).
+        await sendStreamChunk(
+          ownerAtSign: fromAtSign,
+          reqId: reqId,
+          chunkIndex: _chunkIndex++,
+          chunk: '',
+          conversationId: conversationId,
+          done: true,
+        );
+      } catch (e) {
+        _log.warning('Streaming cleanup error (audit will still proceed): $e');
+      }
     }
 
     final elapsed = DateTime.now().difference(startTime).inMilliseconds;
