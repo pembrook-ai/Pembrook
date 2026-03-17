@@ -16,6 +16,8 @@
 
 import 'dart:io';
 
+import 'dart:io';
+
 import 'package:at_auth/at_auth.dart';
 import 'package:at_client_flutter/at_client_flutter.dart';
 import 'package:flutter/material.dart';
@@ -233,8 +235,13 @@ class _AuthScreenState extends State<AuthScreen> {
   // ══════════════════════════════════════════════════════
 
   Future<void> _finishAuth(AuthResponse response) async {
-    final appDir = await getApplicationSupportDirectory();
-    final storageDir = Directory('${appDir.path}/pembrook_keys');
+    // Each launch gets its own unique subdirectory under the system temp folder.
+    // This means multiple app instances never share a Hive lock, and the OS
+    // cleans up the temp data automatically on reboot.
+    final tmp = await getTemporaryDirectory();
+    final instanceId = DateTime.now().millisecondsSinceEpoch;
+    final storageDir =
+        Directory('${tmp.path}/pembrook_${response.atSign}_$instanceId');
     await storageDir.create(recursive: true);
 
     final pref = AtClientPreference()
