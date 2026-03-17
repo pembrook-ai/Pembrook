@@ -1,0 +1,1481 @@
+{
+  "pages": [
+    {
+      "id": 2026031600001,
+      "name": "Page 1: System Architecture Overview",
+      "nodes": [
+        {
+          "id": "node_owner",
+          "type": "custom",
+          "position": {
+            "x": 50,
+            "y": 400
+          },
+          "data": {
+            "label": "Owner",
+            "description": "The human who owns and controls the agent",
+            "notes": "The owner authenticates using a cryptographic identity stored in the device keychain — no passwords. All commands sent to the agent are cryptographically signed, so the agent can verify who sent them before acting.\n\nThe owner defines all policies, approves high-risk actions, and can revoke agent access at any time. The agent always remembers who the owner is, even across restarts.",
+            "showNotes": true,
+            "nodeWidth": 300,
+            "nodeHeight": 200,
+            "type": "person"
+          },
+          "width": 300,
+          "height": 200
+        },
+        {
+          "id": "node_flutter_app",
+          "type": "custom",
+          "position": {
+            "x": 420,
+            "y": 360
+          },
+          "data": {
+            "label": "Flutter Desktop App",
+            "description": "The owner's primary interface: chat, settings, policies, skills, bridges",
+            "notes": "The app runs on macOS, Windows, and Linux. It holds the owner's cryptographic identity and communicates with the agent exclusively through the atPlatform — **no open ports on the device**.\n\n**Key screens:**\n- **Chat** — streaming conversation with the agent\n- **Skills** — install and remove capability modules\n- **Bridges** — configure messaging integrations\n- **Policies** — edit allow/deny rules for agent behaviour\n- **Settings** — local model URL, privacy threshold, owner identity\n\n**Streaming:** The app receives incremental response tokens in real time as the agent generates them. A completion signal at the end of each response allows other devices sharing the same owner identity to silently reload the conversation — no toast notifications pop up on other devices.\n\n**Conversation history** is stored in the owner's personal encrypted cloud storage, so it is available across all devices.",
+            "showNotes": true,
+            "nodeWidth": 360,
+            "nodeHeight": 300,
+            "type": "process"
+          },
+          "width": 360,
+          "height": 300
+        },
+        {
+          "id": "node_services",
+          "type": "custom",
+          "position": {
+            "x": 420,
+            "y": 80
+          },
+          "data": {
+            "label": "Services Identity",
+            "description": "A single shared identity used by all bridges and all MCP servers",
+            "notes": "**Critical architecture decision:** The entire system needs only **three identities** — the agent, the owner, and a shared services identity. Every messaging bridge and every MCP server shares this single services identity.\n\nThis means you provision three identities regardless of how many bridges or MCP servers you run. The agent recognises the services identity in its allow-list, so all bridges and tools can communicate with the agent without any additional configuration.\n\nThe services identity is the only one that can call into the agent from the outside world other than the owner directly.",
+            "showNotes": true,
+            "nodeWidth": 360,
+            "nodeHeight": 260,
+            "type": "process"
+          },
+          "width": 360,
+          "height": 260
+        },
+        {
+          "id": "node_atplatform",
+          "type": "custom",
+          "position": {
+            "x": 960,
+            "y": 330
+          },
+          "data": {
+            "label": "atPlatform Network",
+            "description": "End-to-end encrypted relay — zero-knowledge, every connection is outbound-only",
+            "notes": "The atPlatform is the communication backbone. Every component — the agent, the app, bridges, MCP servers — makes only **outbound connections** to the platform. Nothing listens on an inbound port anywhere in the system. Network scanners see nothing.\n\n**Key properties:**\n- All data is end-to-end encrypted before leaving the sender. The relay never sees plaintext.\n- Every identity is cryptographically verified before any message is delivered.\n- The platform acts as a rendezvous and delivery service, not a data store.\n- Messages are addressed between identities using a shared namespace.\n\nAll inter-component communication patterns — chat requests, streaming tokens, tool calls and responses — are built on top of this same secure notification layer.",
+            "showNotes": true,
+            "nodeWidth": 340,
+            "nodeHeight": 300,
+            "type": "entity"
+          },
+          "width": 340,
+          "height": 300
+        },
+        {
+          "id": "node_agent",
+          "type": "custom",
+          "position": {
+            "x": 1460,
+            "y": 200
+          },
+          "data": {
+            "label": "Agent Daemon",
+            "description": "The AI agent: receives requests, thinks, acts, and responds",
+            "notes": "The agent is a long-running background service deployed as a Docker container. It authenticates using a cryptographic identity, then sits waiting for encrypted requests from the owner or services.\n\n**At startup the agent:**\n1. Authenticates its identity against the atPlatform\n2. Restores all state from encrypted cloud storage (conversations, policies, skills, settings)\n3. Discovers what tools are available from MCP servers\n4. Starts listening for requests\n\nAll agent state lives in encrypted cloud storage — not on disk inside the container. This means the container can be destroyed and recreated without losing anything.\n\n**Runtime configuration** is injected via environment variables at startup: the local model endpoint, owner identity, allowed senders, services identity, and timezone.",
+            "showNotes": true,
+            "nodeWidth": 380,
+            "nodeHeight": 320,
+            "type": "process"
+          },
+          "width": 380,
+          "height": 320
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_owner_app",
+          "type": "smoothstep",
+          "source": "node_owner",
+          "target": "node_flutter_app",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#3BB9CF",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "10, 5"
+          },
+          "label": "Async Comms",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "async",
+            "description": "Asynchronous communication (fire and forget)"
+          },
+          "className": "edge-async",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_app_at",
+          "type": "smoothstep",
+          "source": "node_flutter_app",
+          "target": "node_atplatform",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#42AAD7",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "8, 4, 2, 4"
+          },
+          "label": "RPC",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "rpc",
+            "description": "Remote Procedure Call"
+          },
+          "className": "edge-rpc",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_services_at",
+          "type": "smoothstep",
+          "source": "node_services",
+          "target": "node_atplatform",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#FFA500",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "3, 6"
+          },
+          "label": "Notifications",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "notification",
+            "description": "Event notifications and alerts"
+          },
+          "className": "edge-notification",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_at_agent",
+          "type": "smoothstep",
+          "source": "node_atplatform",
+          "target": "node_agent",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#42AAD7",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "8, 4, 2, 4"
+          },
+          "label": "RPC",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "rpc",
+            "description": "Remote Procedure Call"
+          },
+          "className": "edge-rpc",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_agent_at_out",
+          "type": "smoothstep",
+          "source": "node_agent",
+          "target": "node_atplatform",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#FFA3C1",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "12, 8"
+          },
+          "label": "Data Stream",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "stream",
+            "description": "Continuous data streaming"
+          },
+          "className": "edge-stream",
+          "interactionWidth": 20
+        }
+      ],
+      "brand": "atPlatform"
+    },
+    {
+      "id": 2026031600002,
+      "name": "Page 2: Agent Internals — Gateway, Orchestrator & LLM",
+      "nodes": [
+        {
+          "id": "node_gateway",
+          "type": "custom",
+          "position": {
+            "x": 50,
+            "y": 300
+          },
+          "data": {
+            "label": "Gateway",
+            "description": "The secure entry point — verifies every caller before anything else runs",
+            "notes": "The Gateway is the **only** way into the agent. Every request — whether from the owner's app, a messaging bridge, or an MCP server — must pass through it.\n\n**What the gateway does:**\n- Maintains a live list of allowed caller identities (the allow-list)\n- Refreshes the allow-list every 5 minutes from encrypted cloud storage, so changes take effect without restarting\n- Rejects requests from any identity not on the list\n- Forwards approved requests to the Orchestrator and returns the response\n\n**System commands** — such as installing a skill, editing a policy, or changing settings — are handled directly by the Gateway and never reach the Orchestrator.\n\nBecause all connections are outbound-only to the atPlatform, the Gateway has no listening socket — it cannot be port-scanned or directly attacked.",
+            "showNotes": true,
+            "nodeWidth": 360,
+            "nodeHeight": 280,
+            "type": "process"
+          },
+          "width": 360,
+          "height": 280
+        },
+        {
+          "id": "node_policy",
+          "type": "custom",
+          "position": {
+            "x": 480,
+            "y": 200
+          },
+          "data": {
+            "label": "Policy Engine",
+            "description": "Every action is evaluated against owner-defined rules before it executes",
+            "notes": "Before any tool is called, any skill invoked, or any MCP request sent, the Policy Engine evaluates whether it should be allowed.\n\n**A policy can:**\n- **Allow** the action immediately\n- **Deny** it with a reason returned to the caller\n- **Require human approval** — pauses execution until the owner responds\n- **Audit only** — allow but log for review\n\nPolicies are stored in the owner's encrypted cloud storage and can target specific tools, skills, or MCP servers. The owner edits policies from the app's policy screen.\n\nThe Policy Engine is called by the Gateway, the skill execution pipeline, and the MCP client — ensuring no action bypasses policy checks regardless of how it was triggered.",
+            "showNotes": true,
+            "nodeWidth": 340,
+            "nodeHeight": 260,
+            "type": "process"
+          },
+          "width": 340,
+          "height": 260
+        },
+        {
+          "id": "node_orchestrator",
+          "type": "custom",
+          "position": {
+            "x": 480,
+            "y": 540
+          },
+          "data": {
+            "label": "Orchestrator",
+            "description": "The agent's decision loop: understand → plan → act → respond → remember → log",
+            "notes": "The Orchestrator processes every verified request through a consistent pipeline:\n\n1. **Load context** — retrieve recent conversation history from memory, filtering to only trusted messages\n2. **Classify intent** — ask the LLM to categorise the request: is it a chat, a task, automation, a skill call, an MCP action, or a multi-step plan?\n3. **Score privacy** — rate the request from 0.0 (fully public) to 1.0 (highly sensitive), which determines whether it can be sent to an external LLM\n4. **Build tool list** — assemble all available tools: built-in tools, enabled skills, and (on first request) tools discovered from MCP servers\n5. **Execute** — route to the right handler based on intent\n6. **Stream response** — send incremental tokens to the owner in real time, batching to avoid excessive network round-trips\n7. **Never return empty** — if the response is blank for any reason, a clear fallback message is substituted\n8. **Persist** — save the exchange to memory with trust level tags\n9. **Audit** — write a tamper-evident log entry to the owner's encrypted storage",
+            "showNotes": true,
+            "nodeWidth": 380,
+            "nodeHeight": 380,
+            "type": "process"
+          },
+          "width": 380,
+          "height": 380
+        },
+        {
+          "id": "node_llm",
+          "type": "custom",
+          "position": {
+            "x": 960,
+            "y": 300
+          },
+          "data": {
+            "label": "LLM Router",
+            "description": "Routes queries to local model or an external provider based on privacy score",
+            "notes": "The LLM Router decides which model answers the request and manages the full tool-calling conversation loop.\n\n**Local model (default):** Runs on a locally-hosted inference server. No data leaves the local network. Used for all high-privacy queries and for all tool-calling interactions. Must support native tool/function calling.\n\n**External model (optional):** Used only for low-privacy queries where the local model detects a knowledge gap. The query is sanitised to remove personal information before being sent.\n\n**Tool-calling loop:**\nThe router runs up to 10 iterations. In each iteration it calls the local model. If the model requests a tool call, the router executes it and feeds the result back. After each tool result, it reminds the model of the original request to prevent it stopping halfway through multi-step tasks.\n\n**Robustness:**\n- If the model returns neither text nor a tool call, the empty turn is discarded and the loop retries\n- If all iterations are exhausted without a final answer, the router returns a plain-language message describing which tools were tried — never a blank response\n\n**Streaming:** Response tokens are sent to the app incrementally as they are generated.",
+            "showNotes": true,
+            "nodeWidth": 380,
+            "nodeHeight": 400,
+            "type": "process"
+          },
+          "width": 380,
+          "height": 400
+        },
+        {
+          "id": "node_memory",
+          "type": "custom",
+          "position": {
+            "x": 1420,
+            "y": 200
+          },
+          "data": {
+            "label": "Memory Service",
+            "description": "Conversation history stored in encrypted cloud storage, tagged by trust level",
+            "notes": "Every exchange between the owner and the agent is stored in the agent's encrypted cloud storage, organised by conversation.\n\n**Trust tagging:** Each message is labelled with who sent it and how trusted that source is. Only messages from the owner or verified skills are included when building conversation context for the LLM. Untrusted messages — for example from bridges or external sources — are stored but excluded from context. This prevents **memory poisoning**, where a third party tries to inject false history through a bridge message.\n\n**Summarisation:** A background process periodically condenses old conversations to keep storage usage manageable.",
+            "showNotes": true,
+            "nodeWidth": 340,
+            "nodeHeight": 260,
+            "type": "process"
+          },
+          "width": 340,
+          "height": 260
+        },
+        {
+          "id": "node_audit",
+          "type": "custom",
+          "position": {
+            "x": 1420,
+            "y": 540
+          },
+          "data": {
+            "label": "Audit Service",
+            "description": "Tamper-evident log written to the owner's storage — not the agent's",
+            "notes": "Every action the agent takes is logged: LLM calls, tool executions, skill invocations, MCP calls, policy decisions — all of them.\n\n**Key design decision:** Audit entries are written to the **owner's** encrypted cloud storage, not the agent's. This means the owner retains an independent record of everything the agent did, even if the agent is compromised, restarted, or replaced.\n\nLog entries include a hashed representation of the input and output (never plaintext), the identity of who initiated the action, what was targeted, what the policy decided, and how long execution took.",
+            "showNotes": true,
+            "nodeWidth": 340,
+            "nodeHeight": 260,
+            "type": "process"
+          },
+          "width": 340,
+          "height": 260
+        },
+        {
+          "id": "node_hitl",
+          "type": "custom",
+          "position": {
+            "x": 960,
+            "y": 760
+          },
+          "data": {
+            "label": "Human-in-the-Loop",
+            "description": "Pauses high-risk actions and waits for the owner to approve or deny",
+            "notes": "When the Policy Engine marks an action as requiring human approval, execution pauses completely.\n\nThe agent sends an approval request to the owner's app, which renders a dialog describing exactly what is about to happen. The owner can approve or deny.\n\n- If **approved**, execution resumes immediately\n- If **denied**, the agent responds with an explanation\n- If the owner **does not respond** within the timeout (default 5 minutes), the action is automatically denied\n\nHuman-in-the-loop is required for actions like submitting a web form, and for any action the policy has flagged as high-risk.",
+            "showNotes": true,
+            "nodeWidth": 340,
+            "nodeHeight": 240,
+            "type": "process"
+          },
+          "width": 340,
+          "height": 240
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_gw_policy",
+          "type": "smoothstep",
+          "source": "node_gateway",
+          "target": "node_policy",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#42AAD7",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "8, 4, 2, 4"
+          },
+          "label": "RPC",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "rpc",
+            "description": "Remote Procedure Call"
+          },
+          "className": "edge-rpc",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_gw_orch",
+          "type": "smoothstep",
+          "source": "node_gateway",
+          "target": "node_orchestrator",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#42AAD7",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "8, 4, 2, 4"
+          },
+          "label": "RPC",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "rpc",
+            "description": "Remote Procedure Call"
+          },
+          "className": "edge-rpc",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_orch_llm",
+          "type": "smoothstep",
+          "source": "node_orchestrator",
+          "target": "node_llm",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#42AAD7",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "8, 4, 2, 4"
+          },
+          "label": "RPC",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "rpc",
+            "description": "Remote Procedure Call"
+          },
+          "className": "edge-rpc",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_orch_mem",
+          "type": "smoothstep",
+          "source": "node_orchestrator",
+          "target": "node_memory",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#3BB9CF",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "10, 5"
+          },
+          "label": "Async Comms",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "async",
+            "description": "Asynchronous communication (fire and forget)"
+          },
+          "className": "edge-async",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_orch_audit",
+          "type": "smoothstep",
+          "source": "node_orchestrator",
+          "target": "node_audit",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#3BB9CF",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "10, 5"
+          },
+          "label": "Async Comms",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "async",
+            "description": "Asynchronous communication (fire and forget)"
+          },
+          "className": "edge-async",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_orch_hitl",
+          "type": "smoothstep",
+          "source": "node_orchestrator",
+          "target": "node_hitl",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#FFA500",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "3, 6"
+          },
+          "label": "Notifications",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "notification",
+            "description": "Event notifications and alerts"
+          },
+          "className": "edge-notification",
+          "interactionWidth": 20
+        }
+      ],
+      "brand": "atPlatform"
+    },
+    {
+      "id": 2026031600003,
+      "name": "Page 3: MCP Servers & Tool Calling",
+      "nodes": [
+        {
+          "id": "node_mcp_client",
+          "type": "custom",
+          "position": {
+            "x": 50,
+            "y": 300
+          },
+          "data": {
+            "label": "MCP Client",
+            "description": "Discovers and calls tools on MCP servers — all over the encrypted atNetwork",
+            "notes": "The MCP Client connects the agent to external capability servers without opening any network ports.\n\n**Tool discovery:** On the first chat request, the agent asks each configured MCP server for its list of available tools. The tools are cached for the rest of the session so this only happens once per startup.\n\n**Format translation:** MCP servers describe their tools using the MCP Protocol schema. The LLM expects tools in a different format. The agent automatically converts between these formats on discovery — this happens transparently and a future builder does not need to worry about it.\n\n**Tool calls:** When the LLM decides to use an MCP tool, the agent sends a structured request to the appropriate MCP server over the atNetwork, waits for the result, and feeds it back to the LLM.\n\n**Security:** Every MCP tool call goes through the Policy Engine before being sent. If the policy requires human approval, execution pauses until the owner responds. All calls are logged to the audit trail.",
+            "showNotes": true,
+            "nodeWidth": 380,
+            "nodeHeight": 380,
+            "type": "process"
+          },
+          "width": 380,
+          "height": 380
+        },
+        {
+          "id": "node_mcp_browser",
+          "type": "custom",
+          "position": {
+            "x": 600,
+            "y": 100
+          },
+          "data": {
+            "label": "Browser MCP Server",
+            "description": "Fetches web pages, extracts text, and optionally automates a browser",
+            "notes": "The Browser server allows the agent to read the live web.\n\n**Available tools:**\n- **Fetch page** — retrieve the raw content of any URL\n- **Extract text** — fetch a page and return only the human-readable text, stripping markup\n- **Screenshot** — capture a page as an image (requires an optional browser automation sidecar)\n- **Click element** — interact with a page element (requires browser automation sidecar)\n- **Fill form** — fill in and submit a web form (requires browser automation sidecar **and** human approval)\n\nThe server runs as its own Docker container using the shared services identity. It authenticates to the atPlatform, listens for incoming tool-call requests, executes the tool, and sends the result back — all over the encrypted network.\n\nThe browser automation tools are optional. Without a browser automation sidecar configured, they return a clear error message rather than failing silently.",
+            "showNotes": true,
+            "nodeWidth": 380,
+            "nodeHeight": 360,
+            "type": "process"
+          },
+          "width": 380,
+          "height": 360
+        },
+        {
+          "id": "node_mcp_home",
+          "type": "custom",
+          "position": {
+            "x": 600,
+            "y": 520
+          },
+          "data": {
+            "label": "Home Automation MCP Server",
+            "description": "Controls and queries smart home devices via a local hub",
+            "notes": "The Home server gives the agent control over smart home devices without those devices needing any internet exposure.\n\nIt communicates with a local smart home hub (such as Home Assistant or Hubitat) over the local network. The agent never connects to the hub directly — it sends a request to the Home server via the atNetwork, and the Home server calls the hub on the agent's behalf.\n\nThis keeps the smart home hub completely off the internet while still allowing the agent to control it securely.",
+            "showNotes": true,
+            "nodeWidth": 380,
+            "nodeHeight": 280,
+            "type": "process"
+          },
+          "width": 380,
+          "height": 280
+        },
+        {
+          "id": "node_mcp_database",
+          "type": "custom",
+          "position": {
+            "x": 600,
+            "y": 860
+          },
+          "data": {
+            "label": "Database MCP Server",
+            "description": "Queries structured data stores on behalf of the agent",
+            "notes": "The Database server allows the agent to read from and write to a structured database without the database being directly accessible from the internet.\n\nLike all MCP servers, it authenticates using the shared services identity, listens for tool-call requests over the encrypted atNetwork, performs the database operation locally, and returns the result.\n\nThe initial implementation supports SQLite. The pattern is straightforward to extend to other databases.",
+            "showNotes": true,
+            "nodeWidth": 380,
+            "nodeHeight": 260,
+            "type": "process"
+          },
+          "width": 380,
+          "height": 260
+        },
+        {
+          "id": "node_tool_dispatch",
+          "type": "custom",
+          "position": {
+            "x": 1100,
+            "y": 400
+          },
+          "data": {
+            "label": "Unified Tool Dispatch",
+            "description": "All tools — built-in, skills, and MCP — are presented to the LLM as one list",
+            "notes": "The LLM sees a single unified list of tools regardless of whether they are built into the agent, provided by an installed skill, or discovered from an MCP server.\n\n**Built-in tools** (always available):\n- Fetch a web page directly from the agent container\n- Schedule a recurring or one-off task\n- Cancel a scheduled task\n- List current scheduled tasks\n- Send a notification directly to the owner\n\n**Skill tools:** Added to the list dynamically based on which skills are currently installed and enabled.\n\n**MCP tools:** Discovered from MCP servers on first use and cached. Re-presented to the LLM on every request so the model always sees them.\n\nWhen the LLM calls a tool, the agent routes it to the correct handler. If the tool name is unrecognised, a clear error is returned to the LLM rather than crashing or returning empty.",
+            "showNotes": true,
+            "nodeWidth": 360,
+            "nodeHeight": 320,
+            "type": "process"
+          },
+          "width": 360,
+          "height": 320
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_mc_browser",
+          "type": "smoothstep",
+          "source": "node_mcp_client",
+          "target": "node_mcp_browser",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#42AAD7",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "8, 4, 2, 4"
+          },
+          "label": "RPC",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "rpc",
+            "description": "Remote Procedure Call"
+          },
+          "className": "edge-rpc",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_mc_home",
+          "type": "smoothstep",
+          "source": "node_mcp_client",
+          "target": "node_mcp_home",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#42AAD7",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "8, 4, 2, 4"
+          },
+          "label": "RPC",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "rpc",
+            "description": "Remote Procedure Call"
+          },
+          "className": "edge-rpc",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_mc_db",
+          "type": "smoothstep",
+          "source": "node_mcp_client",
+          "target": "node_mcp_database",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#42AAD7",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "8, 4, 2, 4"
+          },
+          "label": "RPC",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "rpc",
+            "description": "Remote Procedure Call"
+          },
+          "className": "edge-rpc",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_dispatch_mc",
+          "type": "smoothstep",
+          "source": "node_tool_dispatch",
+          "target": "node_mcp_client",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#42AAD7",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "8, 4, 2, 4"
+          },
+          "label": "RPC",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "rpc",
+            "description": "Remote Procedure Call"
+          },
+          "className": "edge-rpc",
+          "interactionWidth": 20
+        }
+      ],
+      "brand": "atPlatform"
+    },
+    {
+      "id": 2026031600004,
+      "name": "Page 4: Skills, Bridges & Automation",
+      "nodes": [
+        {
+          "id": "node_skill_registry",
+          "type": "custom",
+          "position": {
+            "x": 50,
+            "y": 100
+          },
+          "data": {
+            "label": "Skill Registry",
+            "description": "Persisted catalogue of installed skills, restored on every startup",
+            "notes": "The Skill Registry keeps track of every capability module (skill) the owner has installed.\n\nEach skill record stores what the skill does, which tools it exposes to the LLM, which developer published it, and the owner's preferences for it (such as whether it is currently enabled).\n\nThe registry is stored in the agent's encrypted cloud storage, so the list of installed skills survives container restarts. On startup the agent restores the registry before accepting requests, so skills are immediately available.\n\nSkills are installed and removed via the owner's app. The agent validates the developer's identity before completing an install.",
+            "showNotes": true,
+            "nodeWidth": 360,
+            "nodeHeight": 280,
+            "type": "process"
+          },
+          "width": 360,
+          "height": 280
+        },
+        {
+          "id": "node_sandbox",
+          "type": "custom",
+          "position": {
+            "x": 480,
+            "y": 100
+          },
+          "data": {
+            "label": "Skill Sandbox",
+            "description": "Each skill runs in an isolated Docker container — no access to agent internals",
+            "notes": "Skills run in their own sandboxed Docker containers with strictly limited capabilities:\n\n- **No host network access** — the skill can only communicate via the atPlatform\n- **Read-only filesystem** — the skill cannot modify anything outside its own temporary space\n- **Own encrypted identity** — the skill communicates with the agent using a dedicated per-skill identity\n\nThis means a compromised or malicious skill cannot access the agent's memory, credentials, or conversation history. It can only do what its exposed tools allow, which are gated by the Policy Engine.\n\nSkill containers are started on demand when a tool call is routed to a skill, and communicate results back via the atPlatform.",
+            "showNotes": true,
+            "nodeWidth": 360,
+            "nodeHeight": 260,
+            "type": "process"
+          },
+          "width": 360,
+          "height": 260
+        },
+        {
+          "id": "node_skill_runner",
+          "type": "custom",
+          "position": {
+            "x": 480,
+            "y": 440
+          },
+          "data": {
+            "label": "Skill Execution Pipeline",
+            "description": "Policy → HITL → sandbox → result, for every skill invocation",
+            "notes": "When the LLM calls a skill tool, the agent runs through a consistent pipeline before anything executes:\n\n1. **Check the skill is installed and enabled** in the registry\n2. **Policy check** — the Policy Engine evaluates whether this skill call is permitted\n3. **Human approval** if the policy requires it\n4. **Execute** in the sandboxed container\n5. **Return result** to the LLM, or a descriptive error if anything failed\n\nThe pipeline ensures no skill can bypass security checks, regardless of how the LLM framed the tool call.",
+            "showNotes": true,
+            "nodeWidth": 360,
+            "nodeHeight": 260,
+            "type": "process"
+          },
+          "width": 360,
+          "height": 260
+        },
+        {
+          "id": "node_bridge",
+          "type": "custom",
+          "position": {
+            "x": 960,
+            "y": 100
+          },
+          "data": {
+            "label": "Messaging Bridges",
+            "description": "Email and iMessage integrations — stateless encrypted relays",
+            "notes": "Bridges allow the owner to interact with the agent through external messaging platforms.\n\n**Currently supported:** Email and iMessage on macOS.\n\n**How bridges work:**\n- Inbound messages from the platform are forwarded to the agent as if they came from the owner\n- Outbound responses from the agent are relayed back to the messaging platform\n- Bridges are **stateless** — they hold no conversation history and make no decisions\n\n**Security note:** The agent's trust system tags bridge messages as coming from an unverified source. These messages are excluded from the LLM context window to prevent a third party from injecting false history through a bridge message. The agent still responds, but the bridge input cannot influence how it remembers past conversations.\n\nEach bridge runs as its own Docker container, sharing the services identity credentials.",
+            "showNotes": true,
+            "nodeWidth": 360,
+            "nodeHeight": 280,
+            "type": "process"
+          },
+          "width": 360,
+          "height": 280
+        },
+        {
+          "id": "node_scheduler",
+          "type": "custom",
+          "position": {
+            "x": 960,
+            "y": 460
+          },
+          "data": {
+            "label": "Task Scheduler",
+            "description": "Cron-style recurring and one-off tasks, timezone-aware",
+            "notes": "The owner can ask the agent to perform actions on a schedule, and the agent will remember and execute them even if the owner's app is closed.\n\nTasks are created by telling the agent to schedule something in natural language. The LLM translates this into a structured task. Tasks are stored in encrypted cloud storage and survive container restarts.\n\n**Timezone support:** The scheduler respects a configured timezone, so a request to \"run at 8am\" fires at 8am in the owner's local time, not UTC.\n\nWhen a task fires, the agent processes it exactly like a regular owner request and sends the result to the owner as a proactive notification.",
+            "showNotes": true,
+            "nodeWidth": 360,
+            "nodeHeight": 280,
+            "type": "process"
+          },
+          "width": 360,
+          "height": 280
+        },
+        {
+          "id": "node_heartbeat",
+          "type": "custom",
+          "position": {
+            "x": 960,
+            "y": 820
+          },
+          "data": {
+            "label": "Heartbeat",
+            "description": "Writes a liveness signal every 60 seconds so the app can detect if the agent goes offline",
+            "notes": "The agent writes a timestamped liveness signal to its encrypted cloud storage every 60 seconds with a short expiry time.\n\nIf the agent crashes or becomes unreachable, the signal expires and the owner's app can show an offline indicator. This gives the owner visibility into agent health without requiring any polling endpoint or open network port.",
+            "showNotes": true,
+            "nodeWidth": 360,
+            "nodeHeight": 220,
+            "type": "process"
+          },
+          "width": 360,
+          "height": 220
+        },
+        {
+          "id": "node_notif",
+          "type": "custom",
+          "position": {
+            "x": 480,
+            "y": 780
+          },
+          "data": {
+            "label": "Proactive Notifications",
+            "description": "Agent-initiated messages pushed to the owner's app",
+            "notes": "The agent can proactively send messages to the owner without waiting to be asked — for example, when a scheduled task completes, when a monitored condition is met, or when a long-running action finishes.\n\nThese notifications arrive in the owner's app as chat messages in the current conversation. If the owner has the app open on another screen, the notifications are queued and delivered as soon as the chat screen is viewed.",
+            "showNotes": true,
+            "nodeWidth": 360,
+            "nodeHeight": 260,
+            "type": "process"
+          },
+          "width": 360,
+          "height": 260
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_reg_runner",
+          "type": "smoothstep",
+          "source": "node_skill_registry",
+          "target": "node_skill_runner",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#3BB9CF",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "10, 5"
+          },
+          "label": "Async Comms",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "async",
+            "description": "Asynchronous communication (fire and forget)"
+          },
+          "className": "edge-async",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_sandbox_runner",
+          "type": "smoothstep",
+          "source": "node_sandbox",
+          "target": "node_skill_runner",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#42AAD7",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "8, 4, 2, 4"
+          },
+          "label": "RPC",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "rpc",
+            "description": "Remote Procedure Call"
+          },
+          "className": "edge-rpc",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_sched_notif",
+          "type": "smoothstep",
+          "source": "node_scheduler",
+          "target": "node_notif",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#FFA500",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "3, 6"
+          },
+          "label": "Notifications",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "notification",
+            "description": "Event notifications and alerts"
+          },
+          "className": "edge-notification",
+          "interactionWidth": 20
+        }
+      ],
+      "brand": "atPlatform"
+    },
+    {
+      "id": 2026031600005,
+      "name": "Page 5: Deployment — Docker, Keys & Configuration",
+      "nodes": [
+        {
+          "id": "node_compose",
+          "type": "custom",
+          "position": {
+            "x": 50,
+            "y": 100
+          },
+          "data": {
+            "label": "Container Orchestration",
+            "description": "A single compose file starts and wires all services together",
+            "notes": "The entire platform deploys with a single command that brings up all containers.\n\n**Services in the stack:**\n- Agent daemon\n- Browser MCP server\n- Home MCP server\n- Database MCP server\n- Email bridge\n- iMessage bridge\n- *(Optional)* Bundled local model container\n\n**All services share:**\n- A private internal Docker network — no container is exposed to the internet\n- A read-only mount of the directory containing the cryptographic identity files\n\n**Local model:** By default the agent connects to a model server running on the host machine. For an all-in-one deployment, a bundled model container can be started with an optional profile flag.\n\nAll agent state lives in encrypted cloud storage, not in container volumes. Containers can be destroyed and recreated freely — state returns from the cloud on next startup.",
+            "showNotes": true,
+            "nodeWidth": 380,
+            "nodeHeight": 360,
+            "type": "process"
+          },
+          "width": 380,
+          "height": 360
+        },
+        {
+          "id": "node_env",
+          "type": "custom",
+          "position": {
+            "x": 50,
+            "y": 540
+          },
+          "data": {
+            "label": "Runtime Configuration",
+            "description": "A small environment file controls all deployment-specific settings",
+            "notes": "All environment-specific configuration lives in an environment file that is never committed to source control. A template file is committed showing which variables are needed.\n\n**Required settings:**\n- The three identity names (agent, owner, services)\n- The identity credential filenames\n- The directory containing credential files\n- Which identities are allowed to send commands to the agent\n- The local model endpoint URL\n- The timezone for scheduled tasks\n\n**Optional:**\n- A browser automation endpoint for full web interaction\n\n**API keys** for external LLM providers are **never** stored in the environment file. They are stored as encrypted values in the agent's own cloud storage and retrieved at runtime. This means a leaked environment file cannot expose an API key.",
+            "showNotes": true,
+            "nodeWidth": 380,
+            "nodeHeight": 340,
+            "type": "process"
+          },
+          "width": 380,
+          "height": 340
+        },
+        {
+          "id": "node_dockerfiles",
+          "type": "custom",
+          "position": {
+            "x": 520,
+            "y": 100
+          },
+          "data": {
+            "label": "Container Builds",
+            "description": "Each service has its own multi-stage build — compile once, run lean",
+            "notes": "Each service is built as a lean Docker image using a two-stage process:\n\n1. **Build stage** — uses the full language SDK to compile the service to a standalone native binary\n2. **Runtime stage** — starts from a minimal base image, copies only the compiled binary and any required runtime libraries\n\nThe final images contain no SDK or source code — only what is needed to run.\n\n**Important:** All builds use the repository root as the build context, not the individual service subdirectory. This is required because some services share common code or need to copy files from sibling directories.\n\nThe database service additionally needs a system library installed in the final runtime image because the database driver links against it at runtime.",
+            "showNotes": true,
+            "nodeWidth": 380,
+            "nodeHeight": 320,
+            "type": "process"
+          },
+          "width": 380,
+          "height": 320
+        },
+        {
+          "id": "node_atkeys",
+          "type": "custom",
+          "position": {
+            "x": 520,
+            "y": 500
+          },
+          "data": {
+            "label": "Three Identities",
+            "description": "The entire system needs exactly three cryptographic identities",
+            "notes": "Pembrook is designed to run with exactly **three identities**, regardless of how many bridges, MCP servers, or skills you add:\n\n1. **Agent identity** — the AI daemon\n2. **Owner identity** — your personal app\n3. **Services identity** — shared by every bridge, every MCP server, and every skill sandbox\n\nProvision each identity at **my.atsign.com** (free tier available). Download the credential file for each. Store them in a secure directory that all Docker containers can access read-only.\n\n**Critical:** Never regenerate a credential file for a deployed identity. This would invalidate all encrypted data stored on that identity's cloud server, including all conversations, policies, and settings. All Pembrook state lives in an identity's encrypted cloud storage — destroying the credential destroys access to all of it.",
+            "showNotes": true,
+            "nodeWidth": 380,
+            "nodeHeight": 320,
+            "type": "process"
+          },
+          "width": 380,
+          "height": 320
+        },
+        {
+          "id": "node_ollama",
+          "type": "custom",
+          "position": {
+            "x": 990,
+            "y": 100
+          },
+          "data": {
+            "label": "Local LLM (Ollama)",
+            "description": "All reasoning and tool calling runs on a local model — data never leaves the machine",
+            "notes": "The agent uses Ollama as its local inference engine. All conversation processing, tool-calling decisions, intent classification, and privacy scoring run on a model that never sends queries to any third party.\n\n**Recommended model:** `qwen2.5:7b` — good tool-calling capability at a reasonable hardware cost. Other capable alternatives include `llama3.1:8b` and `mistral-nemo`.\n\n**Tool calling requirement:** The model must support native tool/function calling. Not all Ollama models do — verify support before switching models.\n\n**Deployment options:**\n- Run Ollama directly on the host machine (default)\n- Use an optional bundled container profile for a fully self-contained deployment\n\nThe active model name is stored in the agent's encrypted cloud storage and can be changed at runtime without restarting.",
+            "showNotes": true,
+            "nodeWidth": 380,
+            "nodeHeight": 340,
+            "type": "process"
+          },
+          "width": 380,
+          "height": 340
+        },
+        {
+          "id": "node_security",
+          "type": "custom",
+          "position": {
+            "x": 990,
+            "y": 520
+          },
+          "data": {
+            "label": "Security Model",
+            "description": "Zero open ports · cryptographic identity · trust levels · policy engine · immutable audit",
+            "notes": "Pembrook was designed from scratch with defence-in-depth. The security model has several independent layers:\n\n**1. Zero open ports**\nEvery component makes only outbound connections. Nothing listens for inbound connections. Network scanners cannot find the agent.\n\n**2. Cryptographic identity**\nEvery message is signed by the sender's private key. The recipient verifies the signature before acting. Impersonation requires stealing the private key.\n\n**3. End-to-end encryption**\nThe relay network never sees plaintext. All data is encrypted by the sender and can only be decrypted by the intended recipient.\n\n**4. Trust levels**\nMessages are tagged by how trusted their source is. Only the owner's messages and messages from verified skills can influence memory and LLM context. Bridge messages from third parties are answered but cannot poison conversation history.\n\n**5. Policy engine**\nEvery tool call, skill invocation, and MCP request goes through owner-defined rules before executing. The owner can allow, deny, or require approval for any category of action.\n\n**6. Human-in-the-loop**\nHigh-risk actions pause and ask the owner before executing. The owner has final say.\n\n**7. Immutable audit trail**\nAll actions are logged to the owner's own cloud storage. The owner retains an independent record that the agent cannot alter or delete.\n\n**8. Verified skills**\nSkills require a verified developer identity. Anonymous plugins are rejected at install time.\n\n**9. Sandboxed execution**\nSkills run in isolated containers with no access to agent internals or the host network.\n\n**10. PII protection**\nBefore any query goes to an external LLM, personal information is removed. High-privacy queries never leave the local machine.",
+            "showNotes": true,
+            "nodeWidth": 380,
+            "nodeHeight": 360,
+            "type": "process"
+          },
+          "width": 380,
+          "height": 360
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_compose_env",
+          "type": "smoothstep",
+          "source": "node_compose",
+          "target": "node_env",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#3BB9CF",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "10, 5"
+          },
+          "label": "Async Comms",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "async",
+            "description": "Asynchronous communication (fire and forget)"
+          },
+          "className": "edge-async",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_compose_df",
+          "type": "smoothstep",
+          "source": "node_compose",
+          "target": "node_dockerfiles",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#3BB9CF",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "10, 5"
+          },
+          "label": "Async Comms",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "async",
+            "description": "Asynchronous communication (fire and forget)"
+          },
+          "className": "edge-async",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_compose_keys",
+          "type": "smoothstep",
+          "source": "node_compose",
+          "target": "node_atkeys",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#3BB9CF",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "10, 5"
+          },
+          "label": "Async Comms",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "async",
+            "description": "Asynchronous communication (fire and forget)"
+          },
+          "className": "edge-async",
+          "interactionWidth": 20
+        },
+        {
+          "id": "e_compose_ollama",
+          "type": "smoothstep",
+          "source": "node_compose",
+          "target": "node_ollama",
+          "sourceHandle": null,
+          "targetHandle": null,
+          "animated": false,
+          "style": {
+            "stroke": "#42AAD7",
+            "strokeWidth": 2.5,
+            "strokeDasharray": "8, 4, 2, 4"
+          },
+          "label": "RPC",
+          "labelStyle": {
+            "fill": "#555",
+            "fontWeight": 500,
+            "fontSize": 12,
+            "stroke": "none",
+            "strokeWidth": 0
+          },
+          "labelBgStyle": {
+            "fill": "white",
+            "fillOpacity": 0.9,
+            "stroke": "none"
+          },
+          "labelBgPadding": [
+            8,
+            4
+          ],
+          "labelBgBorderRadius": 4,
+          "data": {
+            "notes": "",
+            "connectionType": "rpc",
+            "description": "Remote Procedure Call"
+          },
+          "className": "edge-rpc",
+          "interactionWidth": 20
+        }
+      ],
+      "brand": "atPlatform"
+    }
+  ],
+  "activeBrand": "atPlatform",
+  "currentPageIndex": 0,
+  "timestamp": "2026-03-16T00:00:00.000Z",
+  "version": "2.0"
+}
