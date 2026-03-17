@@ -7,6 +7,7 @@
 import 'dart:convert';
 
 import 'package:at_client/at_client.dart';
+import 'package:at_client_flutter/at_client_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -287,10 +288,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
-    if (confirm == true && mounted) {
-      // Phase 1: just pop back to auth for now.
-      // Phase 2: revoke APKAM keys from @owner's atServer.
+    if (confirm != true || !mounted) return;
+
+    // Remove keys from local keychain so the next launch shows the auth screen.
+    try {
+      final storage = KeychainStorage();
+      final atSigns = await storage.getAllAtsigns();
+      for (final s in atSigns) {
+        await storage.removeAtsignFromKeychain(s);
+      }
+    } catch (_) {
+      // Best-effort — even if keychain removal fails, still sign out.
     }
+
+    if (!mounted) return;
+    // Reset in-memory RPC session state.
+    // ignore: use_build_context_synchronously
+    context.read<RpcService>().signOut();
+    // ignore: use_build_context_synchronously
+    context.go('/auth');
   }
 }
 

@@ -51,6 +51,12 @@ class _Message {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Chat action menu
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum _ChatAction { clearNotifications, deleteChat }
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  ChatScreen
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -219,12 +225,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // listenToPushMessages() also drains any messages that arrived while
     // this screen was unmounted (e.g. user was on Settings/Skills screen).
     _pushSub?.cancel();
-    _pushSub = _rpcService!.listenToPushMessages((push) {
-      final header = '**\u23f0 ${push.description}**\n\n';
+    _pushSub = _rpcService!.listenToPushMessages(_conversationId, (push) {
+      // Only show in this chat if the push belongs to the current conversation
+      // (or has no routing). Otherwise the badge is already updated.
+      if (push.conversationId.isNotEmpty &&
+          push.conversationId != _conversationId) {
+        return;
+      }
       if (!mounted) return;
       setState(() {
         _messages.add(_Message(
-          text: '$header${push.result}',
+          text: '**\u23f0 ${push.description}**\n\n${push.result}',
           isUser: false,
           timestamp: push.ts,
         ));
@@ -279,6 +290,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   /// Load a past conversation from [summary].
   void _loadConversation(ConversationSummary summary) {
+    // Mark this conversation as read and drain any pending push messages.
+    _rpcService?.markConvRead(summary.id);
+    final pendingPushes = _rpcService?.drainPushesForConv(summary.id) ?? [];
     setState(() {
       _conversationId = summary.id;
       _messages
@@ -288,6 +302,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               isUser: s.isUser,
               timestamp: s.timestamp,
             )));
+      // Append any push notifications that arrived while this conv was away.
+      for (final push in pendingPushes) {
+        _messages.add(_Message(
+          text: '**\u23f0 ${push.description}**\n\n${push.result}',
+          isUser: false,
+          timestamp: push.ts,
+        ));
+      }
       // Clear the visible stream buffer and remote-receive flag (switching display).
       // Do NOT touch _activeStreamConvId or _isLoading — a request may still
       // be in-flight for a different conversation; we keep blocking sends and
@@ -308,15 +330,56 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       appBar: AppBar(
         title: const Text('Pembrook'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.forum_outlined),
-            tooltip: 'Conversation history',
-            onPressed: _openHistory,
+          // History icon with badge showing unread background-response count.
+          Consumer<RpcService>(
+            builder: (context, rpc, _) {
+              final count = rpc.unreadConvIds.length;
+              return Badge(
+                isLabelVisible: count > 0,
+                label: Text('$count'),
+                child: IconButton(
+                  icon: const Icon(Icons.forum_outlined),
+                  tooltip: 'Conversation history',
+                  onPressed: _openHistory,
+                ),
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.add_comment),
             tooltip: 'New conversation',
             onPressed: _newConversation,
+          ),
+          PopupMenuButton<_ChatAction>(
+            tooltip: 'More options',
+            onSelected: (action) {
+              switch (action) {
+                case _ChatAction.clearNotifications:
+                  context.read<RpcService>().clearAllNotifications();
+                  break;
+                case _ChatAction.deleteChat:
+                  _deleteCurrentConversation();
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: _ChatAction.clearNotifications,
+                child: ListTile(
+                  leading: Icon(Icons.notifications_off_outlined),
+                  title: Text('Clear all notifications'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: _ChatAction.deleteChat,
+                child: ListTile(
+                  leading: Icon(Icons.delete_outline),
+                  title: Text('Delete this conversation'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -508,6 +571,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ],
         );
         await _store?.save(updated);
+        // Mark this conversation as having unread content.
+        _rpcService?.markConvUnread(sendConvId);
       }
       // Response saved silently — user will see it when they navigate
       // back to that conversation.
@@ -541,6 +606,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (summary != null && mounted) {
       _loadConversation(summary);
     }
+  }
+
+  /// Delete the current conversation and start a fresh one.
+  void _deleteCurrentConversation() {
+    final convId = _conversationId;
+    _store?.delete(convId);
+    _rpcService?.markConvRead(convId); // clear any unread badge for it
+    setState(() {
+      _conversationId = _uuid.v4();
+      _messages
+        ..clear()
+        ..add(_Message(text: _welcomeText, isUser: false));
+      _streamBuffer = '';
+    });
   }
 
   void _scrollToBottom() {

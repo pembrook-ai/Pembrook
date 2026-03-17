@@ -14,12 +14,260 @@
 ///   - RpcService is initialised with the authenticated AtClient.
 ///   - Route pushed to /home.
 
+import 'dart:io';
+
+import 'package:at_auth/at_auth.dart';
+import 'package:at_client_flutter/at_client_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 
-import 'walkthrough.dart';
+import '../services/data_service.dart';
+import '../services/rpc_service.dart';
 
-class AuthScreen extends StatelessWidget {
+// Keep enum/class available for any other references.
+export 'walkthrough.dart' show AuthWorkflow;
+
+class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
+
+  @override
+  State<AuthScreen> createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends State<AuthScreen> {
+  static const String _namespace = 'pembrook';
+  static const _rootDomain = AtRootDomain.atsignDomain;
+
+  List<String> _keychainAtSigns = [];
+  String? _selectedAtSign;
+  bool _loading = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadKeychainAtSigns();
+  }
+
+  Future<void> _loadKeychainAtSigns() async {
+    final storage = KeychainStorage();
+    final atSigns = await storage.getAllAtsigns();
+    if (mounted) {
+      setState(() {
+        _keychainAtSigns = atSigns;
+        _selectedAtSign = atSigns.isNotEmpty ? atSigns.first : null;
+      });
+    }
+  }
+
+  void _setLoading(bool v) {
+    if (mounted) setState(() => _loading = v);
+  }
+
+  void _setError(String? v) {
+    if (mounted) setState(() => _errorMessage = v);
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  Keychain login (returning user)
+  // ══════════════════════════════════════════════════════
+
+  Future<void> _keychainFlow() async {
+    final atSign = _selectedAtSign;
+    if (atSign == null) return;
+
+    _setLoading(true);
+    _setError(null);
+    try {
+      final request = AtAuthRequest(
+        atSign,
+        rootDomain: _rootDomain,
+        atKeysIo: KeychainAtKeysIo(),
+      );
+
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
+      final response = await PkamDialog.show(context,
+          request: request, backupKeys: [KeychainAtKeysIo()]);
+      if (response == null || !response.isSuccessful) return;
+
+      await _finishAuth(response);
+    } catch (e) {
+      _setError('Login error: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  Registrar CRAM (activate a brand-new atSign)
+  // ══════════════════════════════════════════════════════
+
+  Future<void> _registrarFlow() async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
+      final authRequest = await AtSignSelectionDialog.show(context);
+      if (authRequest == null) return;
+
+      final request = AtOnboardingRequest(
+        authRequest.atSign,
+        rootDomain: authRequest.rootDomain,
+        atKeysIo: KeychainAtKeysIo(),
+      );
+
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
+      final cramKey = await RegistrarCramDialog.show(
+        context,
+        request,
+        registrar: RegistrarService(
+          registrarUrl: 'my.atsign.com',
+          apiKey: 'at_prod_1dcbe8e7-0672-4ff0-ab2b-53d8f4aebfc2',
+        ),
+      );
+      if (cramKey == null) return;
+
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
+      final response =
+          await CramDialog.show(context, request: request, cramKey: cramKey);
+      if (response == null || !response.isSuccessful) return;
+
+      await _finishAuth(response);
+    } catch (e) {
+      _setError('Activation error: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  .atKeys file
+  // ══════════════════════════════════════════════════════
+
+  Future<void> _atKeysFileFlow() async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
+      final fileAtKeysIo = await AtKeysFileDialog.show(context);
+      if (fileAtKeysIo == null) return;
+
+      final filepath = fileAtKeysIo.filePath!('');
+      final parts = filepath.split(Platform.pathSeparator).last;
+      final atSign = parts.split('_').first;
+
+      final request = AtAuthRequest(
+        atSign,
+        rootDomain: _rootDomain,
+        atKeysIo: fileAtKeysIo,
+      );
+
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
+      final response = await PkamDialog.show(context,
+          request: request, backupKeys: [KeychainAtKeysIo()]);
+      if (response == null || !response.isSuccessful) return;
+
+      await _finishAuth(response);
+    } catch (e) {
+      _setError('Import error: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  APKAM
+  // ══════════════════════════════════════════════════════
+
+  Future<void> _apkamFlow() async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
+      final authRequest = await AtSignSelectionDialog.show(context);
+      if (authRequest == null) return;
+
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
+      final enroll = await ApkamActivationDialog.show(
+        context,
+        atSign: authRequest.atSign,
+        rootDomain: authRequest.rootDomain,
+        appName: 'pembrook',
+        deviceName: 'phone',
+        namespaces: {'pembrook': 'rw'},
+      );
+      if (enroll == null || enroll.atAuthKeys == null) return;
+
+      final request = AtAuthRequest(
+        authRequest.atSign,
+        rootDomain: authRequest.rootDomain,
+        atAuthKeys: enroll.atAuthKeys,
+      );
+
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
+      final response = await PkamDialog.show(context,
+          request: request, backupKeys: [KeychainAtKeysIo()]);
+      if (response == null || !response.isSuccessful) return;
+
+      await _finishAuth(response);
+    } catch (e) {
+      _setError('APKAM error: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  COMMON: finish authentication
+  // ══════════════════════════════════════════════════════
+
+  Future<void> _finishAuth(AuthResponse response) async {
+    final appDir = await getApplicationSupportDirectory();
+    final storageDir = Directory('${appDir.path}/pembrook_keys');
+    await storageDir.create(recursive: true);
+
+    final pref = AtClientPreference()
+      ..rootDomain = _rootDomain.rootDomain
+      ..namespace = _namespace
+      ..hiveStoragePath = storageDir.path
+      ..commitLogPath = storageDir.path
+      ..isLocalStoreRequired = true;
+
+    await AtClientManager.getInstance().setCurrentAtSign(
+      response.atSign,
+      _namespace,
+      pref,
+      enrollmentId: response.enrollmentId,
+      atChops: response.atChops,
+      atLookUp: response.atLookUp,
+    );
+
+    if (!mounted) return;
+    final atClient = AtClientManager.getInstance().atClient;
+    // ignore: use_build_context_synchronously
+    await context.read<RpcService>().initialise(atClient);
+    // ignore: use_build_context_synchronously
+    await context.read<DataService>().initialise(atClient);
+    // ignore: use_build_context_synchronously
+    await context.read<ConversationStore>().initialise(atClient);
+    // ignore: use_build_context_synchronously
+    context.go('/home');
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  Build
+  // ══════════════════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
@@ -52,43 +300,111 @@ class AuthScreen extends StatelessWidget {
               ),
               const Spacer(),
 
-              // ── Auth workflow buttons (per ATPLATFORM_GUIDELINES.md) ────
-              // 1. Returning user — keys already stored on this device.
-              _AuthButton(
-                icon: Icons.lock_open,
-                label: 'Login from Keychain',
-                subtitle: 'Use an atSign already on this device',
-                onTap: () => _startAuth(context, AuthWorkflow.keychain),
-              ),
+              // ── Error banner ─────────────────────────────────────────────
+              if (_errorMessage != null) ...[
+                Card(
+                  color: Theme.of(context).colorScheme.errorContainer,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      _errorMessage!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+
+              // ── Loading indicator ─────────────────────────────────────────
+              if (_loading) ...[
+                const Center(child: CircularProgressIndicator()),
+                const SizedBox(height: 12),
+              ],
+
+              // ── 1. Login from Keychain ─────────────────────────────────
+              if (_keychainAtSigns.isEmpty)
+                _AuthButton(
+                  icon: Icons.lock_open,
+                  label: 'Login from Keychain',
+                  subtitle: 'No atSigns found on this device',
+                  enabled: false,
+                  onTap: () {},
+                )
+              else
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    child: Row(
+                      children: [
+                        Icon(Icons.lock_open,
+                            color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: _selectedAtSign,
+                            decoration: const InputDecoration(
+                              labelText: 'Login from Keychain',
+                              border: InputBorder.none,
+                              isDense: true,
+                            ),
+                            items: _keychainAtSigns
+                                .map((s) => DropdownMenuItem(
+                                      value: s,
+                                      child: Text(s),
+                                    ))
+                                .toList(),
+                            onChanged: _loading
+                                ? null
+                                : (v) =>
+                                    setState(() => _selectedAtSign = v),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _loading ? null : _keychainFlow,
+                          child: const Text('Login'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
               const SizedBox(height: 12),
-              // 2. First-time activation of a brand-new atSign via registrar.
+
+              // ── 2. Activate new atSign ───────────────────────────────────
               _AuthButton(
                 icon: Icons.person_add,
                 label: 'Activate new atSign',
                 subtitle: 'First-time setup via my.atsign.com',
-                onTap: () => _startAuth(context, AuthWorkflow.registrar),
+                enabled: !_loading,
+                onTap: _registrarFlow,
               ),
               const SizedBox(height: 12),
-              // 3. Enrol this app on a new device (requires approval on
-              //    an already-authorised device).
+
+              // ── 3. APKAM enrolment ───────────────────────────────────────
               _AuthButton(
                 icon: Icons.phonelink_setup,
                 label: 'APKAM — new device enrolment',
                 subtitle: 'Approve this device from another authorised device',
-                onTap: () => _startAuth(context, AuthWorkflow.apkam),
+                enabled: !_loading,
+                onTap: _apkamFlow,
               ),
               const SizedBox(height: 12),
-              // 4. Import a previously exported .atKeys backup file.
+
+              // ── 4. Import .atKeys file ───────────────────────────────────
               _AuthButton(
                 icon: Icons.upload_file,
                 label: 'Import .atKeys file',
                 subtitle: 'Use an exported key file backup',
-                onTap: () => _startAuth(context, AuthWorkflow.atKeysFile),
+                enabled: !_loading,
+                onTap: _atKeysFileFlow,
               ),
 
               const Spacer(),
 
-              // ── atSign info ──────────────────────────────────────────────
               Text(
                 'You need a provisioned @owner atSign.\nGet one free at my.atsign.com',
                 style: Theme.of(context).textTheme.bodySmall,
@@ -101,20 +417,13 @@ class AuthScreen extends StatelessWidget {
       ),
     );
   }
-
-  void _startAuth(BuildContext context, AuthWorkflow workflow) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => AuthWalkthrough(workflow: workflow),
-      ),
-    );
-  }
 }
 
 class _AuthButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final String subtitle;
+  final bool enabled;
   final VoidCallback onTap;
 
   const _AuthButton({
@@ -122,17 +431,19 @@ class _AuthButton extends StatelessWidget {
     required this.label,
     required this.subtitle,
     required this.onTap,
+    this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: ListTile(
+        enabled: enabled,
         leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
         title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Text(subtitle),
         trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
+        onTap: enabled ? onTap : null,
       ),
     );
   }

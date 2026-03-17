@@ -410,6 +410,7 @@ class Orchestrator {
   // Used by _executeTool to route skill tool calls without changing its signature.
   String _toolFromAtSign = '';
   String _toolConvId = '';
+  String _toolUserTimezone = '';
 
   Orchestrator({
     required this.atClient,
@@ -441,6 +442,7 @@ class Orchestrator {
     required String platform,
     required int reqId,
     bool streamingEnabled = true,
+    String userTimezone = '',
   }) async {
     _log.info('Processing request convId=$conversationId '
         'from=$fromAtSign platform=$platform');
@@ -448,6 +450,7 @@ class Orchestrator {
     final startTime = DateTime.now();
     _toolFromAtSign = fromAtSign;
     _toolConvId = conversationId;
+    _toolUserTimezone = userTimezone;
 
     // ── 1. Load context from Memory Service ───────────────────────────────
     Conversation? conversation;
@@ -539,6 +542,7 @@ class Orchestrator {
           tools: activeTools,
           toolExecutor: _executeTool,
           onChunk: streamingEnabled ? _batchChunk : null,
+          userTimezone: _toolUserTimezone,
         );
         if (streamingEnabled)
           await _flushTokenBuf(); // drain any buffered remainder
@@ -605,6 +609,7 @@ class Orchestrator {
           tools: activeTools,
           toolExecutor: _executeTool,
           onChunk: streamingEnabled ? _batchChunk : null,
+          userTimezone: _toolUserTimezone,
         );
         if (streamingEnabled) await _flushTokenBuf();
 
@@ -925,7 +930,7 @@ class Orchestrator {
       cronExpression: cron,
       runAt: runAt,
       skillToInvoke: skillId,
-      parameters: {'command': command, 'description': description},
+      parameters: {'command': command, 'description': description, 'conversationId': _toolConvId},
       hitlRequired: false,
       ownerAtSign: Platform.environment['OWNER_AT_SIGN'] ?? '@owner',
       createdAt: DateTime.now().toUtc(),

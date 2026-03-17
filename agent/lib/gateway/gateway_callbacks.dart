@@ -84,6 +84,9 @@ class GatewayCallbacks implements AtRpcCallbacks {
       final effectiveSender = payload['senderAtSign'] as String? ?? fromAtSign;
       final platform = payload['platform'] as String? ?? 'app';
       final streamingEnabled = payload['streamingEnabled'] as bool? ?? true;
+      // Owner's local timezone string sent by the app, e.g. "UTC-07:00 (PDT)".
+      // Passed to the LLM so it can correctly interpret wall-clock times.
+      final userTimezone = payload['userTimezone'] as String? ?? '';
 
       if (command.isEmpty) {
         return _errorResponse(request.reqId, 'Empty command');
@@ -146,6 +149,7 @@ class GatewayCallbacks implements AtRpcCallbacks {
         platform: platform,
         reqId: request.reqId,
         streamingEnabled: streamingEnabled,
+        userTimezone: userTimezone,
       );
 
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;

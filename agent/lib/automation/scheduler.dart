@@ -223,9 +223,10 @@ class TaskScheduler {
   // ──────────────────────────────────────────────────────────
 
   Future<void> tick() async {
-    // Use LOCAL time so cron expressions match the user's timezone.
-    // e.g. "0 8 * * *" fires at 8am local, not 8am UTC.
-    final now = DateTime.now();
+    // Agent container always runs in UTC. Cron expressions like "0 8 * * *"
+    // therefore fire at 8am UTC. The owner's app sends their local timezone
+    // with requests so the LLM converts wall-clock inputs correctly.
+    final now = DateTime.now().toUtc();
 
     // Try to get a fresh list from the atServer.  If that fails (transient
     // outage), fall back to the in-memory cache so tasks aren't silently
@@ -340,7 +341,9 @@ class TaskScheduler {
     if (result != null) {
       final description =
           task.parameters['description'] as String? ?? task.taskId;
-      await _pushResultToOwner(task.taskId, description, result);
+      final convId =
+          task.parameters['conversationId'] as String? ?? '';
+      await _pushResultToOwner(task.taskId, description, result, convId);
     }
 
     // ── Phase 4: stub run.  Remove when code above replaces all paths. ─────
@@ -382,6 +385,7 @@ class TaskScheduler {
     String taskId,
     String description,
     String result,
+    String conversationId,
   ) async {
     try {
       final ts = DateTime.now().millisecondsSinceEpoch;
@@ -401,6 +405,7 @@ class TaskScheduler {
             'description': description,
             'result': result,
             'ts': ts,
+            'conversationId': conversationId,
           }),
         ),
       );
@@ -426,9 +431,11 @@ class TaskScheduler {
       return _matchesCron(task.cronExpression!, now);
     }
     if (task.runAt != null) {
-      // Run if within a 1-minute window
-      final diff = now.difference(task.runAt!).abs();
-      return diff.inSeconds < 60;
+      // Fire if the scheduled time has arrived (or been missed).
+      // Allow up to 60 minutes of catch-up so tasks missed during a container
+      // restart or brief outage still execute when the agent comes back online.
+      final elapsed = now.difference(task.runAt!);
+      return elapsed.inSeconds >= 0 && elapsed.inMinutes < 60;
     }
     return false;
   }

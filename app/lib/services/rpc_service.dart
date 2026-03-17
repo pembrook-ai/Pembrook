@@ -61,12 +61,14 @@ class PushMessage {
   final String description;
   final String result;
   final DateTime ts;
+  final String conversationId;
 
   const PushMessage({
     required this.taskId,
     required this.description,
     required this.result,
     required this.ts,
+    this.conversationId = '',
   });
 }
 
@@ -109,6 +111,16 @@ class RpcService extends ChangeNotifier {
   // Suppresses buffering so messages aren't shown twice on remount.
   bool _hasPushListener = false;
 
+  // Unread counters — tracked so the UI can show badges.
+  // Push messages from scheduled tasks bump _unreadPushCount while ChatScreen
+  // is unmounted; cleared when listenToPushMessages() is called.
+  int _unreadPushCount = 0;
+  // Conversation IDs that have received a background response since last opened.
+  final Set<String> _unreadConvIds = {};
+  // Push messages buffered by originating conversationId so the correct
+  // ChatScreen session can display them when the user opens that conversation.
+  final Map<String, List<PushMessage>> _pendingPushByConv = {};
+
   /// Stream of chunk events keyed by conversationId.
   /// ChatScreen should filter: `streamChunkEvents.where((e) => e.conversationId == _conversationId)`
   Stream<StreamChunkEvent> get streamChunkEvents =>
@@ -126,12 +138,22 @@ class RpcService extends ChangeNotifier {
   /// Call from ChatScreen.didChangeDependencies().
   /// Call releasePushListener() from ChatScreen.dispose() BEFORE cancelling.
   StreamSubscription<PushMessage> listenToPushMessages(
-      void Function(PushMessage) onMessage) {
+      String currentConvId, void Function(PushMessage) onMessage) {
     _hasPushListener = true;
-    // Deliver messages that arrived while the screen was unmounted.
+    // Clear the unread push badge — user is now viewing the chat.
+    if (_unreadPushCount > 0) {
+      _unreadPushCount = 0;
+      notifyListeners();
+    }
+    // Deliver unrouted messages that arrived while the screen was unmounted.
     final buffered = List<PushMessage>.from(_pushBuffer);
     _pushBuffer.clear();
     for (final msg in buffered) {
+      onMessage(msg);
+    }
+    // Deliver any push messages buffered for the currently open conversation.
+    final pending = drainPushesForConv(currentConvId);
+    for (final msg in pending) {
       onMessage(msg);
     }
     return _pushController.stream.listen(onMessage);
@@ -139,6 +161,38 @@ class RpcService extends ChangeNotifier {
 
   /// Call from ChatScreen.dispose() to re-enable buffering.
   void releasePushListener() => _hasPushListener = false;
+
+  /// Total unread push notifications (scheduled task results) since last visit.
+  int get unreadPushCount => _unreadPushCount;
+
+  /// Conversation IDs that received a background response since last opened.
+  Set<String> get unreadConvIds => Set.unmodifiable(_unreadConvIds);
+
+  /// Mark a conversation as having new unread content.
+  void markConvUnread(String convId) {
+    _unreadConvIds.add(convId);
+    notifyListeners();
+  }
+
+  /// Mark a conversation as read (called when the user opens it).
+  void markConvRead(String convId) {
+    if (_unreadConvIds.remove(convId)) notifyListeners();
+  }
+
+  /// Clear all unread badges and discard buffered push messages.
+  void clearAllNotifications() {
+    _unreadPushCount = 0;
+    _unreadConvIds.clear();
+    _pushBuffer.clear();
+    _pendingPushByConv.clear();
+    notifyListeners();
+  }
+
+  /// Drain and return any push messages buffered for [convId].
+  /// Called by ChatScreen when the user opens (or navigates to) a conversation.
+  List<PushMessage> drainPushesForConv(String convId) {
+    return _pendingPushByConv.remove(convId) ?? [];
+  }
 
   bool get isAuthenticated => _atClient != null;
   String get agentAtSign => _agentAtSign;
@@ -195,6 +249,7 @@ class RpcService extends ChangeNotifier {
         'conversationId': conversationId,
         'platform': _platformName(),
         'streamingEnabled': streamingEnabled,
+        'userTimezone': _timezoneString(),
         ...payload,
       }).timeout(_callTimeout);
 
@@ -290,10 +345,24 @@ class RpcService extends ChangeNotifier {
           ts: DateTime.fromMillisecondsSinceEpoch(
               (map['ts'] as num?)?.toInt() ??
                   DateTime.now().millisecondsSinceEpoch),
+          conversationId: map['conversationId'] as String? ?? '',
         );
         if (push.result.isNotEmpty) {
-          // Buffer only when ChatScreen is not actively listening.
-          if (!_hasPushListener) _pushBuffer.add(push);
+          if (push.conversationId.isNotEmpty) {
+            // Store keyed by originating conversation and bump its badge.
+            _pendingPushByConv
+                .putIfAbsent(push.conversationId, () => [])
+                .add(push);
+            _unreadConvIds.add(push.conversationId);
+            notifyListeners();
+          } else if (!_hasPushListener) {
+            // No conversationId: fall back to general buffer when away.
+            _pushBuffer.add(push);
+            _unreadPushCount++;
+            notifyListeners();
+          }
+          // Always deliver to the live stream so ChatScreen can show it
+          // immediately if it belongs to the currently open conversation.
           _pushController.add(push);
         }
       } catch (_) {}
@@ -308,6 +377,17 @@ class RpcService extends ChangeNotifier {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Returns the device's UTC offset + abbreviation, e.g. "UTC-07:00 (PDT)".
+  /// Sent with every RPC call so the agent's LLM can localise scheduled times.
+  String _timezoneString() {
+    final now = DateTime.now();
+    final offset = now.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final hours = offset.inHours.abs().toString().padLeft(2, '0');
+    final mins = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');
+    return 'UTC$sign$hours:$mins (${now.timeZoneName})';
   }
 
   String _platformName() {
@@ -326,6 +406,23 @@ class RpcService extends ChangeNotifier {
       default:
         return 'unknown';
     }
+  }
+
+  /// Resets all session state — call before navigating to /auth on sign-out.
+  /// Does NOT touch the keychain; the caller is responsible for that.
+  void signOut() {
+    _streamSubscription?.cancel();
+    _streamSubscription = null;
+    _pushSubscription?.cancel();
+    _pushSubscription = null;
+    _rpcClient = null;
+    _atClient = null;
+    _unreadPushCount = 0;
+    _unreadConvIds.clear();
+    _pushBuffer.clear();
+    _pendingPushByConv.clear();
+    _hasPushListener = false;
+    notifyListeners();
   }
 
   @override

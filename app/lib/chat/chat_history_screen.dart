@@ -13,6 +13,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../services/data_service.dart';
+import '../services/rpc_service.dart';
 
 class ChatHistoryScreen extends StatelessWidget {
   const ChatHistoryScreen({super.key});
@@ -66,10 +67,16 @@ class ChatHistoryScreen extends StatelessWidget {
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (context, index) {
                 final conv = convs[index];
-                return _ConversationTile(
-                  summary: conv,
-                  onTap: () => context.pop(conv),
-                  onDelete: () => _confirmDelete(context, store, conv),
+                return Consumer<RpcService>(
+                  builder: (context, rpc, _) => _ConversationTile(
+                    summary: conv,
+                    isUnread: rpc.unreadConvIds.contains(conv.id),
+                    onTap: () {
+                      rpc.markConvRead(conv.id);
+                      context.pop(conv);
+                    },
+                    onDelete: () => _confirmDelete(context, store, conv),
+                  ),
                 );
               },
             ),
@@ -114,11 +121,13 @@ class ChatHistoryScreen extends StatelessWidget {
 
 class _ConversationTile extends StatelessWidget {
   final ConversationSummary summary;
+  final bool isUnread;
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
   const _ConversationTile({
     required this.summary,
+    required this.isUnread,
     required this.onTap,
     required this.onDelete,
   });
@@ -145,18 +154,25 @@ class _ConversationTile extends StatelessWidget {
         return false; // let onDelete handle it (with confirmation)
       },
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          child: Icon(
-            Icons.chat_bubble_outline,
-            size: 20,
-            color: Theme.of(context).colorScheme.onPrimaryContainer,
+        tileColor: isUnread
+            ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.18)
+            : null,
+        leading: Badge(
+          isLabelVisible: isUnread,
+          child: CircleAvatar(
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            child: Icon(
+              Icons.chat_bubble_outline,
+              size: 20,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
           ),
         ),
         title: Text(
           summary.title,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
+          style: isUnread ? const TextStyle(fontWeight: FontWeight.bold) : null,
         ),
         subtitle: Text(
           '$dateStr · $msgCount message${msgCount == 1 ? '' : 's'}',

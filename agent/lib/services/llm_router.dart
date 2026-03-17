@@ -122,6 +122,7 @@ Score:''';
     Future<String> Function(String toolName, Map<String, dynamic> args)?
         toolExecutor,
     Future<void> Function(String chunk)? onChunk,
+    String userTimezone = '',
   }) async {
     await _maybeRefreshSettings();
 
@@ -135,11 +136,16 @@ Score:''';
         .take(20) // last 20 trusted messages
         .toList();
 
+    final _tzLine = userTimezone.isNotEmpty
+        ? '\nOwner\'s local timezone: $userTimezone\nWhen the owner specifies a wall-clock time (e.g. "at 3pm"), interpret it in their local timezone and convert to UTC for runAt. Always confirm scheduled times back to the owner in their local time, not UTC.'
+        : '';
     final systemPrompt = systemOverride ??
-        '''You are Pem, a helpful and privacy-focused AI assistant. Pem is short for Pembrook.
-You operate exclusively for your owner. Be concise and accurate.
-Never suggest storing personal data outside the atPlatform.
-Current date: ${DateTime.now().toUtc().toIso8601String()}''';
+        'You are Pem, a helpful and privacy-focused AI assistant. Pem is short for Pembrook.\n'
+        'You operate exclusively for your owner. Be concise and accurate.\n'
+        'Never suggest storing personal data outside the atPlatform.\n'
+        'Current UTC time: ' +
+            DateTime.now().toUtc().toIso8601String() +
+            _tzLine;
 
     // Privacy routing decision
     final useLocal = _localOnly || privacyScore >= _privacyThreshold;
@@ -157,7 +163,7 @@ Current date: ${DateTime.now().toUtc().toIso8601String()}''';
 
 TOOL USE RULES — follow these exactly, every time:
 - schedule_task — use for ANY reminder, alert, or recurring automation:
-  • ONE-SHOT ("remind me in 5 min", "alert me at 3pm"): use the `runAt` field with an ISO-8601 UTC datetime computed from the Current date above. Example: if current time is 2026-03-16T14:30:00Z and user says "in 1 minute", set runAt="2026-03-16T14:31:00Z". NEVER use cronExpression for one-shot tasks.
+  • ONE-SHOT ("remind me in 5 min", "alert me at 3pm"): use the `runAt` field with an ISO-8601 UTC datetime. When the user says a wall-clock time (e.g. "at 3pm" or "14:00") treat it as the local timezone shown above and convert to UTC for `runAt`. Example: if local time is 2026-03-16T07:30:00-0700 and user says "at 8am", set runAt="2026-03-16T15:00:00Z". For relative times ("in 5 minutes") add the offset to the UTC time. NEVER use cronExpression for one-shot tasks. When confirming the schedule to the user ALWAYS state the local time, not UTC.
   • RECURRING ("every 30 min", "daily at 8am"): use `cronExpression` with standard cron syntax, e.g. "*/30 * * * *" or "0 8 * * *". WARNING: cron fields are [minute hour day month weekday] — "1 * * * *" means "at minute :01 of every hour", NOT "in 1 minute". Do not confuse cron field values with elapsed time.
   • Once schedule_task returns a Task ID, the task is saved and WILL fire automatically — do NOT call notify_owner afterwards, just confirm to the user in text.
 - notify_owner is ONLY for sending an immediate notification right now. Never call it after schedule_task; the scheduled task delivers its own notification when it fires.

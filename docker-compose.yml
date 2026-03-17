@@ -101,10 +101,9 @@ services:
       ALLOWED_USERS: "${ALLOWED_USERS:-}"
       # atSign shared by MCP servers / bridges — used for tool discovery
       SERVICES_AT_SIGN: "${SERVICES_AT_SIGN:-}"
-      # Timezone for cron scheduling — set TZ in .env to match your local time.
-      # e.g. TZ=Europe/London, TZ=America/New_York, TZ=Australia/Sydney
-      # Without this, cron expressions like "0 8 * * *" fire at 8am UTC.
-      TZ: "${TZ:-UTC}"
+      # Agent always runs UTC-only. The app sends the owner's local timezone
+      # with every request so the LLM can correctly interpret wall-clock times.
+      TZ: "UTC"
       # Optional: pass external LLM API keys from the host .env
       # OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       # ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
