@@ -71,7 +71,7 @@ class AuditService {
         putRequestOptions: PutRequestOptions()..useRemoteAtServer = true,
       );
 
-      _log.fine('Audit logged: ${entry.actionType} by ${entry.initiatorAtSign} '
+      _log.info('Audit logged: ${entry.actionType} by ${entry.initiatorAtSign} '
           '→ ${entry.policyDecision}');
     } catch (e) {
       // Audit failures are logged to stderr but never suppress the main operation.

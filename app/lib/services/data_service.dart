@@ -209,7 +209,8 @@ class DataService extends ChangeNotifier {
       if (remote == null) return [];
       final scanBuilder = ScanVerbBuilder()
         ..regex = regex
-        ..auth = true;
+        ..auth = true
+        ..showHiddenKeys = true; // required to surface cached: shared keys
       final result = await remote.executeVerb(scanBuilder);
       if (result.isEmpty) return [];
       // Response format: data:["key1","key2",...]
