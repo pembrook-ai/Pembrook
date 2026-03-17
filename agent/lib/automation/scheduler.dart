@@ -56,6 +56,15 @@ class TaskScheduler {
   /// outages don't prevent scheduled tasks from firing.
   final List<TaskDefinition> _taskCache = [];
 
+  /// Re-entrancy guard — prevents overlapping tick() calls (e.g. the
+  /// immediate on-startup tick racing with the first periodic timer tick).
+  bool _isTicking = false;
+
+  /// Task IDs that have already been dispatched in this process lifetime.
+  /// Prevents double-execution if a cancel() write fails transiently and
+  /// the task reappears in the next tick's listTasks() result.
+  final Set<String> _firedTaskIds = {};
+
   TaskScheduler({
     required this.atClient,
     required this.policyEngine,
@@ -223,6 +232,19 @@ class TaskScheduler {
   // ──────────────────────────────────────────────────────────
 
   Future<void> tick() async {
+    if (_isTicking) {
+      _log.fine('tick() re-entrancy skipped — previous tick still running');
+      return;
+    }
+    _isTicking = true;
+    try {
+      await _tickInner();
+    } finally {
+      _isTicking = false;
+    }
+  }
+
+  Future<void> _tickInner() async {
     // Agent container always runs in UTC. Cron expressions like "0 8 * * *"
     // therefore fire at 8am UTC. The owner's app sends their local timezone
     // with requests so the LLM converts wall-clock inputs correctly.
@@ -246,8 +268,16 @@ class TaskScheduler {
     }
 
     for (final task in tasks) {
+      // Skip if already fired in this process lifetime (guards against
+      // race between startup immediate tick and first periodic tick).
+      if (_firedTaskIds.contains(task.taskId)) continue;
+
       final shouldRun = _shouldRunNow(task, now);
       if (!shouldRun) continue;
+
+      // Mark as fired BEFORE any async work so a concurrent tick (if the
+      // guard somehow fails) won't execute the same task twice.
+      _firedTaskIds.add(task.taskId);
 
       // Remove one-shot tasks before running to prevent double execution.
       if (task.cronExpression == null) {
@@ -341,8 +371,7 @@ class TaskScheduler {
     if (result != null) {
       final description =
           task.parameters['description'] as String? ?? task.taskId;
-      final convId =
-          task.parameters['conversationId'] as String? ?? '';
+      final convId = task.parameters['conversationId'] as String? ?? '';
       await _pushResultToOwner(task.taskId, description, result, convId);
     }
 

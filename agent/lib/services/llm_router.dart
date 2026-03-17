@@ -141,9 +141,9 @@ Score:''';
         : '';
     final systemPrompt = systemOverride ??
         'You are Pem, a helpful and privacy-focused AI assistant. Pem is short for Pembrook.\n'
-        'You operate exclusively for your owner. Be concise and accurate.\n'
-        'Never suggest storing personal data outside the atPlatform.\n'
-        'Current UTC time: ' +
+                'You operate exclusively for your owner. Be concise and accurate.\n'
+                'Never suggest storing personal data outside the atPlatform.\n'
+                'Current UTC time: ' +
             DateTime.now().toUtc().toIso8601String() +
             _tzLine;
 

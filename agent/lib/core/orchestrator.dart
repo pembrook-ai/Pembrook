@@ -930,7 +930,11 @@ class Orchestrator {
       cronExpression: cron,
       runAt: runAt,
       skillToInvoke: skillId,
-      parameters: {'command': command, 'description': description, 'conversationId': _toolConvId},
+      parameters: {
+        'command': command,
+        'description': description,
+        'conversationId': _toolConvId
+      },
       hitlRequired: false,
       ownerAtSign: Platform.environment['OWNER_AT_SIGN'] ?? '@owner',
       createdAt: DateTime.now().toUtc(),
@@ -938,13 +942,40 @@ class Orchestrator {
 
     await taskScheduler!.scheduleTask(task);
 
-    final scheduleDesc =
-        cron != null ? 'every $cron (cron)' : 'once at $runAtStr';
+    // Build a human-friendly schedule description using local time when possible.
+    String scheduleDesc;
+    if (cron != null) {
+      scheduleDesc = 'every $cron (cron)';
+    } else if (runAt != null && _toolUserTimezone.isNotEmpty) {
+      scheduleDesc =
+          'once at ${_utcToLocalString(runAt.toUtc(), _toolUserTimezone)}';
+    } else {
+      scheduleDesc = 'once at $runAtStr';
+    }
     _log.info(
         '[schedule_task] Created task ${task.taskId}: $description ($scheduleDesc)');
     return 'Task scheduled — I will run "$description" $scheduleDesc and '
         'push the results to you automatically. '
         'Task ID: ${task.taskId}';
+  }
+
+  /// Convert a UTC DateTime to a local-time string using the owner's timezone
+  /// offset (e.g. "UTC-07:00 (PDT)") stored in [_toolUserTimezone].
+  /// Returns ISO-8601 UTC if the timezone string cannot be parsed.
+  String _utcToLocalString(DateTime utc, String tzStr) {
+    final match =
+        RegExp(r'UTC([+-])(\d{2}):(\d{2})\s*\(([^)]+)\)').firstMatch(tzStr);
+    if (match == null) return utc.toIso8601String();
+    final sign = match.group(1) == '+' ? 1 : -1;
+    final hours = int.parse(match.group(2)!);
+    final mins = int.parse(match.group(3)!);
+    final abbr = match.group(4)!;
+    final local = utc.add(Duration(hours: sign * hours, minutes: sign * mins));
+    final hh = local.hour.toString().padLeft(2, '0');
+    final mm = local.minute.toString().padLeft(2, '0');
+    final mo = local.month.toString().padLeft(2, '0');
+    final dd = local.day.toString().padLeft(2, '0');
+    return '${local.year}-$mo-${dd} $hh:$mm $abbr';
   }
 
   /// List all currently scheduled tasks.

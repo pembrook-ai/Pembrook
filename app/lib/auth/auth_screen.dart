@@ -335,8 +335,8 @@ class _AuthScreenState extends State<AuthScreen> {
               else
                 Card(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: Row(
                       children: [
                         Icon(Icons.lock_open,
@@ -358,8 +358,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                 .toList(),
                             onChanged: _loading
                                 ? null
-                                : (v) =>
-                                    setState(() => _selectedAtSign = v),
+                                : (v) => setState(() => _selectedAtSign = v),
                           ),
                         ),
                         const SizedBox(width: 8),
