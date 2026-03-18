@@ -188,7 +188,6 @@ class _AuditCard extends StatelessWidget {
     }
     if (raw == 'mcp.toolCall') return 'MCP Tool Call';
     if (raw.startsWith('task.run.')) {
-      // taskId format is typically "<name>_<uuid>"; show just the name part.
       final taskId = raw.substring(9);
       final label = taskId.contains('_') ? taskId.split('_').first : taskId;
       return 'Task: $label';
@@ -197,6 +196,8 @@ class _AuditCard extends StatelessWidget {
       return 'Skill: ${raw.substring(13)}';
     }
     if (raw == 'skill.invoke') return 'Skill Invocation';
+    if (raw == 'tool.fetch_webpage') return 'Fetch Webpage';
+    if (raw.startsWith('tool.')) return 'Tool: ${raw.substring(5)}';
     return raw;
   }
 

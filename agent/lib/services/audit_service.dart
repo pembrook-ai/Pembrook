@@ -20,6 +20,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:at_client/at_client.dart';
+import 'package:at_commons/at_builders.dart';
 import 'package:crypto/crypto.dart';
 import 'package:logging/logging.dart';
 import 'package:uuid/uuid.dart';
@@ -50,7 +51,6 @@ class AuditService {
     final ts = entry.timestamp.millisecondsSinceEpoch;
     final actionId = _uuid.v4().replaceAll('-', '');
 
-    // Key stored on @owner's atServer via sharedWith
     final auditKey = (AtKey.shared(
       'audit.$ts.$actionId',
       namespace: 'pembrook',
@@ -58,11 +58,9 @@ class AuditService {
     )..sharedWith(_ownerAtSign))
         .build()
       ..metadata = (Metadata()
-            ..immutable = true // value CANNOT be changed after creation
-            ..ttl =
-                7 * 24 * 60 * 60 * 1000 // 7-day TTL — auto-expires old entries
-            ..ttr = -1 // no time-to-refresh
-          );
+        ..immutable = true
+        ..ttl = 7 * 24 * 60 * 60 * 1000 // 7-day TTL
+        ..ttr = -1);
 
     try {
       await atClient.put(
@@ -112,6 +110,55 @@ class AuditService {
       );
     } catch (e) {
       _log.warning('Failed to send policy violation alert: $e');
+    }
+  }
+
+  /// Scan @llama's own remote secondary for audit keys and delete any entries
+  /// older than [maxAgeDays]. The 7-day TTL on entries handles this automatically,
+  /// but this is belt-and-suspenders for any entries where TTL wasn't applied.
+  ///
+  /// Runs a remote scan rather than `getKeys()` because the agent uses a
+  /// temporary Hive store (--never-sync), so the local cache is always empty.
+  Future<void> cleanupOldLogs({int maxAgeDays = 7}) async {
+    final cutoffMs =
+        DateTime.now().millisecondsSinceEpoch - maxAgeDays * 86400000;
+    try {
+      final remote = atClient.getRemoteSecondary();
+      if (remote == null) {
+        _log.warning('cleanupOldLogs: no remote secondary available');
+        return;
+      }
+      final scanBuilder = ScanVerbBuilder()
+        ..regex = r'audit\.'
+        ..auth = true;
+      final result = await remote.executeVerb(scanBuilder);
+      if (result.isEmpty) return;
+      final jsonStr = result.replaceFirst('data:', '').trim();
+      if (jsonStr == 'null' || jsonStr.isEmpty) return;
+      final keys = (jsonDecode(jsonStr) as List<dynamic>).cast<String>();
+      _log.info('cleanupOldLogs: scanning ${keys.length} audit keys');
+
+      int deleted = 0;
+      for (final keyStr in keys) {
+        try {
+          // Key format: @colin:audit.<ts>.<id>.pembrook@llama
+          final bare = keyStr.contains(':') ? keyStr.split(':').last : keyStr;
+          final segments = bare.split('.');
+          // segments: ['audit', '<ts>', '<id>', '<ns>@llama']
+          if (segments.length < 2) continue;
+          final ts = int.tryParse(segments[1]) ?? 0;
+          if (ts > 0 && ts < cutoffMs) {
+            await atClient.delete(AtKey.fromString(keyStr));
+            deleted++;
+            _log.fine('Deleted old audit key: $keyStr');
+          }
+        } catch (e) {
+          _log.fine('Failed to delete audit key $keyStr: $e');
+        }
+      }
+      _log.info('cleanupOldLogs: deleted $deleted audit keys');
+    } catch (e) {
+      _log.warning('cleanupOldLogs failed: $e');
     }
   }
 

@@ -74,8 +74,11 @@ class Orchestrator {
       'type': 'function',
       'function': {
         'name': 'fetch_webpage',
-        'description': 'Fetch and read the text content of any webpage or URL. '
-            'Use this to get current news, check a website, or read online content.',
+        'description': 'Lightweight fallback to fetch webpage text via plain HTTP. '
+            'ONLY use this when browser.fetch and browser.extract_text are not '
+            'available in the tool list. Prefer those MCP browser tools for any '
+            'web content — they handle JavaScript-rendered pages and return '
+            'richer results. Use fetch_webpage only as a last resort.',
         'parameters': {
           'type': 'object',
           'required': ['url'],
@@ -1104,12 +1107,36 @@ class Orchestrator {
       }
       _log.info(
           '[fetch_webpage] OK — ${text.length} chars extracted from $uri');
+      await auditService.log(AuditEntry(
+        timestamp: DateTime.now().toUtc(),
+        actionType: 'tool.fetch_webpage',
+        initiatorAtSign: _toolFromAtSign,
+        targetResource: uri.toString(),
+        policyDecision: 'allowed',
+        notes: '${text.length} chars',
+      ));
       return text.isEmpty ? '(page had no readable text)' : text;
     } on TimeoutException {
       _log.warning('[fetch_webpage] Timed out fetching $uri');
+      await auditService.log(AuditEntry(
+        timestamp: DateTime.now().toUtc(),
+        actionType: 'tool.fetch_webpage',
+        initiatorAtSign: _toolFromAtSign,
+        targetResource: uri.toString(),
+        policyDecision: 'denied',
+        notes: 'timed out',
+      ));
       return 'Error: timed out fetching $uri';
     } catch (e) {
       _log.warning('[fetch_webpage] Error: $e');
+      await auditService.log(AuditEntry(
+        timestamp: DateTime.now().toUtc(),
+        actionType: 'tool.fetch_webpage',
+        initiatorAtSign: _toolFromAtSign,
+        targetResource: uri.toString(),
+        policyDecision: 'denied',
+        notes: 'error: $e',
+      ));
       return 'Error fetching $uri: $e';
     }
   }

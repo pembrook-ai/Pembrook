@@ -9,6 +9,7 @@
 /// atSign: @agent (placeholder — replace with your provisioned atSign)
 /// Namespace: pembrook
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:at_cli_commons/at_cli_commons.dart';
@@ -226,6 +227,9 @@ Ensure you have:
 
   await gateway.start();
   heartbeat.start();
+
+  // Clean up audit entries older than 7 days on startup (fire-and-forget).
+  unawaited(auditService.cleanupOldLogs());
 
   log.info('Pembrook agent is running. Listening for commands via atPlatform.');
   final ownerForLog = Platform.environment['OWNER_AT_SIGN'] ??

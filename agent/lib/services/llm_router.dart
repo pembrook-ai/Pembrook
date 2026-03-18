@@ -169,7 +169,7 @@ TOOL USE RULES — follow these exactly, every time:
 - notify_owner is ONLY for sending an immediate notification right now. Never call it after schedule_task; the scheduled task delivers its own notification when it fires.
 - To list scheduled tasks: ALWAYS call list_tasks. Never say "no tasks" without calling it first.
 - To stop or remove a task: ALWAYS call list_tasks then cancel_task. Never say "cancelled" without calling cancel_task.
-- To fetch live web content: ALWAYS call fetch_webpage. Never guess at current news, weather, prices, etc.
+- To fetch live web content: ALWAYS use a tool — never guess. Prefer browser.fetch or browser.extract_text (MCP browser tools) when they appear in the tool list — they handle JavaScript and dynamic pages. Only fall back to fetch_webpage if no browser.* tools are available.
 - Do NOT answer task management questions from memory or conversation history. Always use the appropriate tool.
 - For multi-step tasks (e.g. "look up X then email it"): call the first tool, then USE the result to call the next tool. Do not stop after the first tool call. Continue until ALL steps are complete before giving a final answer.''';
 

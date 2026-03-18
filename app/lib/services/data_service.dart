@@ -210,13 +210,17 @@ class DataService extends ChangeNotifier {
       final scanBuilder = ScanVerbBuilder()
         ..regex = regex
         ..auth = true
-        ..showHiddenKeys = true; // required to surface cached: shared keys
+        ..showHiddenKeys = true;
       final result = await remote.executeVerb(scanBuilder);
       if (result.isEmpty) return [];
-      // Response format: data:["key1","key2",...]
       final jsonStr = result.replaceFirst('data:', '').trim();
       if (jsonStr == 'null' || jsonStr.isEmpty) return [];
-      return (jsonDecode(jsonStr) as List<dynamic>).cast<String>();
+      final raw = (jsonDecode(jsonStr) as List<dynamic>).cast<String>();
+      // Strip "cached:" prefix — put() from @agent caches keys on @owner's
+      // secondary with this prefix, which AtKey.fromString() cannot parse.
+      return raw
+          .map((k) => k.startsWith('cached:') ? k.substring(7) : k)
+          .toList();
     } catch (_) {
       // Fall back to local key scan if remote scan fails.
       return _atClient!.getKeys(regex: regex);
@@ -291,41 +295,22 @@ class DataService extends ChangeNotifier {
   //  AUDIT
   // ──────────────────────────────────────────────────────────
 
-  /// Delete audit entries whose key-embedded timestamp is older than [maxAgeDays].
-  /// New entries have a 7-day TTL and expire automatically; this handles legacy
-  /// entries that were written before TTL was introduced.
-  Future<void> cleanupOldAuditLogs({int maxAgeDays = 7}) async {
-    if (_atClient == null) return;
-    final cutoffMs =
-        DateTime.now().millisecondsSinceEpoch - maxAgeDays * 86400000;
-    try {
-      final keys = await _remoteKeys(r'audit\.');
-      for (final keyStr in keys) {
-        try {
-          // Key pattern: (@owner:)audit.<timestampMs>.<id>.pembrook@agent
-          final bare = keyStr.contains(':') ? keyStr.split(':').last : keyStr;
-          final segments = bare.split('.');
-          // segments[0]='audit', segments[1]=timestampMs
-          if (segments.length >= 2) {
-            final ts = int.tryParse(segments[1]);
-            if (ts != null && ts < cutoffMs) {
-              final atKey = AtKey.fromString(keyStr);
-              await _atClient!.delete(atKey);
-            }
-          }
-        } catch (_) {}
-      }
-    } catch (_) {}
-  }
-
   Future<void> _loadAuditEntries() async {
     if (_atClient == null) return;
-    // Clean up old entries (no TTL) in the background — don't await.
-    unawaited(cleanupOldAuditLogs());
     try {
-      final keys = await _remoteKeys(r'audit\.');
+      final allKeys = await _remoteKeys(r'audit\.');
+      // Only keep current-namespace entries from agent; sort newest-first.
+      final suffix = '.pembrook$_agentAtSign';
+      final keys = allKeys.where((k) => k.endsWith(suffix)).toList()
+        ..sort((a, b) {
+          final partsA = a.split('.');
+          final partsB = b.split('.');
+          final tsA = partsA.length > 1 ? (int.tryParse(partsA[1]) ?? 0) : 0;
+          final tsB = partsB.length > 1 ? (int.tryParse(partsB[1]) ?? 0) : 0;
+          return tsB.compareTo(tsA);
+        });
       final items = <AuditItem>[];
-      for (final keyStr in keys.take(100)) {
+      for (final keyStr in keys.take(200)) {
         try {
           final atKey = AtKey.fromString(keyStr);
           final v = await _atClient!.get(atKey,
@@ -336,7 +321,8 @@ class DataService extends ChangeNotifier {
             final t = item.actionType;
             if (t.startsWith('mcp.') ||
                 t.startsWith('task.run.') ||
-                t.startsWith('skill.')) {
+                t.startsWith('skill.') ||
+                t.startsWith('tool.')) {
               items.add(item);
             }
           }
