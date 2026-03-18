@@ -66,6 +66,35 @@ class Orchestrator {
 
   final Logger _log = Logger('Orchestrator');
 
+  /// Pre-warm MCP tool loading at startup so the tool list is correct before
+  /// the first user request arrives.  Without this, the first request runs
+  /// before browser.* tools are known and fetch_webpage stays in the list.
+  ///
+  /// Retries with exponential back-off (15 s, 30 s, 60 s … up to 5 min) until
+  /// at least one MCP tool is loaded, or the agent shuts down.
+  Future<void> preloadMcpTools() async {
+    if (mcpClient == null || mcpServerAtSigns.isEmpty) return;
+    const delays = [15, 30, 60, 120, 300]; // seconds between retries
+    int attempt = 0;
+    while (true) {
+      await _buildTools();
+      if (_mcpToolDefs.isNotEmpty) {
+        _log.info('MCP tools pre-loaded: ${_mcpToolDefs.keys.join(', ')}');
+        return;
+      }
+      if (attempt >= delays.length) {
+        _log.warning(
+            'preloadMcpTools: giving up after ${attempt + 1} attempts; '
+            'tools will be loaded lazily on first request');
+        return;
+      }
+      final wait = delays[attempt++];
+      _log.info('preloadMcpTools: no tools loaded, retrying in ${wait}s '
+          '(attempt $attempt/${delays.length})');
+      await Future.delayed(Duration(seconds: wait));
+    }
+  }
+
   /// Tool definitions offered to the LLM on every chat/task request.
   /// Models that support tool calling (qwen2.5, llama3.1, mistral-nemo)
   /// will use these automatically.  Models that don't will ignore them.
@@ -832,6 +861,11 @@ class Orchestrator {
           _log.warning('Failed to load MCP tools from $atSign: $e');
         }
       }
+      // If nothing was loaded (all servers timed out), allow retry next call.
+      if (_mcpToolDefs.isEmpty) {
+        _mcpToolsLoaded = false;
+        _log.info('No MCP tools loaded; will retry on next _buildTools() call');
+      }
     } else if (_mcpToolsLoaded && _mcpToolDefs.isNotEmpty) {
       // Re-inject cached full Ollama-format defs on every subsequent request.
       for (final def in _mcpToolDefs.values) {
@@ -845,6 +879,24 @@ class Orchestrator {
     }
 
     _log.fine('_buildTools: ${tools.length} total tools');
+
+    // If any MCP browser tools are available, remove fetch_webpage so the LLM
+    // cannot pick it — instructions alone are not reliable with small models.
+    final hasBrowserTool = tools.any((t) {
+      final name =
+          (t['function'] as Map<String, dynamic>?)?['name'] as String? ?? '';
+      return name.startsWith('browser.');
+    });
+    if (hasBrowserTool) {
+      tools.removeWhere((t) {
+        final name =
+            (t['function'] as Map<String, dynamic>?)?['name'] as String? ?? '';
+        return name == 'fetch_webpage';
+      });
+      _log.info(
+          '_buildTools: removed fetch_webpage (browser MCP tools present)');
+    }
+
     return tools;
   }
 

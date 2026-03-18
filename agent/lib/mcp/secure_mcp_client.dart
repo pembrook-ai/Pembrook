@@ -101,6 +101,7 @@ class SecureMcpClient {
         actionType: 'mcp.toolCall.$toolName',
         initiatorAtSign: initiatorAtSign,
         mcpServer: mcpAtSign,
+        arguments: arguments,
         policyDecision: 'denied',
         notes: decision.reason,
       );
@@ -126,6 +127,7 @@ class SecureMcpClient {
           actionType: 'mcp.toolCall.$toolName',
           initiatorAtSign: initiatorAtSign,
           mcpServer: mcpAtSign,
+          arguments: arguments,
           policyDecision: 'denied',
           notes: 'HITL denied: ${hitlDecision.reason ?? ""}',
         );
@@ -149,12 +151,10 @@ class SecureMcpClient {
 
     McpCallResult callResult;
     try {
-      // Send request as notification; subscribe for response.
-      // The MCP server listens on "pembrook.mcp.request" and responds on
-      // "pembrook.mcp.response.<requestId>".
-      final responseKey = 'mcp.response.$requestId';
-      final responseFuture =
-          _waitForResponse(responseKey, timeout: const Duration(seconds: 30));
+      // Send request as notification; poll for put()-based response.
+      // The MCP server listens on "pembrook.mcp.request" and responds by
+      // writing to "mcp.response.<requestId>" via put().
+      final responseKeyName = 'mcp.response.$requestId';
 
       final requestKey = (AtKey.shared(
         'mcp.request.$requestId',
@@ -173,7 +173,11 @@ class SecureMcpClient {
         ),
       );
 
-      final responseJson = await responseFuture;
+      final responseJson = await _waitForResponse(
+        responseKeyName,
+        mcpAtSign,
+        timeout: const Duration(seconds: 30),
+      );
       if (responseJson == null) {
         callResult = const McpCallResult(
             success: false, error: 'MCP response timed out');
@@ -204,6 +208,7 @@ class SecureMcpClient {
       actionType: 'mcp.toolCall.$toolName',
       initiatorAtSign: initiatorAtSign,
       mcpServer: mcpAtSign,
+      arguments: arguments,
       policyDecision: callResult.success ? 'allowed' : 'denied',
       notes: callResult.error,
     );
@@ -231,9 +236,7 @@ class SecureMcpClient {
     _log.info('MCP tools/list: $mcpAtSign (req=$requestId)');
 
     try {
-      final responseKey = 'mcp.response.$requestId';
-      final responseFuture =
-          _waitForResponse(responseKey, timeout: const Duration(seconds: 30));
+      final responseKeyName = 'mcp.response.$requestId';
 
       final requestKey = (AtKey.shared(
         'mcp.request.$requestId',
@@ -252,7 +255,11 @@ class SecureMcpClient {
         ),
       );
 
-      final rawResponse = await responseFuture;
+      final rawResponse = await _waitForResponse(
+        responseKeyName,
+        mcpAtSign,
+        timeout: const Duration(seconds: 30),
+      );
       if (rawResponse == null) {
         _log.warning('listTools timed out for $mcpAtSign');
         return [];
@@ -272,25 +279,47 @@ class SecureMcpClient {
   //  HELPERS
   // ──────────────────────────────────────────────────────────
 
-  /// Subscribe and wait for a single response notification.
-  Future<String?> _waitForResponse(String keyPattern,
-      {required Duration timeout}) async {
-    final completer = Completer<String?>();
-    final subscription = atClient.notificationService
-        .subscribe(regex: keyPattern, shouldDecrypt: true)
-        .listen((notification) {
-      if (!completer.isCompleted && notification.value != null) {
-        completer.complete(notification.value);
+  /// Poll for the response key written by the MCP server via `put()`.
+  ///
+  /// The MCP server writes the response as a shared key:
+  ///   `@agent:mcp.response.<id>.pembrook@mcpserver`
+  /// We poll with `get()` since `notify()` relay is unreliable across atServers.
+  Future<String?> _waitForResponse(
+    String responseKeyName,
+    String mcpAtSign, {
+    required Duration timeout,
+  }) async {
+    final myAtSign = atClient.getCurrentAtSign() ?? '';
+    final deadline = DateTime.now().add(timeout);
+    const pollInterval = Duration(milliseconds: 500);
+
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        final atKey = AtKey()
+          ..key = '$responseKeyName.$_namespace'
+          ..sharedWith = myAtSign
+          ..sharedBy = mcpAtSign
+          ..metadata = (Metadata()..isEncrypted = true);
+
+        final result = await atClient.get(atKey);
+        if (result.value != null && result.value.toString().isNotEmpty) {
+          // Clean up the response key after reading it
+          try {
+            await atClient.delete(atKey);
+          } catch (_) {}
+          return result.value.toString();
+        }
+      } on AtKeyNotFoundException catch (_) {
+        // Key not yet available — keep polling
+      } on KeyNotFoundException catch (_) {
+        // Key not yet available — keep polling
+      } catch (e) {
+        // Other error — log and keep polling
+        _log.fine('Polling for $responseKeyName: $e');
       }
-    });
-
-    Future.delayed(timeout, () {
-      if (!completer.isCompleted) completer.complete(null);
-    });
-
-    final result = await completer.future;
-    await subscription.cancel();
-    return result;
+      await Future.delayed(pollInterval);
+    }
+    return null;
   }
 
   Future<void> _audit({
@@ -298,16 +327,37 @@ class SecureMcpClient {
     required String initiatorAtSign,
     required String mcpServer,
     required String policyDecision,
+    Map<String, dynamic>? arguments,
     String? notes,
   }) async {
+    // Extract the URL from tool arguments when present so it appears in the
+    // audit log (matches how fetch_webpage records targetResource).
+    final url = arguments?['url'] as String?;
+    final targetResource =
+        url != null && url.isNotEmpty ? url : 'mcp:$mcpServer';
+
+    // Build a human-readable summary of the arguments for notes.
+    final argSummary = arguments != null && arguments.isNotEmpty
+        ? arguments.entries.map((e) {
+            final v = e.value.toString();
+            return '${e.key}=${v.length > 120 ? '${v.substring(0, 120)}…' : v}';
+          }).join(', ')
+        : null;
+
+    // Combine arg summary with any existing notes (e.g. error message).
+    final combinedNotes = [
+      if (argSummary != null) argSummary,
+      if (notes != null) notes,
+    ].join(' | ');
+
     await auditService.log(AuditEntry(
       timestamp: DateTime.now().toUtc(),
       actionType: actionType,
       initiatorAtSign: initiatorAtSign,
-      targetResource: 'mcp:$mcpServer',
+      targetResource: targetResource,
       policyDecision: policyDecision,
       mcpServer: mcpServer,
-      notes: notes,
+      notes: combinedNotes.isNotEmpty ? combinedNotes : null,
     ));
   }
 }

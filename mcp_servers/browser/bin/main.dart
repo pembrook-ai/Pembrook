@@ -35,6 +35,11 @@ final _log = Logger('mcp_browser');
 const _namespace = 'pembrook';
 const _requestPattern = r'mcp\.request\.';
 
+/// Consecutive `notificationService.notify()` failures.
+/// If this reaches [_maxNotifyFailures] the process exits so Docker restarts it.
+int _notifyFailures = 0;
+const _maxNotifyFailures = 3;
+
 const _userAgent =
     'Mozilla/5.0 (compatible; PembrookBot/1.0; +https://github.com/pembrook)';
 
@@ -63,7 +68,45 @@ void main(List<String> args) async {
     'Browser MCP server started as ${atClient.getCurrentAtSign()}',
   );
 
+  // Pre-warm the shared encryption key with @llama by doing a test put.
+  // The first shared-key creation after an atServer restart can take a while;
+  // doing it here avoids blocking the first real request.
+  await _warmSharedKeys(atClient);
+
   await _listen(atClient);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  SHARED-KEY WARM-UP
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Attempt a test `put` of a shared key to `@llama` at startup.
+/// This forces the at_client to establish the shared encryption key
+/// (fetch @llama's public key, create symmetric key, exchange).
+/// Allow up to 120 s — the first call after an atServer restart can be slow.
+Future<void> _warmSharedKeys(AtClient atClient) async {
+  const target = '@llama';
+  _log.info('Warming shared encryption keys with $target ...');
+  final sw = Stopwatch()..start();
+  try {
+    final key = (AtKey.shared(
+      'mcp.warmup',
+      namespace: _namespace,
+      sharedBy: atClient.getCurrentAtSign()!,
+    )..sharedWith(target))
+        .build()
+      ..metadata = (Metadata()
+        ..ttl = 30000
+        ..ttr = -1);
+
+    await atClient.put(key, 'warmup').timeout(const Duration(seconds: 120));
+
+    _log.info('Shared-key warmup with $target succeeded '
+        '(${sw.elapsedMilliseconds} ms)');
+  } catch (e) {
+    _log.warning('Shared-key warmup with $target failed after '
+        '${sw.elapsedMilliseconds} ms: $e');
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -80,6 +123,46 @@ Future<void> _listen(AtClient atClient) async {
       await _handleNotification(atClient, notification);
     } catch (e, st) {
       _log.severe('Error handling notification', e, st);
+      // Count notify-level failures so the keepalive exit threshold is reached
+      // sooner if requests are failing due to a broken notify connection.
+      if (e is TimeoutException) {
+        _notifyFailures++;
+        _log.warning(
+            'Notify timed out on request ($_notifyFailures/$_maxNotifyFailures)');
+        if (_notifyFailures >= _maxNotifyFailures) {
+          _log.severe('Notify path dead — exiting for Docker restart');
+          exit(1);
+        }
+      }
+    }
+  });
+
+  // Keepalive: send a self-notification every 2 minutes to keep the notify
+  // path warm.  If notify starts hanging (connection lost) we detect it early,
+  // increment _notifyFailures, and eventually exit so Docker restarts us.
+  Timer.periodic(const Duration(minutes: 2), (_) async {
+    try {
+      final self = atClient.getCurrentAtSign()!;
+      final pingKey =
+          (AtKey.shared('mcp.keepalive', namespace: _namespace, sharedBy: self)
+                ..sharedWith(self))
+              .build()
+            ..metadata = (Metadata()
+              ..ttl = 30000
+              ..ttr = -1);
+      await atClient.notificationService
+          .notify(NotificationParams.forUpdate(pingKey, value: 'ping'))
+          .timeout(const Duration(seconds: 10));
+      _notifyFailures = 0;
+      _log.info('Keepalive OK');
+    } catch (e) {
+      _notifyFailures++;
+      _log.warning(
+          'Keepalive failed ($_notifyFailures/$_maxNotifyFailures): $e');
+      if (_notifyFailures >= _maxNotifyFailures) {
+        _log.severe('Notify path dead — exiting for Docker restart');
+        exit(1);
+      }
     }
   });
 
@@ -150,14 +233,18 @@ Future<void> _handleNotification(
       ..ttl = 30000
       ..ttr = -1);
 
-  await atClient.notificationService.notify(
-    NotificationParams.forUpdate(
-      responseKey,
-      value: jsonEncode(response),
-    ),
-  );
+  _log.info(
+      'Sending response via put() to $callerAtSign for request $requestId ...');
+  try {
+    await atClient
+        .put(responseKey, jsonEncode(response))
+        .timeout(const Duration(seconds: 30));
 
-  _log.info('Response sent to $callerAtSign for request $requestId');
+    _log.info('Response put() succeeded for $callerAtSign request $requestId');
+  } catch (e) {
+    _log.severe('put() failed for $requestId: $e');
+    rethrow;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

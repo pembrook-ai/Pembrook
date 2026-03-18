@@ -228,6 +228,11 @@ Ensure you have:
   await gateway.start();
   heartbeat.start();
 
+  // Pre-load MCP tools so they're available before the first user request.
+  // Without this, the first request runs before browser.* tools are known
+  // and fetch_webpage stays in the tool list.
+  unawaited(orchestrator.preloadMcpTools());
+
   // Clean up audit entries older than 7 days on startup (fire-and-forget).
   unawaited(auditService.cleanupOldLogs());
 
