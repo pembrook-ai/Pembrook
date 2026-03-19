@@ -513,9 +513,12 @@ TOOL USE RULES — follow these exactly, every time:
       // Task anchoring: after tool results, remind the model of the original
       // request so it doesn't stop after the first tool call on multi-step tasks.
       // We skip the reminder when the last tool was a terminal action
-      // (schedule_task, cancel_task, notify_owner) — otherwise the model loops,
+      // (schedule_task, cancel_task) — otherwise the model loops,
       // calling schedule_task repeatedly after it already succeeded.
-      const _terminalTools = {'schedule_task', 'cancel_task', 'notify_owner'};
+      // NOTE: notify_owner is NOT terminal — when the model calls it mid-chain
+      // (e.g. after browser.extract_text) the short-circuit would eat the real
+      // content and return just "Done! Notification sent."
+      const _terminalTools = {'schedule_task', 'cancel_task'};
       final _lastToolWasTerminal = _lastExecutedTool != null &&
           _terminalTools.contains(_lastExecutedTool);
 
@@ -549,8 +552,6 @@ TOOL USE RULES — follow these exactly, every time:
                 "${taskId.isNotEmpty ? ' (Task ID: $taskId)' : ''}";
           case 'cancel_task':
             return "Done! The task has been cancelled.";
-          case 'notify_owner':
-            return "Done! Notification sent.";
         }
       }
 

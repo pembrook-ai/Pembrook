@@ -575,6 +575,14 @@ class ConversationStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Delete multiple conversations by ID in a single batch.
+  Future<void> deleteMany(Set<String> ids) async {
+    if (ids.isEmpty) return;
+    _conversations.removeWhere((c) => ids.contains(c.id));
+    await _persist();
+    notifyListeners();
+  }
+
   /// Returns the conversation with [id], or null.
   ConversationSummary? get(String id) {
     try {

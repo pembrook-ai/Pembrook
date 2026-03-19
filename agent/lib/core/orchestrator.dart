@@ -171,9 +171,10 @@ class Orchestrator {
       'function': {
         'name': 'notify_owner',
         'description':
-            'Send an immediate push message to the owner. Use this to proactively '
-                'inform the user about something without them asking — e.g. after '
-                'completing an action, detecting an event, or when you have important info.',
+            'Send an out-of-band push notification to the owner. ONLY use this for '
+                'background/automated alerts when the owner is NOT actively chatting. '
+                'Do NOT call this to deliver an answer the user asked for — just reply '
+                'with the answer directly instead.',
         'parameters': {
           'type': 'object',
           'required': ['message'],

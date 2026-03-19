@@ -99,7 +99,13 @@ Future<void> _warmSharedKeys(AtClient atClient) async {
         ..ttl = 30000
         ..ttr = -1);
 
-    await atClient.put(key, 'warmup').timeout(const Duration(seconds: 120));
+    await atClient
+        .put(
+          key,
+          'warmup',
+          putRequestOptions: PutRequestOptions()..useRemoteAtServer = true,
+        )
+        .timeout(const Duration(seconds: 120));
 
     _log.info('Shared-key warmup with $target succeeded '
         '(${sw.elapsedMilliseconds} ms)');
@@ -237,7 +243,11 @@ Future<void> _handleNotification(
       'Sending response via put() to $callerAtSign for request $requestId ...');
   try {
     await atClient
-        .put(responseKey, jsonEncode(response))
+        .put(
+          responseKey,
+          jsonEncode(response),
+          putRequestOptions: PutRequestOptions()..useRemoteAtServer = true,
+        )
         .timeout(const Duration(seconds: 30));
 
     _log.info('Response put() succeeded for $callerAtSign request $requestId');

@@ -292,18 +292,36 @@ class SecureMcpClient {
     final myAtSign = atClient.getCurrentAtSign() ?? '';
     final deadline = DateTime.now().add(timeout);
     const pollInterval = Duration(milliseconds: 500);
+    var attempt = 0;
+
+    // Construct the key exactly the same way the MCP server creates it
+    // (AtKey.shared + namespace), so the SDK generates identical lookup
+    // commands.
+    final atKey = (AtKey.shared(
+      responseKeyName,
+      namespace: _namespace,
+      sharedBy: mcpAtSign,
+    )..sharedWith(myAtSign))
+        .build();
+
+    _log.info('Polling for response key: ${atKey.toString()} '
+        '(key=${atKey.key}, ns=${atKey.namespace}, '
+        'sharedBy=${atKey.sharedBy}, sharedWith=${atKey.sharedWith})');
 
     while (DateTime.now().isBefore(deadline)) {
+      attempt++;
       try {
-        final atKey = AtKey()
-          ..key = '$responseKeyName.$_namespace'
-          ..sharedWith = myAtSign
-          ..sharedBy = mcpAtSign
-          ..metadata = (Metadata()..isEncrypted = true);
-
-        final result = await atClient.get(atKey);
+        // Force remote lookup — the agent runs with --never-sync so the
+        // locally-cached Hive store will never see keys written by the
+        // MCP server.  The remote atServer has the key immediately after
+        // the MCP server's put() completes.
+        final result = await atClient.get(
+          atKey,
+          getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
+        );
         if (result.value != null && result.value.toString().isNotEmpty) {
-          // Clean up the response key after reading it
+          _log.info('Got response on attempt $attempt for $responseKeyName');
+          // Clean up the response key on the remote server after reading it.
           try {
             await atClient.delete(atKey);
           } catch (_) {}
@@ -314,11 +332,16 @@ class SecureMcpClient {
       } on KeyNotFoundException catch (_) {
         // Key not yet available — keep polling
       } catch (e) {
-        // Other error — log and keep polling
-        _log.fine('Polling for $responseKeyName: $e');
+        // Log every error at INFO on first few attempts for debugging
+        if (attempt <= 3) {
+          _log.info('Poll attempt $attempt for $responseKeyName: '
+              '${e.runtimeType}: $e');
+        }
       }
       await Future.delayed(pollInterval);
     }
+    _log.warning(
+        'Polling timed out after $attempt attempts for $responseKeyName');
     return null;
   }
 
