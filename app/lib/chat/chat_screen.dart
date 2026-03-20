@@ -216,10 +216,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               // done:true was lost — finalise now using the same logic as the
               // passive-viewer branch of _convCompletedSub.
               final answer = _streamBuffer.trim();
-              setState(() {
-                _streamBuffer = '';
-                _progressMessage = '';
-              });
+              // Keep _streamBuffer alive during the load so there is no gap.
+
               await _store?.load();
               if (!mounted) return;
               var summary = _store?.get(watchdogConvId);
@@ -232,6 +230,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               }
               if (_isConversationComplete(summary)) {
                 setState(() {
+                  _streamBuffer = '';
+                  _progressMessage = '';
                   _messages
                     ..clear()
                     ..addAll(summary!.messages.map((s) => _Message(
@@ -241,15 +241,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         )));
                 });
               } else if (answer.isNotEmpty) {
-                final base = summary?.messages ?? [];
+                final currentMsgs = List<_Message>.from(_messages);
                 setState(() {
+                  _streamBuffer = '';
+                  _progressMessage = '';
                   _messages
                     ..clear()
-                    ..addAll(base.map((s) => _Message(
-                          text: s.text,
-                          isUser: s.isUser,
-                          timestamp: s.timestamp,
-                        )))
+                    ..addAll(currentMsgs)
                     ..add(_Message(
                       text: answer,
                       isUser: false,
@@ -257,6 +255,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ));
                 });
                 _saveCurrentConversation();
+              } else {
+                setState(() {
+                  _streamBuffer = '';
+                  _progressMessage = '';
+                });
               }
               _scrollToBottom();
             });
@@ -298,10 +301,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           // 3 s delayed callback fires it should be available).
           _remoteStreamWatchdog?.cancel(); // done:true arrived — watchdog not needed
           final streamedAnswer = _streamBuffer.trim(); // capture before clear
-          setState(() {
-            _streamBuffer = '';
-            _progressMessage = '';
-          });
+          // Do NOT clear _streamBuffer yet — keep the streaming bubble visible
+          // during the async load so the answer never blinks out.
 
           await _store?.load();
           if (!mounted) return;
@@ -319,8 +320,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           }
 
           if (_isConversationComplete(updated)) {
-            // Remote has full conversation (question + answer) — use it.
+            // Remote has full conversation — swap streaming bubble → proper
+            // messages in a single setState so there is no blank frame.
             setState(() {
+              _streamBuffer = '';
+              _progressMessage = '';
               _messages
                 ..clear()
                 ..addAll(updated!.messages.map((s) => _Message(
@@ -331,16 +335,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             });
             _scrollToBottom();
           } else if (streamedAnswer.isNotEmpty) {
-            // Remote only has the question snapshot; append the streamed answer.
-            final base = updated?.messages ?? [];
+            // Remote only has the question snapshot (or is unavailable).
+            // Build from current _messages (has the question from the 800ms
+            // load, including the welcome) + the streamed answer — atomic swap.
+            final currentMsgs = List<_Message>.from(_messages);
             setState(() {
+              _streamBuffer = '';
+              _progressMessage = '';
               _messages
                 ..clear()
-                ..addAll(base.map((s) => _Message(
-                      text: s.text,
-                      isUser: s.isUser,
-                      timestamp: s.timestamp,
-                    )))
+                ..addAll(currentMsgs)
                 ..add(_Message(
                   text: streamedAnswer,
                   isUser: false,
@@ -349,6 +353,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             });
             _saveCurrentConversation();
             _scrollToBottom();
+          } else {
+            // Streaming disabled and remote unavailable — just clear the buffer.
+            setState(() {
+              _streamBuffer = '';
+              _progressMessage = '';
+            });
           }
           return;
         }
