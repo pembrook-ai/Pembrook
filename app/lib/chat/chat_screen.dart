@@ -246,8 +246,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           if (!mounted) return;
 
           var updated = _store?.get(convId);
-          // Retry if remote write hasn't landed yet or has no user message.
-          if (updated == null || !updated.messages.any((m) => m.isUser)) {
+          // Retry if the remote AtKey is missing or only has the question-only
+          // snapshot (Device A writes the question immediately at the start of
+          // _send(); the answer write follows ~2 s later after the RPC returns).
+          if (!_isConversationComplete(updated)) {
             await Future.delayed(const Duration(seconds: 2));
             if (!mounted) return;
             await _store?.load();
@@ -255,8 +257,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             updated = _store?.get(convId);
           }
 
-          if (updated != null && updated.messages.any((m) => m.isUser)) {
-            // Full conversation (question + answer) retrieved from remote.
+          if (_isConversationComplete(updated)) {
+            // Remote has full conversation (question + answer) — use it.
             setState(() {
               _messages
                 ..clear()
@@ -268,14 +270,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             });
             _scrollToBottom();
           } else if (streamedAnswer.isNotEmpty) {
-            // Fallback: remote not available — show the streamed answer at
-            // least (question will be missing, but better than nothing).
+            // Remote only has the question snapshot; append the streamed answer.
+            final base = updated?.messages ?? [];
             setState(() {
-              _messages.add(_Message(
-                text: streamedAnswer,
-                isUser: false,
-                timestamp: DateTime.now(),
-              ));
+              _messages
+                ..clear()
+                ..addAll(base.map((s) => _Message(
+                      text: s.text,
+                      isUser: s.isUser,
+                      timestamp: s.timestamp,
+                    )))
+                ..add(_Message(
+                  text: streamedAnswer,
+                  isUser: false,
+                  timestamp: DateTime.now(),
+                ));
             });
             _saveCurrentConversation();
             _scrollToBottom();
@@ -286,15 +295,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         // ── Remote device ─────────────────────────────────────────────────
         // A different conversation (Device B's UUID ≠ this device's current
         // UUID) completed.  Load from remote to get question + answer.
-        _bgStreamBuffers.remove(convId);
+        //
+        // Capture the buffered stream chunks BEFORE removing them — we may
+        // need them as a fallback if the remote AtKey only has the
+        // question-only snapshot (Device A writes question at the start of
+        // _send() and answer ~2 s later; T+3 s may still be too early).
+        final bufferedAnswer = (_bgStreamBuffers.remove(convId) ?? '').trim();
 
         await _store?.load();
         if (!mounted) return;
 
-        // Retry if the originating device's remote write hasn't landed yet
-        // or the conversation has no user message (incomplete write).
+        // Retry until the conversation is complete (has an agent reply after
+        // the question).  A question-only snapshot is not sufficient.
         var _remoteConv = _store?.get(convId);
-        if (_remoteConv == null || !_remoteConv.messages.any((m) => m.isUser)) {
+        if (!_isConversationComplete(_remoteConv)) {
           await Future.delayed(const Duration(seconds: 2));
           if (!mounted) return;
           await _store?.load();
@@ -302,25 +316,45 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _remoteConv = _store?.get(convId);
         }
 
-        final completed = _remoteConv;
-        if (completed == null) return;
-
         final hasUserMessages = _messages.any((m) => m.isUser);
         if (!hasUserMessages) {
-          // This device is idle (just the welcome message) — auto-switch to
-          // show the newly completed conversation.
-          setState(() {
-            _streamBuffer = '';
-            _conversationId = completed.id;
-            _messages
-              ..clear()
-              ..addAll(completed.messages.map((s) => _Message(
-                    text: s.text,
-                    isUser: s.isUser,
-                    timestamp: s.timestamp,
-                  )));
-          });
-          _scrollToBottom();
+          // This device is idle (just the welcome message).
+          if (_isConversationComplete(_remoteConv)) {
+            // Remote has full conversation — auto-switch.
+            setState(() {
+              _streamBuffer = '';
+              _conversationId = _remoteConv!.id;
+              _messages
+                ..clear()
+                ..addAll(_remoteConv.messages.map((s) => _Message(
+                      text: s.text,
+                      isUser: s.isUser,
+                      timestamp: s.timestamp,
+                    )));
+            });
+            _scrollToBottom();
+          } else if (_remoteConv != null && bufferedAnswer.isNotEmpty) {
+            // Remote has question only; append the buffered streamed answer.
+            setState(() {
+              _streamBuffer = '';
+              _conversationId = _remoteConv!.id;
+              _messages
+                ..clear()
+                ..addAll(_remoteConv.messages.map((s) => _Message(
+                      text: s.text,
+                      isUser: s.isUser,
+                      timestamp: s.timestamp,
+                    )))
+                ..add(_Message(
+                  text: bufferedAnswer,
+                  isUser: false,
+                  timestamp: DateTime.now(),
+                ));
+            });
+            _saveCurrentConversation();
+            _scrollToBottom();
+          }
+          // else: no data at all — nothing to show.
         }
         // else: another device completed while this one has an active chat —
         // silently updated in history, accessible via the History screen.
@@ -759,6 +793,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         );
       }
     });
+  }
+
+  /// Returns true when [conv] contains at least one user message AND at least
+  /// one agent reply that comes AFTER the last user message.
+  /// Used to distinguish a question-only snapshot (written by Device A at the
+  /// start of _send()) from a complete exchange.
+  bool _isConversationComplete(ConversationSummary? conv) {
+    if (conv == null) return false;
+    final msgs = conv.messages;
+    final lastUserIdx = msgs.lastIndexWhere((m) => m.isUser);
+    if (lastUserIdx < 0) return false; // no question at all
+    return msgs.length > lastUserIdx + 1; // agent reply exists after question
   }
 
   Future<void> _signOut() async {
