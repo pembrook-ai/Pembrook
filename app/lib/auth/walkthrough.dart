@@ -66,9 +66,7 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
                     padding: const EdgeInsets.all(12),
                     child: Text(
                       _errorMessage!,
-                      style: TextStyle(
-                          color:
-                              Theme.of(context).colorScheme.onErrorContainer),
+                      style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
                     ),
                   ),
                 ),
@@ -169,8 +167,7 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
     // Step 3: Perform CRAM onboarding.
     if (!mounted) return;
     // ignore: use_build_context_synchronously
-    final response =
-        await CramDialog.show(context, request: request, cramKey: cramKey);
+    final response = await CramDialog.show(context, request: request, cramKey: cramKey);
     if (response == null || !response.isSuccessful) return;
 
     await _finishAuth(response);
@@ -200,8 +197,7 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
 
     if (!mounted) return;
     // ignore: use_build_context_synchronously
-    final response = await PkamDialog.show(context,
-        request: request, backupKeys: [KeychainAtKeysIo()]);
+    final response = await PkamDialog.show(context, request: request, backupKeys: [KeychainAtKeysIo()]);
     if (response == null || !response.isSuccessful) return;
 
     await _finishAuth(response);
@@ -238,8 +234,7 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
 
     if (!mounted) return;
     // ignore: use_build_context_synchronously
-    final response = await PkamDialog.show(context,
-        request: request, backupKeys: [KeychainAtKeysIo()]);
+    final response = await PkamDialog.show(context, request: request, backupKeys: [KeychainAtKeysIo()]);
     if (response == null || !response.isSuccessful) return;
 
     await _finishAuth(response);
@@ -272,8 +267,7 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
 
     if (!mounted) return;
     // ignore: use_build_context_synchronously
-    final response = await PkamDialog.show(context,
-        request: request, backupKeys: [KeychainAtKeysIo()]);
+    final response = await PkamDialog.show(context, request: request, backupKeys: [KeychainAtKeysIo()]);
     if (response == null || !response.isSuccessful) return;
 
     await _finishAuth(response);
@@ -289,8 +283,7 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
     // cleans up the temp data automatically on reboot.
     final tmp = await getTemporaryDirectory();
     final instanceId = DateTime.now().millisecondsSinceEpoch;
-    final storageDir =
-        Directory('${tmp.path}/pembrook_${response.atSign}_$instanceId');
+    final storageDir = Directory('${tmp.path}/pembrook_${response.atSign}_$instanceId');
     await storageDir.create(recursive: true);
 
     final pref = AtClientPreference()
@@ -313,13 +306,17 @@ class _AuthWalkthroughState extends State<AuthWalkthrough> {
     final atClient = AtClientManager.getInstance().atClient;
     // ignore: use_build_context_synchronously
     await context.read<RpcService>().initialise(atClient);
+
+    // Navigate immediately — DataService and ConversationStore load in background.
+    if (!mounted) return;
     // ignore: use_build_context_synchronously
-    await context.read<DataService>().initialise(atClient);
+    final dataService = context.read<DataService>();
     // ignore: use_build_context_synchronously
-    // Migrate conversation history from SharedPreferences → AtKey and load
-    // the latest from the remote atServer so multi-device sync works.
-    await context.read<ConversationStore>().initialise(atClient);
+    final convStore = context.read<ConversationStore>();
     // ignore: use_build_context_synchronously
     context.go('/home');
+
+    dataService.initialise(atClient).ignore();
+    convStore.initialise(atClient).ignore();
   }
 }

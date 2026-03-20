@@ -485,11 +485,19 @@ class ConversationStore extends ChangeNotifier {
 
   /// Call after authentication to enable cross-device AtKey sync.
   ///
-  /// Sets the [AtClient] and immediately loads the latest conversation history
-  /// from the remote atServer (falling back to the local cache if offline).
+  /// Immediately populates the list from the local SharedPreferences cache so
+  /// the UI shows history instantly, then refreshes from the remote atServer
+  /// in the background so multi-device changes arrive without blocking login.
   Future<void> initialise(AtClient atClient) async {
     _atClient = atClient;
-    await load();
+    // 1. Fast local cache — available offline, shows UI immediately.
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getString(_prefsKey);
+    if (cached != null && cached.isNotEmpty) {
+      _loadFromJson(cached); // calls notifyListeners()
+    }
+    // 2. Remote refresh in the background — updates list when it arrives.
+    load().ignore();
   }
 
   /// Load conversations — tries remote AtKey first, then SharedPreferences.

@@ -91,8 +91,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
       if (!mounted) return;
       // ignore: use_build_context_synchronously
-      final response = await PkamDialog.show(context,
-          request: request, backupKeys: [KeychainAtKeysIo()]);
+      final response = await PkamDialog.show(context, request: request, backupKeys: [KeychainAtKeysIo()]);
       if (response == null || !response.isSuccessful) return;
 
       await _finishAuth(response);
@@ -136,8 +135,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
       if (!mounted) return;
       // ignore: use_build_context_synchronously
-      final response =
-          await CramDialog.show(context, request: request, cramKey: cramKey);
+      final response = await CramDialog.show(context, request: request, cramKey: cramKey);
       if (response == null || !response.isSuccessful) return;
 
       await _finishAuth(response);
@@ -173,8 +171,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
       if (!mounted) return;
       // ignore: use_build_context_synchronously
-      final response = await PkamDialog.show(context,
-          request: request, backupKeys: [KeychainAtKeysIo()]);
+      final response = await PkamDialog.show(context, request: request, backupKeys: [KeychainAtKeysIo()]);
       if (response == null || !response.isSuccessful) return;
 
       await _finishAuth(response);
@@ -218,8 +215,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
       if (!mounted) return;
       // ignore: use_build_context_synchronously
-      final response = await PkamDialog.show(context,
-          request: request, backupKeys: [KeychainAtKeysIo()]);
+      final response = await PkamDialog.show(context, request: request, backupKeys: [KeychainAtKeysIo()]);
       if (response == null || !response.isSuccessful) return;
 
       await _finishAuth(response);
@@ -240,8 +236,7 @@ class _AuthScreenState extends State<AuthScreen> {
     // cleans up the temp data automatically on reboot.
     final tmp = await getTemporaryDirectory();
     final instanceId = DateTime.now().millisecondsSinceEpoch;
-    final storageDir =
-        Directory('${tmp.path}/pembrook_${response.atSign}_$instanceId');
+    final storageDir = Directory('${tmp.path}/pembrook_${response.atSign}_$instanceId');
     await storageDir.create(recursive: true);
 
     final pref = AtClientPreference()
@@ -264,12 +259,25 @@ class _AuthScreenState extends State<AuthScreen> {
     final atClient = AtClientManager.getInstance().atClient;
     // ignore: use_build_context_synchronously
     await context.read<RpcService>().initialise(atClient);
+
+    // Navigate immediately — the chat screen is usable as soon as the RPC
+    // client is ready.  DataService (audit, HITL, skills) and ConversationStore
+    // both make multiple remote-server calls that can take several seconds;
+    // running them in the background means the user is never stuck staring at
+    // the auth spinner waiting for data they may not immediately need.
+    if (!mounted) return;
+    // Capture provider references before go() tears down the auth route.
     // ignore: use_build_context_synchronously
-    await context.read<DataService>().initialise(atClient);
+    final dataService = context.read<DataService>();
     // ignore: use_build_context_synchronously
-    await context.read<ConversationStore>().initialise(atClient);
+    final convStore = context.read<ConversationStore>();
     // ignore: use_build_context_synchronously
     context.go('/home');
+
+    // Background init — providers notifyListeners() as each finishes so the
+    // UI updates automatically once the data arrives.
+    dataService.initialise(atClient).ignore();
+    convStore.initialise(atClient).ignore();
   }
 
   // ══════════════════════════════════════════════════════
@@ -342,12 +350,10 @@ class _AuthScreenState extends State<AuthScreen> {
               else
                 Card(
                   child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: Row(
                       children: [
-                        Icon(Icons.lock_open,
-                            color: Theme.of(context).colorScheme.primary),
+                        Icon(Icons.lock_open, color: Theme.of(context).colorScheme.primary),
                         const SizedBox(width: 16),
                         Expanded(
                           child: DropdownButtonFormField<String>(
@@ -363,9 +369,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                       child: Text(s),
                                     ))
                                 .toList(),
-                            onChanged: _loading
-                                ? null
-                                : (v) => setState(() => _selectedAtSign = v),
+                            onChanged: _loading ? null : (v) => setState(() => _selectedAtSign = v),
                           ),
                         ),
                         const SizedBox(width: 8),
