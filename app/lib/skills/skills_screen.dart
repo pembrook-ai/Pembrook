@@ -19,8 +19,24 @@ import 'package:provider/provider.dart';
 import '../services/data_service.dart';
 import '../services/rpc_service.dart';
 
-class SkillsScreen extends StatelessWidget {
+class SkillsScreen extends StatefulWidget {
   const SkillsScreen({super.key});
+
+  @override
+  State<SkillsScreen> createState() => _SkillsScreenState();
+}
+
+class _SkillsScreenState extends State<SkillsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Load skills from the remote server every time this screen is mounted.
+    // Uses refreshSkills() (skills-only, cheaper than full refresh()) so the
+    // list is always current without waiting for local secondary sync.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<DataService>().refreshSkills();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,16 +45,18 @@ class SkillsScreen extends StatelessWidget {
         title: const Text('Installed Skills'),
         actions: [
           Consumer<DataService>(
-            builder: (context, ds, _) => IconButton(
-              icon: ds.loading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh),
-              tooltip: 'Refresh',
-              onPressed: ds.loading ? null : () => ds.refresh(),
+            builder: (context, ds, _) => ExcludeSemantics(
+              child: IconButton(
+                icon: ds.loading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh),
+                tooltip: 'Refresh',
+                onPressed: ds.loading ? null : () => ds.refresh(),
+              ),
             ),
           ),
         ],
@@ -58,9 +76,7 @@ class SkillsScreen extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.extension_off_outlined,
-                      size: 64,
-                      color: Theme.of(context).colorScheme.outlineVariant),
+                  Icon(Icons.extension_off_outlined, size: 64, color: Theme.of(context).colorScheme.outlineVariant),
                   const SizedBox(height: 16),
                   Text(
                     'No skills registered.',
@@ -119,8 +135,7 @@ class SkillsScreen extends StatelessWidget {
                     decoration: const InputDecoration(
                       labelText: 'Skill ID',
                       hintText: 'e.g. email',
-                      helperText:
-                          'Short name only — maps to pembrook-skill-<id>:latest',
+                      helperText: 'Short name only — maps to pembrook-skill-<id>:latest',
                       prefixIcon: Icon(Icons.extension),
                     ),
                     validator: (v) {
@@ -143,8 +158,7 @@ class SkillsScreen extends StatelessWidget {
                       hintText: 'e.g. @myservices',
                       prefixIcon: Icon(Icons.alternate_email),
                     ),
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? 'Required' : null,
+                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -167,8 +181,7 @@ class SkillsScreen extends StatelessWidget {
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Requires network access'),
-                    subtitle:
-                        const Text('Enable for email, calendar, web_search'),
+                    subtitle: const Text('Enable for email, calendar, web_search'),
                     value: requiresNetwork,
                     onChanged: (v) => setState(() => requiresNetwork = v),
                   ),
@@ -199,8 +212,7 @@ class SkillsScreen extends StatelessWidget {
         skillId: idCtrl.text.trim(),
         skillAtSign: atSignCtrl.text.trim(),
         description: descCtrl.text.trim(),
-        version:
-            versionCtrl.text.trim().isEmpty ? '1.0.0' : versionCtrl.text.trim(),
+        version: versionCtrl.text.trim().isEmpty ? '1.0.0' : versionCtrl.text.trim(),
         requiresNetwork: requiresNetwork,
       );
       try {
@@ -221,39 +233,38 @@ class SkillsScreen extends StatelessWidget {
       }
     }
   }
+}
 
-  /// Send _sys.skill.install to the agent so it writes a SkillMetadata entry
-  /// into its own registry.  The RPC is best-effort — if the agent is offline
-  /// the local DataService entry is still saved and will be re-synced next time.
-  static Future<void> _syncSkillToAgent(
-      BuildContext context, SkillData skill) async {
-    if (!context.mounted) return;
-    final rpc = context.read<RpcService>();
-    try {
-      await rpc.call(
-        command: '_sys.skill.install',
-        conversationId: 'sys',
-        payload: skill.toJson(),
-      );
-    } catch (_) {
-      // Non-fatal: agent might be offline.
-    }
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Send _sys.skill.install to the agent so it writes a SkillMetadata entry
+/// into its own registry.  Best-effort — agent may be offline.
+Future<void> _syncSkillToAgent(BuildContext context, SkillData skill) async {
+  if (!context.mounted) return;
+  final rpc = context.read<RpcService>();
+  try {
+    await rpc.call(
+      command: '_sys.skill.install',
+      conversationId: 'sys',
+      payload: skill.toJson(),
+    );
+  } catch (_) {
+    // Non-fatal.
   }
+}
 
-  /// Send _sys.skill.uninstall to the agent.  Best-effort.
-  static Future<void> _removeSkillFromAgent(
-      BuildContext context, String skillId) async {
-    if (!context.mounted) return;
-    final rpc = context.read<RpcService>();
-    try {
-      await rpc.call(
-        command: '_sys.skill.uninstall',
-        conversationId: 'sys',
-        payload: {'skillId': skillId},
-      );
-    } catch (_) {
-      // Non-fatal.
-    }
+/// Send _sys.skill.uninstall to the agent.  Best-effort.
+Future<void> _removeSkillFromAgent(BuildContext context, String skillId) async {
+  if (!context.mounted) return;
+  final rpc = context.read<RpcService>();
+  try {
+    await rpc.call(
+      command: '_sys.skill.uninstall',
+      conversationId: 'sys',
+      payload: {'skillId': skillId},
+    );
+  } catch (_) {
+    // Non-fatal.
   }
 }
 
@@ -345,7 +356,7 @@ class _SkillCard extends StatelessWidget {
                   await ds.saveSkill(updated);
                   // Re-sync to agent (carrier of the 'enabled' flag).
                   if (context.mounted) {
-                    await SkillsScreen._syncSkillToAgent(context, updated);
+                    await _syncSkillToAgent(context, updated);
                   }
                 },
               ),
@@ -380,8 +391,7 @@ class _SkillCard extends StatelessWidget {
       _ConfigField('calendarId', 'Calendar ID', 'primary', false),
     ],
     'web_search': [
-      _ConfigField('searchApiUrl', 'SearXNG Base URL',
-          'https://searx.example.com', false),
+      _ConfigField('searchApiUrl', 'SearXNG Base URL', 'https://searx.example.com', false),
       _ConfigField('braveApiKey', 'Brave API Key', '', true),
     ],
   };
@@ -393,8 +403,7 @@ class _SkillCard extends StatelessWidget {
     // Populate from existing config.
     if (fields != null) {
       for (final f in fields) {
-        controllers[f.key] =
-            TextEditingController(text: skill.config[f.key] ?? '');
+        controllers[f.key] = TextEditingController(text: skill.config[f.key] ?? '');
       }
     } else {
       // Generic: display existing key-value pairs.
@@ -448,8 +457,7 @@ class _SkillCard extends StatelessWidget {
                           labelText: f.label,
                           hintText: f.hint,
                           border: const OutlineInputBorder(),
-                          suffixIcon:
-                              f.secret ? const Icon(Icons.lock_outline) : null,
+                          suffixIcon: f.secret ? const Icon(Icons.lock_outline) : null,
                         ),
                       ),
                     ),
@@ -475,14 +483,12 @@ class _SkillCard extends StatelessWidget {
                     final updated = skill.copyWith(config: newConfig);
                     await ds.saveSkill(updated);
                     if (ctx.mounted) {
-                      await SkillsScreen._syncSkillToAgent(ctx, updated);
+                      await _syncSkillToAgent(ctx, updated);
                     }
                     if (ctx.mounted) Navigator.pop(ctx);
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content:
-                                Text('Config saved for "${skill.skillId}".')),
+                        SnackBar(content: Text('Config saved for "${skill.skillId}".')),
                       );
                     }
                   },
@@ -530,7 +536,7 @@ class _SkillCard extends StatelessWidget {
         await ds.removeSkill(skill.skillId);
         // Remove from agent registry too.
         if (context.mounted) {
-          await SkillsScreen._removeSkillFromAgent(context, skill.skillId);
+          await _removeSkillFromAgent(context, skill.skillId);
         }
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -554,20 +560,22 @@ class _TrustBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 60,
-      height: 6,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(3),
-        child: LinearProgressIndicator(
-          value: score,
-          backgroundColor: Colors.grey.shade300,
-          valueColor: AlwaysStoppedAnimation<Color>(
-            score >= 0.8
-                ? Colors.green
-                : score >= 0.5
-                    ? Colors.orange
-                    : Colors.red,
+    return ExcludeSemantics(
+      child: SizedBox(
+        width: 60,
+        height: 6,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: LinearProgressIndicator(
+            value: score,
+            backgroundColor: Colors.grey.shade300,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              score >= 0.8
+                  ? Colors.green
+                  : score >= 0.5
+                      ? Colors.orange
+                      : Colors.red,
+            ),
           ),
         ),
       ),

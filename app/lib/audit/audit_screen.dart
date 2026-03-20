@@ -16,16 +16,18 @@ class AuditScreen extends StatelessWidget {
         title: const Text('Audit Log'),
         actions: [
           Consumer<DataService>(
-            builder: (context, ds, _) => IconButton(
-              icon: ds.loading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh),
-              tooltip: 'Refresh',
-              onPressed: ds.loading ? null : () => ds.refresh(),
+            builder: (context, ds, _) => ExcludeSemantics(
+              child: IconButton(
+                icon: ds.loading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh),
+                tooltip: 'Refresh',
+                onPressed: ds.loading ? null : () => ds.refresh(),
+              ),
             ),
           ),
         ],
@@ -40,15 +42,11 @@ class AuditScreen extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.receipt_long_outlined,
-                      size: 64,
-                      color: Theme.of(context).colorScheme.outlineVariant),
+                  Icon(Icons.receipt_long_outlined, size: 64, color: Theme.of(context).colorScheme.outlineVariant),
                   const SizedBox(height: 16),
-                  Text('No audit entries yet.',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text('No audit entries yet.', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
-                  const Text(
-                      'Entries appear here after the agent processes requests.'),
+                  const Text('Entries appear here after the agent processes requests.'),
                 ],
               ),
             );
@@ -59,8 +57,7 @@ class AuditScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 8),
               itemCount: ds.auditEntries.length,
               separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, index) =>
-                  _AuditCard(entry: ds.auditEntries[index]),
+              itemBuilder: (context, index) => _AuditCard(entry: ds.auditEntries[index]),
             ),
           );
         },
@@ -112,20 +109,14 @@ class _AuditCard extends StatelessWidget {
                       Expanded(
                         child: Text(
                           _formatActionType(entry.actionType),
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w600),
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                         ),
                       ),
                       if (entry.executionDurationMs != null)
                         _Chip(
                           label: '${entry.executionDurationMs} ms',
-                          color:
-                              Theme.of(context).colorScheme.secondaryContainer,
-                          textColor: Theme.of(context)
-                              .colorScheme
-                              .onSecondaryContainer,
+                          color: Theme.of(context).colorScheme.secondaryContainer,
+                          textColor: Theme.of(context).colorScheme.onSecondaryContainer,
                         ),
                     ],
                   ),
@@ -153,12 +144,9 @@ class _AuditCard extends StatelessWidget {
                   if (entry.notes != null && entry.notes!.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
@@ -204,9 +192,7 @@ class _AuditCard extends StatelessWidget {
   String? _targetLine(AuditItem e) {
     if (e.skillId != null) return 'skill: ${e.skillId}';
     if (e.mcpServer != null) return 'mcp: ${e.mcpServer}';
-    if (e.targetResource != null &&
-        e.targetResource != 'llm' &&
-        e.targetResource != e.actionType) {
+    if (e.targetResource != null && e.targetResource != 'llm' && e.targetResource != e.actionType) {
       return e.targetResource;
     }
     return null;
@@ -230,22 +216,13 @@ class _AuditCard extends StatelessWidget {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 16),
-            _DetailRow(
-                label: 'Decision', value: e.policyDecision.toUpperCase()),
-            _DetailRow(
-                label: 'Time',
-                value: DateFormat('EEE d MMM yyyy HH:mm:ss')
-                    .format(e.timestamp.toLocal())),
+            _DetailRow(label: 'Decision', value: e.policyDecision.toUpperCase()),
+            _DetailRow(label: 'Time', value: DateFormat('EEE d MMM yyyy HH:mm:ss').format(e.timestamp.toLocal())),
             _DetailRow(label: 'Initiator', value: e.initiatorAtSign),
-            if (e.targetResource != null)
-              _DetailRow(label: 'Target', value: e.targetResource!),
-            if (e.skillId != null)
-              _DetailRow(label: 'Skill', value: e.skillId!),
-            if (e.mcpServer != null)
-              _DetailRow(label: 'MCP Server', value: e.mcpServer!),
-            if (e.executionDurationMs != null)
-              _DetailRow(
-                  label: 'Duration', value: '${e.executionDurationMs} ms'),
+            if (e.targetResource != null) _DetailRow(label: 'Target', value: e.targetResource!),
+            if (e.skillId != null) _DetailRow(label: 'Skill', value: e.skillId!),
+            if (e.mcpServer != null) _DetailRow(label: 'MCP Server', value: e.mcpServer!),
+            if (e.executionDurationMs != null) _DetailRow(label: 'Duration', value: '${e.executionDurationMs} ms'),
             if (e.notes != null && e.notes!.isNotEmpty) ...[
               const SizedBox(height: 12),
               Text(
@@ -263,8 +240,7 @@ class _AuditCard extends StatelessWidget {
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: SelectableText(e.notes!,
-                    style: Theme.of(context).textTheme.bodyMedium),
+                child: SelectableText(e.notes!, style: Theme.of(context).textTheme.bodyMedium),
               ),
             ],
             if (e.inputHash != null || e.outputHash != null) ...[
@@ -277,10 +253,8 @@ class _AuditCard extends StatelessWidget {
                     ),
               ),
               const SizedBox(height: 6),
-              if (e.inputHash != null)
-                _HashRow(label: 'Input', hash: e.inputHash!),
-              if (e.outputHash != null)
-                _HashRow(label: 'Output', hash: e.outputHash!),
+              if (e.inputHash != null) _HashRow(label: 'Input', hash: e.inputHash!),
+              if (e.outputHash != null) _HashRow(label: 'Output', hash: e.outputHash!),
             ],
           ],
         ),
@@ -295,8 +269,7 @@ class _Chip extends StatelessWidget {
   final String label;
   final Color color;
   final Color textColor;
-  const _Chip(
-      {required this.label, required this.color, required this.textColor});
+  const _Chip({required this.label, required this.color, required this.textColor});
 
   @override
   Widget build(BuildContext context) {
@@ -306,8 +279,7 @@ class _Chip extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(label,
-          style: TextStyle(fontSize: 11, color: textColor, height: 1.4)),
+      child: Text(label, style: TextStyle(fontSize: 11, color: textColor, height: 1.4)),
     );
   }
 }
@@ -333,10 +305,7 @@ class _DetailRow extends StatelessWidget {
           ),
           Expanded(
               child: SelectableText(value,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(fontWeight: FontWeight.w500))),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500))),
         ],
       ),
     );
@@ -362,10 +331,7 @@ class _HashRow extends StatelessWidget {
           const SizedBox(height: 2),
           SelectableText(
             hash,
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(fontFamily: 'monospace', fontSize: 11),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(fontFamily: 'monospace', fontSize: 11),
           ),
         ],
       ),

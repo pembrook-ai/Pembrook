@@ -81,8 +81,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   bool _isLoading = false;
   String _streamBuffer = '';
-  String _progressMessage =
-      ''; // Current progress message (e.g., "🌐 Fetching content...")
+  String _progressMessage = ''; // Current progress message (e.g., "🌐 Fetching content...")
   // Mirrors the 'streamingEnabled' SharedPreferences setting.
   // Re-read at the start of every _send() so changes in Settings take effect
   // on the next message without requiring a restart.
@@ -100,8 +99,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // Fires when another device completes a conversation; triggers history reload.
   StreamSubscription<String>? _convCompletedSub;
 
-  static const String _welcomeText =
-      'Hello! I\'m your Pembrook AI assistant. All our communication is '
+  static const String _welcomeText = 'Hello! I\'m your Pembrook AI assistant. All our communication is '
       'end-to-end encrypted via the atPlatform. How can I help you today?';
 
   @override
@@ -151,10 +149,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // Also buffer chunks for any OTHER conversation arriving while we are
       // idle (_activeStreamConvId == null) — they will be shown/discarded
       // once the completion signal arrives and we know what to do with them.
-      final isRemoteOnCurrentConv = event.conversationId == _conversationId &&
-          _activeStreamConvId == null;
-      final isOtherRemoteConv = event.conversationId != _conversationId &&
-          _activeStreamConvId == null;
+      final isRemoteOnCurrentConv = event.conversationId == _conversationId && _activeStreamConvId == null;
+      final isOtherRemoteConv = event.conversationId != _conversationId && _activeStreamConvId == null;
       if (!isOurRequest && !isRemoteOnCurrentConv && !isOtherRemoteConv) return;
 
       if (event.type == 'progress') {
@@ -171,16 +167,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _scrollToBottom();
         } else {
           // Buffer chunk for a backgrounded or unknown remote conversation.
-          _bgStreamBuffers[event.conversationId] =
-              (_bgStreamBuffers[event.conversationId] ?? '') + event.chunk;
+          _bgStreamBuffers[event.conversationId] = (_bgStreamBuffers[event.conversationId] ?? '') + event.chunk;
         }
       }
     });
     // Reload conversation history when any conversation completes anywhere.
     // All @owner devices receive the same stream notifications from @agent.
     _convCompletedSub?.cancel();
-    _convCompletedSub =
-        _rpcService!.conversationCompletedEvents.listen((convId) {
+    _convCompletedSub = _rpcService!.conversationCompletedEvents.listen((convId) {
       // Delay so the originating device has time to write the AtKey before
       // we read it.
       Future.delayed(const Duration(seconds: 3), () async {
@@ -253,8 +247,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _pushSub = _rpcService!.listenToPushMessages(_conversationId, (push) {
       // Only show in this chat if the push belongs to the current conversation
       // (or has no routing). Otherwise the badge is already updated.
-      if (push.conversationId.isNotEmpty &&
-          push.conversationId != _conversationId) {
+      if (push.conversationId.isNotEmpty && push.conversationId != _conversationId) {
         return;
       }
       if (!mounted) return;
@@ -295,9 +288,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (_messages.every((m) => !m.isUser)) return; // nothing to save
 
     final userMessages = _messages.where((m) => m.isUser).toList();
-    final title = userMessages.first.text.length > 80
-        ? '${userMessages.first.text.substring(0, 77)}…'
-        : userMessages.first.text;
+    final title =
+        userMessages.first.text.length > 80 ? '${userMessages.first.text.substring(0, 77)}…' : userMessages.first.text;
 
     _store!.save(ConversationSummary(
       id: _conversationId,
@@ -365,13 +357,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           Consumer<RpcService>(
             builder: (context, rpc, _) {
               final count = rpc.unreadConvIds.length;
-              return Badge(
-                isLabelVisible: count > 0,
-                label: Text('$count'),
-                child: IconButton(
-                  icon: const Icon(Icons.forum_outlined),
-                  tooltip: 'Conversation history',
-                  onPressed: _openHistory,
+              return ExcludeSemantics(
+                child: Badge(
+                  isLabelVisible: count > 0,
+                  label: Text('$count'),
+                  child: IconButton(
+                    icon: const Icon(Icons.forum_outlined),
+                    tooltip: 'Conversation history',
+                    onPressed: _openHistory,
+                  ),
                 ),
               );
             },
@@ -422,8 +416,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     'Agent atSign not configured. '
                     'Go to Settings and set your agent atSign.',
                   ),
-                  leading:
-                      const Icon(Icons.warning_amber, color: Colors.orange),
+                  leading: const Icon(Icons.warning_amber, color: Colors.orange),
                   actions: [
                     TextButton(
                       onPressed: () => context.go('/settings'),
@@ -436,8 +429,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             },
           ),
           Expanded(child: _buildMessages()),
-          if (_streamBuffer.isNotEmpty && _streamingEnabled)
-            _StreamingBubble(text: _streamBuffer),
+          if (_streamBuffer.isNotEmpty && _streamingEnabled) _StreamingBubble(text: _streamBuffer),
           _buildInput(),
         ],
       ),
@@ -497,19 +489,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
           ),
           const SizedBox(width: 8),
-          _isLoading
-              ? const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+          ExcludeSemantics(
+            child: _isLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : IconButton.filled(
+                    icon: const Icon(Icons.send),
+                    onPressed: _send,
                   ),
-                )
-              : IconButton.filled(
-                  icon: const Icon(Icons.send),
-                  onPressed: _send,
-                ),
+          ),
         ],
       ),
     );
@@ -567,9 +561,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // conversation, or from the background buffer if they switched away.
     // Ignored entirely when streaming is disabled — always use RPC reply.
     final streamedText = _streamingEnabled
-        ? (sendConvId == _conversationId
-            ? _streamBuffer.trim()
-            : (_bgStreamBuffers.remove(sendConvId) ?? '').trim())
+        ? (sendConvId == _conversationId ? _streamBuffer.trim() : (_bgStreamBuffers.remove(sendConvId) ?? '').trim())
         : '';
     final responseText = result.success
         ? (streamedText.isNotEmpty ? streamedText : result.response)
@@ -674,6 +666,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _signOut() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text('You will be signed out. Your keys remain on this device '
+            'so you can sign back in at any time.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    // ignore: use_build_context_synchronously
+    context.read<RpcService>().signOut();
+    // ignore: use_build_context_synchronously
+    if (mounted) context.go('/auth');
+  }
+
   // ──────────────────────────────────────────────────────────
   //  DRAWER
   // ──────────────────────────────────────────────────────────
@@ -690,20 +708,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Icon(Icons.security,
-                    size: 40,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer),
+                Icon(Icons.security, size: 40, color: Theme.of(context).colorScheme.onPrimaryContainer),
                 const SizedBox(height: 8),
                 Text('Pembrook',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color:
-                              Theme.of(context).colorScheme.onPrimaryContainer,
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
                           fontWeight: FontWeight.bold,
                         )),
                 Text('Secure AI Agent',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color:
-                              Theme.of(context).colorScheme.onPrimaryContainer,
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
                         )),
               ],
             ),
@@ -722,6 +736,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _DrawerItem(Icons.pending_actions, 'Approvals', '/hitl', context),
           const Divider(),
           _DrawerItem(Icons.settings, 'Settings', '/settings', context),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text('Sign out', style: TextStyle(color: Colors.red)),
+            onTap: () {
+              Navigator.pop(context);
+              _signOut();
+            },
+          ),
         ],
       ),
     );
@@ -730,8 +753,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
-Widget _DrawerItem(
-    IconData icon, String label, String route, BuildContext context) {
+Widget _DrawerItem(IconData icon, String label, String route, BuildContext context) {
   return ListTile(
     leading: Icon(icon),
     title: Text(label),
@@ -765,64 +787,74 @@ class _ChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = message.isUser;
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        onLongPress: () => _copyToClipboard(context),
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.78),
-          decoration: BoxDecoration(
-            color: isUser
-                ? Theme.of(context).colorScheme.primary
-                : Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: isUser
-              ? Text(
-                  message.text,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onPrimary,
-                  ),
-                )
-              : MarkdownBody(
-                  data: message.text,
-                  selectable: true,
-                  onTapLink: (text, href, title) {
-                    if (href != null) {
-                      launchUrl(
-                        Uri.parse(href),
-                        mode: LaunchMode.externalApplication,
-                      );
-                    }
-                  },
-                  styleSheet:
-                      MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                    p: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface,
+    // Wrap the ENTIRE bubble in a single flat Semantics node.
+    // ExcludeSemantics covers everything inside — including GestureDetector
+    // (which registers an onLongPress action node) and MarkdownBody.
+    //
+    // MarkdownBody(selectable: true) creates a SelectionArea widget which
+    // registers its OWN SemanticsNode independently, bypassing ExcludeSemantics.
+    // selectable: false removes SelectionArea entirely. Long-press copy still
+    // works because GestureDetector receives touches regardless of semantics.
+    return Semantics(
+      label: isUser ? 'You: ${message.text}' : message.text,
+      child: ExcludeSemantics(
+        child: Align(
+          alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+          child: GestureDetector(
+            onLongPress: () => _copyToClipboard(context),
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+              decoration: BoxDecoration(
+                color: isUser
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: isUser
+                  ? Text(
+                      message.text,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onPrimary,
+                      ),
+                    )
+                  : MarkdownBody(
+                      data: message.text,
+                      selectable: false,
+                      onTapLink: (text, href, title) {
+                        if (href != null) {
+                          launchUrl(
+                            Uri.parse(href),
+                            mode: LaunchMode.externalApplication,
+                          );
+                        }
+                      },
+                      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                        p: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                        code: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontFamily: 'monospace',
+                              backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                        codeblockDecoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                    code: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontFamily: 'monospace',
-                          backgroundColor:
-                              Theme.of(context).colorScheme.surfaceContainerLow,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                    codeblockDecoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerLow,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    blockquoteDecoration: BoxDecoration(
-                      border: Border(
-                        left: BorderSide(
-                          color: Theme.of(context).colorScheme.primary,
-                          width: 3,
+                        blockquoteDecoration: BoxDecoration(
+                          border: Border(
+                            left: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 3,
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ),
+            ),
+          ),
         ),
       ),
     );
@@ -836,30 +868,34 @@ class _StreamingBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints:
-            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-              color: Theme.of(context).colorScheme.primary, width: 1.5),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(child: Text(text)),
-            const SizedBox(width: 8),
-            const SizedBox(
-              width: 10,
-              height: 10,
-              child: CircularProgressIndicator(strokeWidth: 1.5),
-            ),
-          ],
+    // ExcludeSemantics: this widget rebuilds on every streaming token.
+    // Exposing a partially-complete message to the Windows AX bridge causes
+    // rapid AXTree node churn → accessibility_bridge errors.  The fully
+    // rendered message bubble gets its own Semantics node once streaming ends.
+    return ExcludeSemantics(
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Theme.of(context).colorScheme.primary, width: 1.5),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(child: Text(text)),
+              const SizedBox(width: 8),
+              const SizedBox(
+                width: 10,
+                height: 10,
+                child: CircularProgressIndicator(strokeWidth: 1.5),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -877,46 +913,50 @@ class _ProgressIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          // Left-aligned (agent message)
-          Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.75,
-            ),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.secondaryContainer.withOpacity(0.5),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: theme.colorScheme.secondary,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    message,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontStyle: FontStyle.italic,
-                      color: theme.colorScheme.onSecondaryContainer
-                          .withOpacity(0.75),
+    // ExcludeSemantics: ephemeral progress text + animated spinner cause
+    // continuous AXTree updates.  Screen-readers gain nothing from partially
+    // rendered progress strings; the final assistant bubble is accessible.
+    return ExcludeSemantics(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            // Left-aligned (agent message)
+            Container(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.75,
+              ),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.secondaryContainer.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: theme.colorScheme.secondary,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      message,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontStyle: FontStyle.italic,
+                        color: theme.colorScheme.onSecondaryContainer.withOpacity(0.75),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

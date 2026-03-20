@@ -83,9 +83,7 @@ class AuditItem {
     // The agent writes timestamp as millisecondsSinceEpoch (int).
     // Guard against older entries that may have stored an ISO string.
     final rawTs = json['timestamp'];
-    final DateTime ts = rawTs is int
-        ? DateTime.fromMillisecondsSinceEpoch(rawTs)
-        : DateTime.parse(rawTs as String);
+    final DateTime ts = rawTs is int ? DateTime.fromMillisecondsSinceEpoch(rawTs) : DateTime.parse(rawTs as String);
     return AuditItem(
       timestamp: ts,
       actionType: json['actionType'] as String,
@@ -167,8 +165,7 @@ class SkillData {
         version: json['version'] as String? ?? '1.0.0',
         trustScore: (json['trustScore'] as num?)?.toDouble() ?? 0.0,
         enabled: json['enabled'] as bool? ?? true,
-        config: (json['config'] as Map<String, dynamic>? ?? {})
-            .map((k, v) => MapEntry(k, v.toString())),
+        config: (json['config'] as Map<String, dynamic>? ?? {}).map((k, v) => MapEntry(k, v.toString())),
         requiresNetwork: json['requiresNetwork'] as bool? ?? false,
       );
 }
@@ -218,9 +215,7 @@ class DataService extends ChangeNotifier {
       final raw = (jsonDecode(jsonStr) as List<dynamic>).cast<String>();
       // Strip "cached:" prefix — put() from @agent caches keys on @owner's
       // secondary with this prefix, which AtKey.fromString() cannot parse.
-      return raw
-          .map((k) => k.startsWith('cached:') ? k.substring(7) : k)
-          .toList();
+      return raw.map((k) => k.startsWith('cached:') ? k.substring(7) : k).toList();
     } catch (_) {
       // Fall back to local key scan if remote scan fails.
       return _atClient!.getKeys(regex: regex);
@@ -254,11 +249,9 @@ class DataService extends ChangeNotifier {
       for (final keyStr in keys) {
         try {
           final atKey = AtKey.fromString(keyStr);
-          final v = await _atClient!.get(atKey,
-              getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
+          final v = await _atClient!.get(atKey, getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
           if (v.value != null) {
-            items.add(HitlItem.fromJson(
-                jsonDecode(v.value as String) as Map<String, dynamic>));
+            items.add(HitlItem.fromJson(jsonDecode(v.value as String) as Map<String, dynamic>));
           }
         } catch (_) {}
       }
@@ -313,16 +306,11 @@ class DataService extends ChangeNotifier {
       for (final keyStr in keys.take(200)) {
         try {
           final atKey = AtKey.fromString(keyStr);
-          final v = await _atClient!.get(atKey,
-              getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
+          final v = await _atClient!.get(atKey, getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
           if (v.value != null) {
-            final item = AuditItem.fromJson(
-                jsonDecode(v.value as String) as Map<String, dynamic>);
+            final item = AuditItem.fromJson(jsonDecode(v.value as String) as Map<String, dynamic>);
             final t = item.actionType;
-            if (t.startsWith('mcp.') ||
-                t.startsWith('task.run.') ||
-                t.startsWith('skill.') ||
-                t.startsWith('tool.')) {
+            if (t.startsWith('mcp.') || t.startsWith('task.run.') || t.startsWith('skill.') || t.startsWith('tool.')) {
               items.add(item);
             }
           }
@@ -348,13 +336,14 @@ class DataService extends ChangeNotifier {
   Future<void> _loadSkills() async {
     if (_atClient == null) return;
     try {
-      final keys = await _atClient!.getKeys(regex: r'skill_meta\.');
+      // Use _remoteKeys so skills are visible immediately after login,
+      // before the local secondary cache has had time to sync.
+      final keys = await _remoteKeys(r'skill_meta\.');
       final items = <SkillData>[];
       for (final keyStr in keys) {
         try {
           final atKey = AtKey.fromString(keyStr);
-          final v = await _atClient!.get(atKey,
-              getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
+          final v = await _atClient!.get(atKey, getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
           if (v.value != null) {
             final data = jsonDecode(v.value as String) as Map<String, dynamic>;
             items.add(SkillData.fromJson(data));
@@ -366,6 +355,17 @@ class DataService extends ChangeNotifier {
     } catch (_) {
       _skills = [];
     }
+  }
+
+  /// Reload only skills from the remote server. Cheaper than a full refresh()
+  /// and used by SkillsScreen on mount so the list is always fresh.
+  Future<void> refreshSkills() async {
+    if (_atClient == null) return;
+    _loading = true;
+    notifyListeners();
+    await _loadSkills();
+    _loading = false;
+    notifyListeners();
   }
 
   /// Register or update a skill. Stored on @owner's atServer, sharedWith @agent.
@@ -422,8 +422,7 @@ class StoredMessage {
   factory StoredMessage.fromJson(Map<String, dynamic> json) => StoredMessage(
         text: json['text'] as String? ?? '',
         isUser: json['isUser'] as bool? ?? false,
-        timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ??
-            DateTime.now(),
+        timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ?? DateTime.now(),
       );
 }
 
@@ -453,12 +452,10 @@ class ConversationSummary {
         'messages': messages.map((m) => m.toJson()).toList(),
       };
 
-  factory ConversationSummary.fromJson(Map<String, dynamic> json) =>
-      ConversationSummary(
+  factory ConversationSummary.fromJson(Map<String, dynamic> json) => ConversationSummary(
         id: json['id'] as String? ?? '',
         title: json['title'] as String? ?? '(untitled)',
-        createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
-            DateTime.now(),
+        createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
         messages: (json['messages'] as List<dynamic>? ?? [])
             .map((e) => StoredMessage.fromJson(e as Map<String, dynamic>))
             .toList(),
@@ -484,8 +481,7 @@ class ConversationStore extends ChangeNotifier {
   AtClient? _atClient;
   List<ConversationSummary> _conversations = [];
 
-  List<ConversationSummary> get conversations =>
-      List.unmodifiable(_conversations);
+  List<ConversationSummary> get conversations => List.unmodifiable(_conversations);
 
   /// Call after authentication to enable cross-device AtKey sync.
   ///
@@ -535,9 +531,7 @@ class ConversationStore extends ChangeNotifier {
   void _loadFromJson(String raw) {
     try {
       final list = jsonDecode(raw) as List<dynamic>;
-      _conversations = list
-          .map((e) => ConversationSummary.fromJson(e as Map<String, dynamic>))
-          .toList();
+      _conversations = list.map((e) => ConversationSummary.fromJson(e as Map<String, dynamic>)).toList();
       _conversations.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     } catch (_) {
       _conversations = [];

@@ -25,6 +25,7 @@
 ///   AppShell shows a persistent NavigationRail (width ≥ 600) so users
 ///   can move between sections without a physical/gesture back button.
 ///   On narrow screens the existing hamburger Drawer is used instead.
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -44,7 +45,17 @@ import 'services/data_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const PembrookApp());
+  // The Windows UIA accessibility bridge cannot handle the rapid semantics-tree
+  // mutations that occur during streaming, list rebuilds, and window resizes.
+  // It throws continuous "N will not be in the tree" errors.  Wrapping at the
+  // runApp level (above MaterialApp) excludes ALL nodes — including MaterialApp's
+  // own Localizations/Navigator/router internals — which is the only level that
+  // fully prevents the errors.  Other platforms are unaffected.
+  runApp(
+    defaultTargetPlatform == TargetPlatform.windows
+        ? const ExcludeSemantics(child: PembrookApp())
+        : const PembrookApp(),
+  );
 }
 
 final _router = GoRouter(
@@ -60,8 +71,7 @@ final _router = GoRouter(
     ),
     // ── Main app shell — persistent NavigationRail on desktop ─────────────
     ShellRoute(
-      builder: (context, state, child) =>
-          AppShell(location: state.uri.path, child: child),
+      builder: (context, state, child) => AppShell(location: state.uri.path, child: child),
       routes: [
         GoRoute(
           path: '/home',
@@ -113,87 +123,104 @@ final _router = GoRouter(
 //   screens rely on the OS back button / gesture (mobile).
 // ─────────────────────────────────────────────────────────────────────────────
 
-class AppShell extends StatelessWidget {
+class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.location, required this.child});
 
   final String location;
   final Widget child;
 
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
   // Ordered list of top-level destinations shown in the NavigationRail.
   static const _dests = [
-    (
-      icon: Icons.chat_outlined,
-      activeIcon: Icons.chat,
-      label: 'Chat',
-      route: '/home'
-    ),
-    (
-      icon: Icons.article_outlined,
-      activeIcon: Icons.article,
-      label: 'Audit',
-      route: '/audit'
-    ),
-    (
-      icon: Icons.extension_outlined,
-      activeIcon: Icons.extension,
-      label: 'Skills',
-      route: '/skills'
-    ),
-    (
-      icon: Icons.pending_actions_outlined,
-      activeIcon: Icons.pending_actions,
-      label: 'Approvals',
-      route: '/hitl'
-    ),
-    (
-      icon: Icons.settings_outlined,
-      activeIcon: Icons.settings,
-      label: 'Settings',
-      route: '/settings'
-    ),
+    (icon: Icons.chat_outlined, activeIcon: Icons.chat, label: 'Chat', route: '/home'),
+    (icon: Icons.article_outlined, activeIcon: Icons.article, label: 'Audit', route: '/audit'),
+    (icon: Icons.extension_outlined, activeIcon: Icons.extension, label: 'Skills', route: '/skills'),
+    (icon: Icons.pending_actions_outlined, activeIcon: Icons.pending_actions, label: 'Approvals', route: '/hitl'),
+    (icon: Icons.settings_outlined, activeIcon: Icons.settings, label: 'Settings', route: '/settings'),
   ];
 
   int get _selectedIndex {
     // /policy and /bridges are accessed from Settings — highlight Settings.
-    if (location.startsWith('/policy') || location.startsWith('/bridges')) {
+    if (widget.location.startsWith('/policy') || widget.location.startsWith('/bridges')) {
       return 4;
     }
     for (var i = 0; i < _dests.length; i++) {
-      if (location.startsWith(_dests[i].route)) return i;
+      if (widget.location.startsWith(_dests[i].route)) return i;
     }
     return 0;
+  }
+
+  Future<void> _signOut() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text('You will be signed out. Your keys remain on this device '
+            'so you can sign back in at any time.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    // ignore: use_build_context_synchronously
+    context.read<RpcService>().signOut();
+    // ignore: use_build_context_synchronously
+    if (mounted) context.go('/auth');
   }
 
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.of(context).size.width >= 600;
-    if (!wide) return child;
+    if (!wide) return widget.child;
 
     return Scaffold(
       body: Row(
         children: [
-          NavigationRail(
-            selectedIndex: _selectedIndex,
-            labelType: NavigationRailLabelType.all,
-            leading: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Icon(
-                Icons.security,
-                size: 32,
-                color: Theme.of(context).colorScheme.primary,
+          ExcludeSemantics(
+            child: NavigationRail(
+              selectedIndex: _selectedIndex,
+              labelType: NavigationRailLabelType.all,
+              leading: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Icon(
+                  Icons.security,
+                  size: 32,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
               ),
+              trailing: Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: IconButton(
+                  icon: const Icon(Icons.logout),
+                  tooltip: 'Sign out',
+                  color: Theme.of(context).colorScheme.error,
+                  onPressed: _signOut,
+                ),
+              ),
+              destinations: _dests
+                  .map((d) => NavigationRailDestination(
+                        icon: Icon(d.icon),
+                        selectedIcon: Icon(d.activeIcon),
+                        label: Text(d.label),
+                      ))
+                  .toList(),
+              onDestinationSelected: (i) => context.go(_dests[i].route),
             ),
-            destinations: _dests
-                .map((d) => NavigationRailDestination(
-                      icon: Icon(d.icon),
-                      selectedIcon: Icon(d.activeIcon),
-                      label: Text(d.label),
-                    ))
-                .toList(),
-            onDestinationSelected: (i) => context.go(_dests[i].route),
           ),
           const VerticalDivider(width: 1, thickness: 1),
-          Expanded(child: child),
+          Expanded(child: widget.child),
         ],
       ),
     );
