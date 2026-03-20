@@ -480,6 +480,10 @@ class ConversationStore extends ChangeNotifier {
 
   AtClient? _atClient;
   List<ConversationSummary> _conversations = [];
+  // Monotonically-increasing counter used to discard stale load() results.
+  // Each load() call captures the epoch at entry; if a newer call has already
+  // applied its data by the time this one finishes, we skip the overwrite.
+  int _loadEpoch = 0;
 
   List<ConversationSummary> get conversations => List.unmodifiable(_conversations);
 
@@ -501,7 +505,14 @@ class ConversationStore extends ChangeNotifier {
   }
 
   /// Load conversations — tries remote AtKey first, then SharedPreferences.
+  ///
+  /// Uses an epoch counter so concurrent calls never cause stale data to
+  /// overwrite the most-recently-applied result.  This prevents the background
+  /// load started during login (which fetches a snapshot from before the
+  /// originating device's AtKey write) from clobbering the fresh data loaded
+  /// by the cross-device sync listener 3 s later.
   Future<void> load() async {
+    final epoch = ++_loadEpoch;
     final client = _atClient;
     if (client != null) {
       try {
@@ -512,6 +523,8 @@ class ConversationStore extends ChangeNotifier {
           key,
           getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
         );
+        // A newer load() call has already applied its result — discard ours.
+        if (epoch < _loadEpoch) return;
         if (atValue.value != null) {
           final raw = atValue.value as String;
           _loadFromJson(raw);
@@ -524,6 +537,9 @@ class ConversationStore extends ChangeNotifier {
         // Network/AtKey unavailable — fall through to SharedPreferences.
       }
     }
+
+    // A newer load() call has already applied its result — discard ours.
+    if (epoch < _loadEpoch) return;
 
     // Offline / unauthenticated fallback.
     final prefs = await SharedPreferences.getInstance();

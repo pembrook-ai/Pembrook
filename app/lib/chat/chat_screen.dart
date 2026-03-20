@@ -175,69 +175,59 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // All @owner devices receive the same stream notifications from @agent.
     _convCompletedSub?.cancel();
     _convCompletedSub = _rpcService!.conversationCompletedEvents.listen((convId) {
-      // Delay so the originating device has time to write the AtKey before
-      // we read it.
       Future.delayed(const Duration(seconds: 3), () async {
-        if (!mounted) return;
-        await _store?.load();
         if (!mounted) return;
 
         if (convId == _conversationId) {
-          // Completed conversation IS the one currently on screen — refresh messages.
-          // BUT: Only reload from AtKey if we don't have valid streaming content,
-          // or if the AtKey has MORE messages than we do (e.g., from another device).
-          final updated = _store?.get(convId);
-          if (updated != null) {
-            final currentMsgCount = _messages.length;
-            final atKeyMsgCount = updated.messages.length;
-            // If we have the same or more messages (from streaming), keep them.
-            // Only reload if AtKey has new messages we don't have.
-            if (atKeyMsgCount <= currentMsgCount) {
-              // We already have the messages from streaming — keep them.
-              setState(() => _streamBuffer = '');
-            } else {
-              // AtKey has more messages — reload to get them.
-              setState(() {
-                _streamBuffer = '';
-                _conversationId = updated.id;
-                _messages
-                  ..clear()
-                  ..addAll(updated.messages.map((s) => _Message(
-                        text: s.text,
-                        isUser: s.isUser,
-                        timestamp: s.timestamp,
-                      )));
-              });
-              _scrollToBottom();
-            }
-          }
-        } else {
-          // Completed conversation is a DIFFERENT conversation (Device B used its
-          // own UUID).  Discard any buffered chunks for it — we'll use the store.
-          _bgStreamBuffers.remove(convId);
-          final completed = _store?.get(convId);
-          if (completed == null) return;
-          final hasUserMessages = _messages.any((m) => m.isUser);
-          if (!hasUserMessages) {
-            // Device A is idle (just the welcome message) — auto-switch to show
-            // the newly completed conversation.
-            setState(() {
-              _streamBuffer = '';
-              _conversationId = completed.id;
-              _messages
-                ..clear()
-                ..addAll(completed.messages.map((s) => _Message(
-                      text: s.text,
-                      isUser: s.isUser,
-                      timestamp: s.timestamp,
-                    )));
-            });
-            _scrollToBottom();
-          } else {
-            // Another device completed a conversation while this one has its
-            // own active chat — silently stored, available in history.
-          }
+          // ── Originating device ──────────────────────────────────────────
+          // This device sent the message.  _send() will receive the RPC
+          // response and _saveCurrentConversation() will persist everything.
+          // DO NOT load from remote here: the in-flight _persist() write may
+          // not have reached the remote atServer yet, and a premature load
+          // would overwrite the in-memory store update with stale data —
+          // making the conversation vanish from history on BOTH devices.
+          return;
         }
+
+        // ── Remote device ─────────────────────────────────────────────────
+        // Another device's conversation completed.  Load from remote so this
+        // device's store and UI are updated.
+        _bgStreamBuffers.remove(convId);
+
+        await _store?.load();
+        if (!mounted) return;
+
+        // If the write is still in-flight on the originating device's slow
+        // network, retry once after an additional 2 s before giving up.
+        if (_store?.get(convId) == null) {
+          await Future.delayed(const Duration(seconds: 2));
+          if (!mounted) return;
+          await _store?.load();
+          if (!mounted) return;
+        }
+
+        final completed = _store?.get(convId);
+        if (completed == null) return;
+
+        final hasUserMessages = _messages.any((m) => m.isUser);
+        if (!hasUserMessages) {
+          // This device is idle (just the welcome message) — auto-switch to
+          // show the newly completed conversation.
+          setState(() {
+            _streamBuffer = '';
+            _conversationId = completed.id;
+            _messages
+              ..clear()
+              ..addAll(completed.messages.map((s) => _Message(
+                    text: s.text,
+                    isUser: s.isUser,
+                    timestamp: s.timestamp,
+                  )));
+          });
+          _scrollToBottom();
+        }
+        // else: another device completed while this one has an active chat —
+        // silently updated in history, accessible via the History screen.
       });
     });
     // Subscribe to proactive push messages from scheduled tasks.
