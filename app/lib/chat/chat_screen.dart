@@ -94,6 +94,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // Stream chunk buffers for in-flight requests whose conversation is not
   // currently displayed (user switched away mid-flight).
   final Map<String, String> _bgStreamBuffers = {};
+  // Tracks conversation IDs where THIS device called _send().
+  // Used in _convCompletedSub to distinguish the originator (let _send() handle
+  // the response) from a passive viewer (loaded this conv from history on another
+  // device — must finalise the streaming buffer itself).
+  final Set<String> _originatedConvIds = {};
   StreamSubscription<StreamChunkEvent>? _streamSub;
   StreamSubscription<PushMessage>? _pushSub;
   // Fires when another device completes a conversation; triggers history reload.
@@ -108,10 +113,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _conversationId = _uuid.v4();
     _messages.add(_Message(text: _welcomeText, isUser: false));
-    // Load the stored conversation list on first launch.
+    // Capture the store reference after the first frame so context is available.
+    // Do NOT call load() here — ConversationStore is a long-lived provider that
+    // is already populated by initialise() and stays correct across route changes.
+    // A load() here would race with any in-flight _persist() write and overwrite
+    // freshly-saved conversations with stale remote data on every nav-back.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _store = context.read<ConversationStore>();
-      _store?.load();
     });
     // Read streaming pref so the initial state mirrors Settings.
     SharedPreferences.getInstance().then((prefs) {
@@ -179,13 +187,54 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (!mounted) return;
 
         if (convId == _conversationId) {
-          // ── Originating device ──────────────────────────────────────────
-          // This device sent the message.  _send() will receive the RPC
-          // response and _saveCurrentConversation() will persist everything.
-          // DO NOT load from remote here: the in-flight _persist() write may
-          // not have reached the remote atServer yet, and a premature load
-          // would overwrite the in-memory store update with stale data —
-          // making the conversation vanish from history on BOTH devices.
+          if (_originatedConvIds.contains(convId)) {
+            // ── Originating device ────────────────────────────────────────
+            // This device called _send() for this conversation.  _send() will
+            // receive the RPC reply, add the response to _messages, and call
+            // _saveCurrentConversation().  Loading from remote here would race
+            // with the in-flight _persist() write and overwrite fresh in-memory
+            // state with stale data — making the conversation vanish.
+            return;
+          }
+
+          // ── Passive viewer ────────────────────────────────────────────────
+          // This device loaded this conversation from history and is watching
+          // a remote conversation complete.  _streamBuffer has the streamed
+          // response (via the isRemoteOnCurrentConv path in _streamSub).
+          // Finalise it into a proper message bubble and persist.
+          if (_streamBuffer.isNotEmpty) {
+            final responseText = _streamBuffer.trim();
+            setState(() {
+              _streamBuffer = '';
+              _progressMessage = '';
+              _messages.add(_Message(
+                text: responseText,
+                isUser: false,
+                timestamp: DateTime.now(),
+              ));
+            });
+            _saveCurrentConversation();
+            _scrollToBottom();
+          } else {
+            // Streaming disabled or chunks were missed — pull the full
+            // conversation from the remote AtKey.
+            await _store?.load();
+            if (!mounted) return;
+            final updated = _store?.get(convId);
+            if (updated != null && updated.messages.length > _messages.length) {
+              setState(() {
+                _streamBuffer = '';
+                _messages
+                  ..clear()
+                  ..addAll(updated.messages.map((s) => _Message(
+                        text: s.text,
+                        isUser: s.isUser,
+                        timestamp: s.timestamp,
+                      )));
+              });
+              _scrollToBottom();
+            }
+          }
           return;
         }
 
@@ -522,6 +571,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _streamBuffer = '';
       _activeStreamConvId = _conversationId; // open streaming window
     });
+    // Record that THIS device initiated this conversation so _convCompletedSub
+    // knows to let _send() manage the response rather than trying to load from
+    // remote (which would race with the in-flight _persist() write).
+    _originatedConvIds.add(_conversationId);
     _scrollToBottom();
 
     final rpcService = context.read<RpcService>();
