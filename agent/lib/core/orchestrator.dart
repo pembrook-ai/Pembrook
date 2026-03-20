@@ -237,7 +237,10 @@ class Orchestrator {
         'type': 'function',
         'function': {
           'name': 'send_email',
-          'description': 'Send an email to one or more recipients via SMTP.',
+          'description': 'Send an email to one or more recipients via SMTP. '
+              'IMPORTANT: the body must contain ACTUAL content — never use '
+              'placeholder text. If emailing web content, call browser.extract_text first, '
+              'then compose the body from the real extracted text.',
           'parameters': {
             'type': 'object',
             'required': ['to', 'subject', 'body'],

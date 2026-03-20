@@ -116,12 +116,17 @@ Ensure you have:
       Platform.environment['OLLAMA_BASE_URL'] ?? 'http://localhost:11434';
   log.info('Ollama base URL: $ollamaBaseUrl');
 
+  // Read Ollama model from env — allows docker-compose to inject via .env.
+  final ollamaModel = Platform.environment['OLLAMA_MODEL'] ?? 'qwen2.5:7b';
+  log.info('Ollama model: $ollamaModel');
+
   final auditService = AuditService(atClient: atClient);
   final sanitizer = QuerySanitizer(ollamaBaseUrl: ollamaBaseUrl);
   final llmRouter = LlmRouter(
     atClient: atClient,
     sanitizer: sanitizer,
     ollamaBaseUrl: ollamaBaseUrl,
+    model: ollamaModel,
   );
   // Pass llmRouter to MemoryService so summarizeOldConversations() works.
   final memoryService = MemoryService(atClient: atClient, llmRouter: llmRouter);

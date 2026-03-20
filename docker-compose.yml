@@ -97,6 +97,7 @@ services:
       # Override in .env with OLLAMA_BASE_URL=http://ollama:11434 when using
       # --profile bundled-ollama.
       OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5:7b}"
       OWNER_AT_SIGN: "${OWNER_AT_SIGN:-}"
       ALLOWED_USERS: "${ALLOWED_USERS:-}"
       # atSign shared by MCP servers / bridges — used for tool discovery
@@ -269,6 +270,27 @@ services:
       - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
     environment:
       PLAYWRIGHT_WS_URL: "${PLAYWRIGHT_WS_URL:-}"
+    networks:
+      - pembrook_internal
+
+  # ── Log Viewer (monitor dashboard) ─────────────────────────────────────────
+  # Real-time web UI for tailing all container logs via SSE.
+  # Open http://localhost:9090 in your browser.
+  log_viewer:
+    build:
+      context: ./tools/log_viewer
+      dockerfile: Dockerfile
+    container_name: pembrook-log-viewer
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./docker-compose.yml:/compose/docker-compose.yml:ro
+      - ./.env:/compose/.env:ro
+    environment:
+      PYTHONUNBUFFERED: "1"
+      COMPOSE_DIR: "/compose"
     networks:
       - pembrook_internal
 

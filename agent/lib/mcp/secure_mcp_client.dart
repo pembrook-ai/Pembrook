@@ -148,6 +148,14 @@ class SecureMcpClient {
     };
 
     _log.info('MCP call: $mcpAtSign/$toolName (req=$requestId)');
+    // Log arguments for visibility.
+    for (final entry in arguments.entries) {
+      final val = entry.value.toString();
+      final preview = val.length > 300
+          ? '${val.substring(0, 300)}… (${val.length} chars)'
+          : val;
+      _log.info('  ├─ ${entry.key}: $preview');
+    }
 
     McpCallResult callResult;
     try {
@@ -179,15 +187,18 @@ class SecureMcpClient {
         timeout: const Duration(seconds: 30),
       );
       if (responseJson == null) {
+        _log.warning('MCP response timed out for $toolName (req=$requestId)');
         callResult = const McpCallResult(
             success: false, error: 'MCP response timed out');
       } else {
         final response = jsonDecode(responseJson) as Map<String, dynamic>;
         if (response.containsKey('error')) {
+          final errMsg =
+              (response['error'] as Map<String, dynamic>)['message'] as String?;
+          _log.warning('MCP error for $toolName: $errMsg');
           callResult = McpCallResult(
             success: false,
-            error: (response['error'] as Map<String, dynamic>)['message']
-                as String?,
+            error: errMsg,
           );
         } else {
           final result = response['result'] as Map<String, dynamic>;
@@ -195,6 +206,16 @@ class SecureMcpClient {
                   ?.map((e) => e as Map<String, dynamic>)
                   .toList() ??
               [];
+          // Log preview of MCP response.
+          for (final part in content.take(3)) {
+            final text = (part['text'] as String?) ?? '';
+            if (text.isNotEmpty) {
+              final preview = text.length > 500
+                  ? '${text.substring(0, 500)}… (${text.length} chars total)'
+                  : text;
+              _log.info('MCP response ($toolName): $preview');
+            }
+          }
           callResult = McpCallResult(success: true, content: content);
         }
       }

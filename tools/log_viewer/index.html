@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pembrook Log Viewer</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --orange: #db6d28;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --cyan: #39d2c0;
+    --pink: #f778ba;
+    --font-mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.5;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header bar ────────────────────────────────────── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+
+  header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    display: inline-block;
+    margin-right: 6px;
+    transition: background 0.3s;
+  }
+  .status-dot.connected { background: var(--green); }
+
+  .filter-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .filter-group-label {
+    color: var(--text-dim);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-right: 2px;
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+  }
+
+  input[type="text"] {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    width: 260px;
+    outline: none;
+  }
+  input[type="text"]:focus { border-color: var(--accent); }
+  input[type="text"]::placeholder { color: var(--text-dim); }
+
+  button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    transition: background 0.15s;
+  }
+  button:hover { background: var(--border); }
+  button.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+  .filter-group button {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+
+  /* Service filter buttons have per-service colors */
+  button.svc-agent.active       { background: var(--cyan); color: var(--bg); border-color: var(--cyan); }
+  button.svc-mcp.active         { background: var(--pink); color: var(--bg); border-color: var(--pink); }
+  button.svc-ollama.active      { background: var(--orange); color: var(--bg); border-color: var(--orange); }
+  button.svc-unknown.active     { background: var(--text-dim); color: var(--bg); border-color: var(--text-dim); }
+
+  .stats {
+    color: var(--text-dim);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  /* ── Log area ──────────────────────────────────────── */
+  #log-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+    scroll-behavior: auto;
+  }
+
+  .log-line {
+    padding: 1px 16px;
+    display: flex;
+    gap: 8px;
+    font-size: 12.5px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .log-line:hover { background: rgba(88, 166, 255, 0.04); }
+  .log-line.hidden { display: none; }
+
+  .log-ts {
+    color: var(--text-dim);
+    flex-shrink: 0;
+    font-size: 11px;
+    min-width: 65px;
+    user-select: none;
+  }
+
+  .log-svc {
+    flex-shrink: 0;
+    font-weight: 600;
+    font-size: 10px;
+    min-width: 80px;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-radius: 3px;
+    padding: 0 5px;
+    text-align: center;
+    user-select: none;
+    line-height: 1.7;
+  }
+  .log-svc.svc-agent   { color: var(--cyan); border: 1px solid rgba(57,210,192,0.4); }
+  .log-svc.svc-mcp     { color: var(--pink); border: 1px solid rgba(247,120,186,0.4); }
+  .log-svc.svc-ollama  { color: var(--orange); border: 1px solid rgba(219,109,40,0.4); }
+  .log-svc.svc-unknown { color: var(--text-dim); border: 1px solid var(--border); }
+
+  .log-level {
+    flex-shrink: 0;
+    font-weight: 600;
+    font-size: 11px;
+    width: 50px;
+    text-align: center;
+    border-radius: 3px;
+    padding: 0 4px;
+    user-select: none;
+  }
+  .log-level.INFO    { color: var(--green); }
+  .log-level.WARNING { color: var(--yellow); }
+  .log-level.SHOUT   { color: var(--red); }
+  .log-level.ERROR   { color: var(--red); }
+
+  .log-source {
+    color: var(--purple);
+    flex-shrink: 0;
+    min-width: 120px;
+    font-size: 11.5px;
+  }
+
+  .log-msg {
+    color: var(--text);
+    flex: 1;
+  }
+
+  /* Highlight keywords */
+  .log-msg .kw-tool    { color: var(--cyan); font-weight: 600; }
+  .log-msg .kw-error   { color: var(--red); font-weight: 600; }
+  .log-msg .kw-success  { color: var(--green); }
+  .log-msg .kw-request  { color: var(--accent); font-weight: 600; }
+  .log-msg .kw-iter     { color: var(--orange); }
+  .log-msg .kw-fallback { color: var(--yellow); font-weight: 600; }
+  .log-msg .kw-mcp      { color: var(--pink); font-weight: 600; }
+  .log-msg .kw-arg      { color: var(--text-dim); }
+
+  /* Search highlight */
+  .log-line.search-match { background: rgba(210, 153, 34, 0.08); }
+  .log-msg mark {
+    background: rgba(210, 153, 34, 0.35);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+
+  /* ── Auto-scroll indicator ─────────────────────────── */
+  #scroll-btn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+    cursor: pointer;
+    display: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    z-index: 10;
+  }
+  #scroll-btn:hover { opacity: 0.85; }
+
+  /* ── Request flow grouping ─────────────────────────── */
+  .log-line.request-start {
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+    padding-top: 6px;
+  }
+
+  /* Tree-style arg lines */
+  .log-line.arg-line { opacity: 0.85; }
+  .log-line.arg-line .log-msg { color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span class="status-dot" id="status-dot"></span> Pembrook Log Viewer</h1>
+
+  <div class="filter-group" id="service-filters">
+    <span class="filter-group-label">Svc</span>
+  </div>
+
+  <div class="filter-group">
+    <span class="filter-group-label">Level</span>
+    <button class="active" data-level="all">All</button>
+    <button class="active" data-level="INFO">Info</button>
+    <button class="active" data-level="WARNING">Warn</button>
+    <button class="active" data-level="SHOUT">Error</button>
+  </div>
+
+  <input type="text" id="filter-input" placeholder="Filter logs... (regex supported)">
+
+  <div class="controls">
+    <button id="pause-btn">⏸ Pause</button>
+    <button id="clear-btn">🗑 Clear</button>
+    <span class="stats" id="stats">0 lines</span>
+  </div>
+</header>
+
+<div id="log-container"></div>
+<button id="scroll-btn" title="Scroll to bottom">↓</button>
+
+<script>
+(function() {
+  const container = document.getElementById('log-container');
+  const filterInput = document.getElementById('filter-input');
+  const pauseBtn = document.getElementById('pause-btn');
+  const clearBtn = document.getElementById('clear-btn');
+  const statsEl = document.getElementById('stats');
+  const statusDot = document.getElementById('status-dot');
+  const scrollBtn = document.getElementById('scroll-btn');
+  const levelBtns = document.querySelectorAll('[data-level]');
+  const svcFiltersEl = document.getElementById('service-filters');
+
+  let paused = false;
+  let autoScroll = true;
+  let totalLines = 0;
+  let visibleLines = 0;
+  let activeLevels = new Set(['INFO', 'WARNING', 'SHOUT', 'ERROR', 'OTHER']);
+  let allLevels = true;
+  let filterRegex = null;
+
+  // Service filtering — all shown by default.
+  let knownServices = new Set();
+  let hiddenServices = new Set();  // services the user has toggled OFF
+
+  // ── Service color map ───────────────────────────────
+  function svcClass(svc) {
+    if (svc === 'agent') return 'svc-agent';
+    if (svc.startsWith('mcp')) return 'svc-mcp';
+    if (svc === 'ollama') return 'svc-ollama';
+    return 'svc-unknown';
+  }
+  function svcLabel(svc) {
+    if (svc === 'agent') return 'agent';
+    if (svc.startsWith('mcp')) return 'mcp';
+    if (svc === 'ollama') return 'ollama';
+    return svc;
+  }
+
+  // ── Add service filter button dynamically ───────────
+  function ensureServiceBtn(svc) {
+    if (knownServices.has(svc)) return;
+    knownServices.add(svc);
+    const btn = document.createElement('button');
+    btn.className = `active ${svcClass(svc)}`;
+    btn.dataset.service = svc;
+    btn.textContent = svcLabel(svc);
+    btn.addEventListener('click', () => {
+      btn.classList.toggle('active');
+      if (btn.classList.contains('active')) {
+        hiddenServices.delete(svc);
+      } else {
+        hiddenServices.add(svc);
+      }
+      refilter();
+    });
+    svcFiltersEl.appendChild(btn);
+  }
+
+  // ── Parse a log line ────────────────────────────────
+  function parseLine(raw) {
+    let line = raw;
+
+    // [LEVEL] Source: message
+    let m = line.match(/^\[(\w+)\]\s+(\S+?):\s*(.*)/);
+    if (m) return { level: m[1], source: m[2], msg: m[3] };
+
+    // SHOUT|timestamp|Source|message
+    m = line.match(/^(SHOUT|WARNING|ERROR)\|([^|]*)\|([^|]*)\|(.*)/);
+    if (m) return { level: m[1], source: m[3].trim(), msg: m[4].trim() };
+
+    // Tree-style argument lines
+    if (line.match(/^\s*[├└│]/) || line.match(/^\s*\|/)) {
+      return { level: 'OTHER', source: '', msg: line.trim(), isArg: true };
+    }
+
+    // Stack traces
+    if (line.match(/^#\d+\s/) || line.match(/^\s+#\d+/)) {
+      return { level: 'SHOUT', source: 'StackTrace', msg: line.trim() };
+    }
+
+    return { level: 'OTHER', source: '', msg: line };
+  }
+
+  // ── Highlight keywords in message ───────────────────
+  function highlightMsg(msg, searchRe) {
+    let s = escapeHtml(msg);
+
+    // Tool-call related.
+    s = s.replace(/\b(Tool call:|Tool result for|MCP call:|MCP response)\b/g,
+      '<span class="kw-tool">$1</span>');
+    s = s.replace(/\b(browser\.\w+|send_email|list_tasks|schedule_task|cancel_task|notify_owner|fetch_webpage|extract_text)\b/g,
+      '<span class="kw-tool">$1</span>');
+    // MCP specific.
+    s = s.replace(/\b(MCP tools|MCP tools\/list|listTools|mcp\.request|mcp\.response)\b/g,
+      '<span class="kw-mcp">$1</span>');
+    // Errors.
+    s = s.replace(/\b(Error|ERROR|failed|exception|timed out|blocked|severe)\b/gi,
+      '<span class="kw-error">$1</span>');
+    // Request starts.
+    s = s.replace(/\b(Received request|Processing request)\b/g,
+      '<span class="kw-request">$1</span>');
+    // Iterations & tool-loop tags.
+    s = s.replace(/(iteration=\d+\/\d+)/g, '<span class="kw-iter">$1</span>');
+    s = s.replace(/(\[tool-loop\]|\[tools-done\]|\[pre-flight\]|\[model-reasoning\]|\[final-answer\])/g,
+      '<span class="kw-iter">$1</span>');
+    // Fallback.
+    s = s.replace(/(\[fallback\]|\[incomplete-task\])/g,
+      '<span class="kw-fallback">$1</span>');
+    // Success.
+    s = s.replace(/\b(sent|success|allowed|loaded|Got response|connected|authenticated)\b/gi,
+      '<span class="kw-success">$1</span>');
+    // Tree-style arg keys.
+    s = s.replace(/^(\s*[├└│]\S?\s*)(\S+?:\s)/, '$1<span class="kw-mcp">$2</span>');
+
+    if (searchRe) {
+      s = s.replace(searchRe, '<mark>$&</mark>');
+    }
+    return s;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Create a log line element ───────────────────────
+  function createLogEl(service, raw) {
+    const parsed = parseLine(raw);
+    const div = document.createElement('div');
+    div.className = 'log-line';
+    div.dataset.level = parsed.level;
+    div.dataset.service = service;
+
+    if (parsed.isArg) div.classList.add('arg-line');
+
+    if (parsed.msg.includes('Received request') || parsed.msg.includes('Processing request')) {
+      div.classList.add('request-start');
+    }
+
+    const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    div.innerHTML =
+      `<span class="log-ts">${ts}</span>` +
+      `<span class="log-svc ${svcClass(service)}">${escapeHtml(svcLabel(service))}</span>` +
+      `<span class="log-level ${parsed.level}">${parsed.level}</span>` +
+      `<span class="log-source">${escapeHtml(parsed.source)}</span>` +
+      `<span class="log-msg">${highlightMsg(parsed.msg, filterRegex)}</span>`;
+
+    if (!shouldShow(div)) div.classList.add('hidden');
+    return div;
+  }
+
+  function shouldShow(el) {
+    const level = el.dataset.level;
+    const service = el.dataset.service;
+    if (hiddenServices.has(service)) return false;
+    if (!allLevels && !activeLevels.has(level)) return false;
+    if (filterRegex) {
+      if (!filterRegex.test(el.textContent)) return false;
+    }
+    return true;
+  }
+
+  // ── Add line to display ────────────────────────────
+  function addLine(service, raw) {
+    if (paused) return;
+    ensureServiceBtn(service);
+    const el = createLogEl(service, raw);
+    container.appendChild(el);
+    totalLines++;
+    if (!el.classList.contains('hidden')) visibleLines++;
+    updateStats();
+
+    while (container.children.length > 3000) {
+      container.removeChild(container.firstChild);
+      totalLines--;
+    }
+
+    if (autoScroll) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }
+
+  function updateStats() {
+    statsEl.textContent = filterRegex || hiddenServices.size > 0
+      ? `${visibleLines} / ${totalLines} lines`
+      : `${totalLines} lines`;
+  }
+
+  function refilter() {
+    visibleLines = 0;
+    for (const el of container.children) {
+      if (shouldShow(el)) {
+        el.classList.remove('hidden');
+        visibleLines++;
+      } else {
+        el.classList.add('hidden');
+      }
+    }
+    updateStats();
+    if (autoScroll) container.scrollTop = container.scrollHeight;
+  }
+
+  // ── SSE connection ─────────────────────────────────
+  function connect() {
+    const es = new EventSource('/events');
+    es.onopen = () => { statusDot.classList.add('connected'); };
+    es.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        addLine(data.service || 'unknown', data.line || '');
+      } catch(e) {}
+    };
+    es.onerror = () => { statusDot.classList.remove('connected'); };
+  }
+
+  // ── Event handlers ─────────────────────────────────
+  filterInput.addEventListener('input', () => {
+    const val = filterInput.value.trim();
+    try {
+      filterRegex = val ? new RegExp(val, 'gi') : null;
+    } catch(e) {
+      filterRegex = new RegExp(val.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    }
+    for (const el of container.children) {
+      const msgEl = el.querySelector('.log-msg');
+      if (msgEl) {
+        const parsed = parseLine(msgEl.textContent || '');
+        msgEl.innerHTML = highlightMsg(parsed.msg || msgEl.textContent, filterRegex);
+      }
+    }
+    refilter();
+  });
+
+  pauseBtn.addEventListener('click', () => {
+    paused = !paused;
+    pauseBtn.textContent = paused ? '▶ Resume' : '⏸ Pause';
+    pauseBtn.classList.toggle('active', paused);
+  });
+
+  clearBtn.addEventListener('click', () => {
+    container.innerHTML = '';
+    totalLines = 0;
+    visibleLines = 0;
+    updateStats();
+  });
+
+  levelBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const level = btn.dataset.level;
+      if (level === 'all') {
+        allLevels = !allLevels;
+        btn.classList.toggle('active', allLevels);
+        if (allLevels) {
+          levelBtns.forEach(b => { if (b.dataset.level !== 'all') b.classList.add('active'); });
+          activeLevels = new Set(['INFO', 'WARNING', 'SHOUT', 'ERROR', 'OTHER']);
+        }
+      } else {
+        btn.classList.toggle('active');
+        if (btn.classList.contains('active')) {
+          activeLevels.add(level);
+        } else {
+          activeLevels.delete(level);
+          allLevels = false;
+          document.querySelector('[data-level="all"]').classList.remove('active');
+        }
+      }
+      refilter();
+    });
+  });
+
+  container.addEventListener('scroll', () => {
+    const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+    autoScroll = atBottom;
+    scrollBtn.style.display = atBottom ? 'none' : 'block';
+  });
+
+  scrollBtn.addEventListener('click', () => {
+    container.scrollTop = container.scrollHeight;
+    autoScroll = true;
+    scrollBtn.style.display = 'none';
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && document.activeElement !== filterInput) {
+      e.preventDefault();
+      filterInput.focus();
+    }
+    if (e.key === 'Escape') {
+      filterInput.value = '';
+      filterRegex = null;
+      filterInput.blur();
+      refilter();
+    }
+  });
+
+  connect();
+})();
+</script>
+</body>
+</html>

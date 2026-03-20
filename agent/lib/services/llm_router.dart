@@ -33,7 +33,7 @@ class LlmRouter {
   final Logger _log = Logger('LlmRouter');
 
   // Cached settings — refreshed from AtKey periodically
-  String _localModel = 'qwen2.5:7b';
+  String _localModel;
   String _externalProvider = 'none';
   double _privacyThreshold = 0.7;
   bool _localOnly = false;
@@ -44,7 +44,8 @@ class LlmRouter {
     required this.atClient,
     required this.sanitizer,
     this.ollamaBaseUrl = 'http://localhost:11434',
-  });
+    String model = 'qwen2.5:7b',
+  }) : _localModel = model;
 
   /// Classify the user's query intent.
   Future<IntentType> classifyIntent({
@@ -171,7 +172,8 @@ TOOL USE RULES — follow these exactly, every time:
 - To stop or remove a task: ALWAYS call list_tasks then cancel_task. Never say "cancelled" without calling cancel_task.
 - To fetch live web content: ALWAYS use a tool — never guess. Prefer browser.fetch or browser.extract_text (MCP browser tools) when they appear in the tool list — they handle JavaScript and dynamic pages. Only fall back to fetch_webpage if no browser.* tools are available.
 - Do NOT answer task management questions from memory or conversation history. Always use the appropriate tool.
-- For multi-step tasks (e.g. "look up X then email it"): call the first tool, then USE the result to call the next tool. Do not stop after the first tool call. Continue until ALL steps are complete before giving a final answer.''';
+- For multi-step tasks (e.g. "look up X then email it"): call the first tool, then USE the result to call the next tool. Do not stop after the first tool call. Continue until ALL steps are complete before giving a final answer.
+- send_email: the body MUST contain REAL content — never placeholder text like "Please find attached..." or "Here is the summary...". If the user asks you to email information from a web page, you MUST first call browser.extract_text (or browser.fetch) to get the actual content, then compose the email body from that content. Calling send_email before fetching the content is WRONG.''';
 
       final messages = <Map<String, dynamic>>[
         {'role': 'system', 'content': toolSystemPrompt},
@@ -440,9 +442,13 @@ TOOL USE RULES — follow these exactly, every time:
         )['content'] as String? ??
         '';
 
+    int _consecutiveEmpties = 0;
+    bool _didExecuteTool = false; // true when a tool ran this iteration
+
     for (var iteration = 0; iteration < maxIterations; iteration++) {
       _log.info(
           '[tool-loop] iteration=${iteration + 1}/$maxIterations — calling model');
+      _didExecuteTool = false;
 
       // Single streaming call: tokens flow to the app immediately while we
       // also capture tool_calls from the final done:true chunk.  onChunk is
@@ -457,22 +463,173 @@ TOOL USE RULES — follow these exactly, every time:
 
       final toolCalls = assistantMsg['tool_calls'] as List<dynamic>?;
 
+      // Log model's reasoning/content even when tool calls are present.
+      final _modelContent = (assistantMsg['content'] as String? ?? '').trim();
+      if (_modelContent.isNotEmpty &&
+          toolCalls != null &&
+          toolCalls.isNotEmpty) {
+        _log.info('[model-reasoning] (before tool call):');
+        for (final line in _modelContent.split('\n').take(10)) {
+          _log.info('  > $line');
+        }
+      }
+
       // No tool calls → model produced a final text answer.
       if (toolCalls == null || toolCalls.isEmpty) {
-        final content = (assistantMsg['content'] as String? ?? '').trim();
+        final content = _modelContent;
         if (content.isEmpty) {
-          // Model returned neither tool calls nor text — unusual; try again.
+          _consecutiveEmpties++;
           _log.warning(
               '[tool-loop] model returned empty content and no tool calls at '
-              'iteration ${iteration + 1} — retrying');
+              'iteration ${iteration + 1} (consecutive=$_consecutiveEmpties) — retrying');
           history.removeLast(); // drop the useless empty assistant turn
+
+          // ── Fallback: after 3 consecutive empties the model can't handle
+          // the tool-calling context.  If this is a "fetch + email" task,
+          // break out and handle it programmatically: summarize without tools,
+          // then call send_email via the executor.
+          if (_consecutiveEmpties >= 3) {
+            final lowerReq = originalUserMsg.toLowerCase();
+            final emailMatch =
+                RegExp(r'[\w.+-]+@[\w.-]+\.\w+').firstMatch(originalUserMsg);
+            final wantsEmail = emailMatch != null ||
+                RegExp(r'email|send.*(to|@)', caseSensitive: false)
+                    .hasMatch(lowerReq);
+
+            // Find the last tool result in history.
+            final lastToolContent = history.reversed
+                .where((m) => m['role'] == 'tool')
+                .map((m) => (m['content'] as String? ?? '').trim())
+                .firstWhere((s) => s.isNotEmpty, orElse: () => '');
+
+            if (wantsEmail && lastToolContent.isNotEmpty) {
+              _log.info('[fallback] Model stuck after $_consecutiveEmpties '
+                  'empties — summarizing content and sending email programmatically');
+
+              // Step 1: ask model to summarize WITHOUT tools (plain text mode).
+              final summaryMessages = <Map<String, dynamic>>[
+                {
+                  'role': 'system',
+                  'content':
+                      'Summarize the following web page content into a concise email-ready summary with bullet points. Only output the summary, nothing else.'
+                },
+                {
+                  'role': 'user',
+                  'content': lastToolContent.length > 3500
+                      ? lastToolContent.substring(0, 3500)
+                      : lastToolContent
+                },
+              ];
+              final summaryMsg = await _callOllamaStreamingMsg(
+                messages: summaryMessages,
+                tools: [], // no tools — just generate text
+                onChunk: null,
+                maxTokens: 1024,
+              );
+              final summary = ((summaryMsg['content'] as String?) ?? '').trim();
+              if (summary.isNotEmpty) {
+                // Step 2: extract email address and send.
+                final toAddr = emailMatch?.group(0) ?? '';
+                if (toAddr.isNotEmpty) {
+                  _log.info('[fallback] Sending email to $toAddr '
+                      '(${summary.length} char summary)');
+                  try {
+                    final emailResult = await toolExecutor('send_email', {
+                      'to': toAddr,
+                      'subject': 'News Summary',
+                      'body': summary,
+                    });
+                    _log.info('[fallback] send_email result: '
+                        '${emailResult.length} chars');
+                    return 'Here is the summary I emailed to $toAddr:\n\n$summary';
+                  } catch (e) {
+                    _log.warning('[fallback] send_email failed: $e');
+                    return 'I summarized the content but could not send the email: $e\n\n$summary';
+                  }
+                } else {
+                  // No email address found — just return the summary.
+                  return summary;
+                }
+              }
+              // Summary also came back empty — fall through to normal retry.
+              _log.warning('[fallback] Summarization also returned empty');
+            }
+
+            // Generic compaction for non-email cases.
+            history.removeWhere((m) =>
+                m['role'] == 'user' &&
+                (m['content'] as String? ?? '')
+                    .startsWith('Remember the original request:'));
+            history.removeWhere((m) =>
+                m['role'] == 'user' &&
+                (m['content'] as String? ?? '')
+                    .startsWith('The original request was:'));
+            _log.info(
+                '[tool-loop] compacted history after $_consecutiveEmpties '
+                'consecutive empties (${history.length} messages remain)');
+            history.add({
+              'role': 'user',
+              'content': 'The original request was: "$originalUserMsg". '
+                  'You have already fetched the web content. Now you MUST call '
+                  'the next required tool (e.g. send_email). Do it now.',
+            });
+          }
           continue;
         }
+        _consecutiveEmpties = 0; // got real content
+
+        // ── Incomplete-task detection ──────────────────────────────────────
+        // The model sometimes describes what it *would* do ("Now I will
+        // send the email…") instead of actually calling the tool.  Detect
+        // this pattern and push it back into the loop.
+        if (iteration + 1 < maxIterations) {
+          final lower = content.toLowerCase();
+          final promisingAction = RegExp(
+            r"(now[,.]?\s+i\s+will|i\s+will\s+now|let\s+me\s+(now\s+)?send|"
+            r"i'll\s+(now\s+)?send|sending\s+(the\s+)?(email|summary)\s+now|"
+            r"next[,.]?\s+i\s+will)",
+            caseSensitive: false,
+          ).hasMatch(lower);
+
+          // Check which expected tools have actually been called.
+          final toolsUsed = history
+              .where((m) => m['role'] == 'tool')
+              .map((m) => m['name'] as String? ?? '')
+              .toSet();
+          final emailMentioned =
+              RegExp(r'email|send.*(to|@)', caseSensitive: false)
+                  .hasMatch(originalUserMsg);
+          final emailSent = toolsUsed.contains('send_email');
+
+          if (promisingAction && emailMentioned && !emailSent) {
+            _log.warning(
+                '[incomplete-task] Model said it will send email but never '
+                'called send_email — pushing back into tool loop');
+            history.removeLast(); // drop the "I will send" text
+            history.add({
+              'role': 'user',
+              'content':
+                  'You said you would send the email, but you did NOT call '
+                      'the send_email tool. You MUST call send_email now with '
+                      'the actual summary in the body field and the recipient '
+                      'from the original request. Do not describe what you will '
+                      'do — call the tool.',
+            });
+            continue;
+          }
+        }
+
         _log.info(
             '[tool-loop] model returned plain text answer after ${iteration + 1} iteration(s)');
+        // Log a preview of what the model is sending to the user.
+        final _answerPreview = content.length > 400
+            ? '${content.substring(0, 400)}… (${content.length} chars)'
+            : content;
+        _log.info('[final-answer] $_answerPreview');
         return content;
       }
 
+      _consecutiveEmpties = 0; // model produced tool calls
       _log.info('[tool-loop] model requested ${toolCalls.length} tool call(s)');
 
       // Execute each tool call and feed results back.
@@ -489,7 +646,43 @@ TOOL USE RULES — follow these exactly, every time:
                 ? (jsonDecode(rawArgs) as Map<String, dynamic>)
                 : <String, dynamic>{});
 
-        _log.info('Tool call: $toolName($args)');
+        _log.info('Tool call: $toolName');
+        // Log each argument on its own line for readability in the log viewer.
+        for (final entry in args.entries) {
+          final val = entry.value.toString();
+          final preview = val.length > 300
+              ? '${val.substring(0, 300)}… (${val.length} chars)'
+              : val;
+          _log.info('  ├─ ${entry.key}: $preview');
+        }
+
+        // ── Pre-flight: block send_email with placeholder body ──────────
+        // If the model is calling send_email but hasn't fetched web content
+        // first, reject the call and tell it to fetch the content.
+        if (toolName == 'send_email') {
+          final body = (args['body'] as String? ?? '').trim();
+          final hasBrowserResult = history.any((m) =>
+              m['role'] == 'tool' &&
+              ((m['name'] as String?) ?? '').startsWith('browser.'));
+          if (!hasBrowserResult && body.length < 200) {
+            _log.warning(
+                '[pre-flight] send_email blocked — body is ${body.length} chars and no browser tool was called. '
+                'Telling model to fetch content first.');
+            history.add({
+              'role': 'tool',
+              'tool_call_id': toolCallId,
+              'name': toolName,
+              'content': 'ERROR: Email body is too short and you have not '
+                  'fetched any web content yet. You MUST call '
+                  'browser.extract_text first to get the actual content, '
+                  'then call send_email with the real content in the body.',
+            });
+            _lastExecutedTool = toolName;
+            _lastExecutedResult = 'blocked-placeholder';
+            continue;
+          }
+        }
+
         String result;
         try {
           result = await toolExecutor(toolName, args);
@@ -497,8 +690,25 @@ TOOL USE RULES — follow these exactly, every time:
           result = 'Error calling $toolName: $e';
         }
         _log.info('Tool result for $toolName: ${result.length} chars');
+        // Log a preview of the actual result content.
+        final _resultPreview =
+            result.length > 500 ? '${result.substring(0, 500)}…' : result;
+        for (final line in _resultPreview.split('\n').take(12)) {
+          _log.info('  │ $line');
+        }
+        if (result.length > 500) {
+          _log.info('  └─ (${result.length - 500} more chars)');
+        }
         _lastExecutedTool = toolName;
         _lastExecutedResult = result;
+        _didExecuteTool = true;
+
+        // Truncate very large tool results to avoid overwhelming the
+        // model's context window (qwen3.5:9b struggles with >4k tool output).
+        const _maxToolResult = 4000;
+        final truncatedResult = result.length > _maxToolResult
+            ? '${result.substring(0, _maxToolResult)}\n\n[… truncated ${result.length - _maxToolResult} chars — use the content above to complete the task]'
+            : result;
 
         // Ollama expects the tool result as a message with role 'tool'.
         // tool_call_id links this result back to the specific call.
@@ -506,7 +716,7 @@ TOOL USE RULES — follow these exactly, every time:
           'role': 'tool',
           'tool_call_id': toolCallId,
           'name': toolName,
-          'content': result,
+          'content': truncatedResult,
         });
       }
 
@@ -555,11 +765,32 @@ TOOL USE RULES — follow these exactly, every time:
         }
       }
 
-      if (originalUserMsg.isNotEmpty && !_lastToolWasTerminal) {
+      if (originalUserMsg.isNotEmpty &&
+          !_lastToolWasTerminal &&
+          _didExecuteTool) {
+        // Build a specific hint about pending tools.
+        final toolsUsed = history
+            .where((m) => m['role'] == 'tool')
+            .map((m) => m['name'] as String? ?? '')
+            .toSet();
+        final pendingHints = <String>[];
+        final lowerReq = originalUserMsg.toLowerCase();
+        if (RegExp(r'email|send.*(to|@)').hasMatch(lowerReq) &&
+            !toolsUsed.contains('send_email')) {
+          pendingHints.add('call send_email with the REAL content in the body');
+        }
+        if (RegExp(r'schedul|remind|alert|recurring').hasMatch(lowerReq) &&
+            !toolsUsed.contains('schedule_task')) {
+          pendingHints.add('call schedule_task');
+        }
+        final pendingStr = pendingHints.isNotEmpty
+            ? ' You still need to: ${pendingHints.join('; ')}. Call the tool NOW — do not just describe what you will do.'
+            : '';
         history.add({
           'role': 'user',
           'content': 'Remember the original request: "$originalUserMsg". '
-              'Have you completed ALL steps? If not, call the next required tool now.',
+              'Have you completed ALL steps? If not, call the next required tool now.'
+              '$pendingStr',
         });
       }
     }
@@ -702,7 +933,7 @@ TOOL USE RULES — follow these exactly, every time:
 
     try {
       final settingsKey = AtKey()
-        ..key = 'settings.llm'
+        ..key = 'settings.llm_config'
         ..namespace = 'pembrook';
       final atValue = await atClient.get(
         settingsKey,
@@ -711,7 +942,9 @@ TOOL USE RULES — follow these exactly, every time:
       if (atValue.value != null) {
         final settings =
             jsonDecode(atValue.value as String) as Map<String, dynamic>;
-        _localModel = settings['localModel'] as String? ?? _localModel;
+        _localModel = settings['model'] as String? ??
+            settings['localModel'] as String? ??
+            _localModel;
         _externalProvider =
             settings['externalProvider'] as String? ?? _externalProvider;
         _privacyThreshold =
