@@ -103,6 +103,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   StreamSubscription<PushMessage>? _pushSub;
   // Fires when another device completes a conversation; triggers history reload.
   StreamSubscription<String>? _convCompletedSub;
+  // Watchdog: if done:true is dropped on the network while Device B is passively
+  // watching a remote stream, this timer fires after 15 s of chunk inactivity
+  // and force-finalises the streaming buffer so the spinner never hangs.
+  Timer? _remoteStreamWatchdog;
 
   static const String _welcomeText = 'Hello! I\'m your Pembrook AI assistant. All our communication is '
       'end-to-end encrypted via the atPlatform. How can I help you today?';
@@ -201,6 +205,62 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               }
             });
           }
+          // Arm (or reset) the watchdog on every remote chunk so that if
+          // done:true is dropped by the network the spinner still clears
+          // after 15 s of inactivity.
+          if (isRemoteOnCurrentConv) {
+            final watchdogConvId = event.conversationId;
+            _remoteStreamWatchdog?.cancel();
+            _remoteStreamWatchdog = Timer(const Duration(seconds: 15), () async {
+              if (!mounted || _streamBuffer.isEmpty) return;
+              // done:true was lost — finalise now using the same logic as the
+              // passive-viewer branch of _convCompletedSub.
+              final answer = _streamBuffer.trim();
+              setState(() {
+                _streamBuffer = '';
+                _progressMessage = '';
+              });
+              await _store?.load();
+              if (!mounted) return;
+              var summary = _store?.get(watchdogConvId);
+              if (!_isConversationComplete(summary)) {
+                await Future.delayed(const Duration(seconds: 2));
+                if (!mounted) return;
+                await _store?.load();
+                if (!mounted) return;
+                summary = _store?.get(watchdogConvId);
+              }
+              if (_isConversationComplete(summary)) {
+                setState(() {
+                  _messages
+                    ..clear()
+                    ..addAll(summary!.messages.map((s) => _Message(
+                          text: s.text,
+                          isUser: s.isUser,
+                          timestamp: s.timestamp,
+                        )));
+                });
+              } else if (answer.isNotEmpty) {
+                final base = summary?.messages ?? [];
+                setState(() {
+                  _messages
+                    ..clear()
+                    ..addAll(base.map((s) => _Message(
+                          text: s.text,
+                          isUser: s.isUser,
+                          timestamp: s.timestamp,
+                        )))
+                    ..add(_Message(
+                      text: answer,
+                      isUser: false,
+                      timestamp: DateTime.now(),
+                    ));
+                });
+                _saveCurrentConversation();
+              }
+              _scrollToBottom();
+            });
+          }
           setState(() => _streamBuffer += event.chunk);
           _scrollToBottom();
         } else {
@@ -236,6 +296,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           // Load the full conversation from the remote AtKey (written by the
           // originating device ~2 s after done: true, so by the time this
           // 3 s delayed callback fires it should be available).
+          _remoteStreamWatchdog?.cancel(); // done:true arrived — watchdog not needed
           final streamedAnswer = _streamBuffer.trim(); // capture before clear
           setState(() {
             _streamBuffer = '';
@@ -391,6 +452,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _scrollCtrl.dispose();
     _streamSub?.cancel();
     _convCompletedSub?.cancel();
+    _remoteStreamWatchdog?.cancel();
     // Release before cancel so RpcService re-enables buffering immediately.
     _rpcService?.releasePushListener();
     _pushSub?.cancel();
