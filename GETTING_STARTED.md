@@ -33,6 +33,7 @@ All communication is end-to-end encrypted via the [atPlatform](https://atsign.co
 | Flutter SDK | ≥ 3.29 | [flutter.dev/install](https://flutter.dev/install) (for building the app) |
 | Ollama | any | [ollama.com](https://ollama.com) — install on host **or** use bundled Docker option |
 | atSigns | 2–3 | Free at [my.atsign.com](https://my.atsign.com/dashboard) |
+| RAM | ≥ 8 GB free | For qwen3.5:9b model; smaller models available if constrained |
 
 ---
 
@@ -161,7 +162,7 @@ Install Ollama on your machine from [ollama.com](https://ollama.com), then:
 
 ```bash
 # Pull a model:
-ollama pull qwen2.5:7b
+ollama pull qwen3.5:9b
 
 # Start Ollama (if not already running as a service):
 ollama serve
@@ -187,7 +188,7 @@ No host install needed, but slower to start and uses more RAM.
 
 ```bash
 # Pull the model first:
-docker compose --profile bundled-ollama run --rm ollama ollama pull qwen2.5:7b
+docker compose --profile bundled-ollama run --rm ollama ollama pull qwen3.5:9b
 
 # Start with bundled Ollama (CPU):
 docker compose --profile bundled-ollama up -d
@@ -199,12 +200,16 @@ docker compose --profile bundled-ollama -f docker-compose.yml -f docker-compose.
 > Add `OLLAMA_BASE_URL=http://ollama:11434` to your `.env` when using the bundled option.
 
 > Use a smaller model if RAM is limited:  
-> `ollama pull qwen2.5:3b` (~2 GB) or `ollama pull phi4-mini` (~2.5 GB)
+> `ollama pull qwen2.5:3b` (~2 GB), `ollama pull phi4-mini` (~2.5 GB), or `ollama pull qwen3.5:3b` (~2 GB)
 
 ### Watch the logs:
 
 ```bash
 docker compose logs -f agent
+
+# Or use the live log viewer (recommended):
+# Open http://localhost:9090 in your browser for a richer experience
+# with service filtering, keyword highlighting, and auto-scrolling
 ```
 
 You should see output like:
@@ -250,6 +255,28 @@ Once the app is connected:
 2. **Audit tab** → you should see a `command` entry with `policyDecision: allowed`
 3. **Settings tab** → should show the agent atSign as `@myagent` and status as `online`
 
+### Progress Indicators
+
+For multi-step tasks (e.g., "fetch latest news from BBC"), you'll see real-time progress indicators in the chat UI:
+
+- 🌐 Fetching content from bbc.com...
+- 📧 Sending email to recipient@example.com...
+- ⏰ Scheduling task...
+- 🔍 Searching atKeys...
+
+The agent sends progress updates as each tool executes, so you know it's working even on long-running tasks.
+
+### Live Log Viewer (Development)
+
+Open [http://localhost:9090](http://localhost:9090) in your browser to monitor agent logs in real-time:
+
+- **Service filtering:** Click buttons to filter by agent, mcp_*, ollama, skill_*, etc.
+- **Keyword highlighting:** Tool calls, errors, and iterations are color-coded
+- **Tree-style display:** JSON arguments are formatted for readability
+- **Auto-scrolling:** Live stream follows new entries
+
+The log viewer is helpful for debugging tool calls, checking which MCP servers are active, and verifying progress events.
+
 From the terminal, you can also run a quick end-to-end check:
 
 ```bash
@@ -288,7 +315,43 @@ The app stores every conversation locally so you can browse, restore, or delete 
 
 ---
 
-## 9. Register & Sync Skills
+## 9. Notifications & Alerts
+
+The agent can send proactive notifications for background tasks, scheduled events, or alerts. The notification system uses urgency-based routing:
+
+### Urgency Levels
+
+| Urgency | Delivery | TTL | Example Use Case |
+|---|---|---|---|
+| **critical** | Immediate | 7 days | Security alerts, system failures |
+| **high** | Immediate | 3 days | Important task completions, deadline reminders |
+| **medium** | Daily digest | 1 day | Regular status updates, non-urgent completions |
+| **low** | Daily digest | 12 hours | Background task logs, routine maintenance |
+
+### How It Works
+
+The agent's `notify_owner` tool can be called by the LLM or scheduled tasks:
+
+```
+Agent: "Your scheduled backup completed successfully"
+→ NotificationManager.sendAlert(urgency='high')
+  → Immediate notification sent to @owner
+```
+
+For low/medium urgency alerts, the agent batches them into a **daily digest** sent once per day.
+
+### Current Status
+
+- ✅ **Agent side:** NotificationManager fully implemented
+- ✅ **Tool available:** LLM can call `notify_owner` with urgency levels
+- ✅ **Daily digest:** Batched low-priority alerts sent once per day
+- ⏳ **Flutter app:** Subscription to `pembrook\.notify\..*` not yet implemented
+
+**What this means:** The agent can generate and send notifications, but the Flutter app doesn't yet display them. This feature is agent-ready and awaiting app UI integration.
+
+---
+
+## 10. Register & Sync Skills
 
 Skills extend the agent with external capabilities (e.g. web search, calendar, email).  
 They are registered in the Flutter app and automatically synced to the running agent via an encrypted RPC channel.
@@ -634,8 +697,8 @@ bash -c 'echo > /dev/tcp/localhost/11434' && echo "up" || echo "not ready"
 docker compose down && docker compose up -d
 ```
 
-If Ollama consistently fails, check available RAM — `qwen2.5:7b` (7B) needs ~6 GB free.  
-Switch to a smaller model: edit `OLLAMA_MODEL=qwen2.5:3b` in `.env`.
+If Ollama consistently fails, check available RAM — `qwen3.5:9b` (9B) needs ~8 GB free.  
+Switch to a smaller model: edit `OLLAMA_MODEL=qwen2.5:3b` or `OLLAMA_MODEL=qwen3.5:3b` in `.env`.
 
 ### Agent fails to start — "AllowList is empty"
 
@@ -677,7 +740,7 @@ OLLAMA_HOST=0.0.0.0 ollama serve
 
 **Using bundled Ollama:** the model must be pulled first:
 ```bash
-docker compose --profile bundled-ollama run --rm ollama ollama pull qwen2.5:7b
+docker compose --profile bundled-ollama run --rm ollama ollama pull qwen3.5:9b
 ```
 Check available models:
 ```bash
@@ -697,6 +760,38 @@ docker compose restart agent
 
 The agent uses the `logging` package.  
 Set `Logger.root.level = Level.ALL` in `agent/bin/main.dart` temporarily, or add `--verbose` to the agent command in `docker-compose.yml`.
+
+### Progress indicators not showing
+
+Progress indicators require streaming to be enabled in the app. Check:
+
+1. **Settings → Enable Streaming** should be ON
+2. Look for progress events in agent logs: `docker compose logs agent | grep progress`
+3. You should see entries like: `[INFO] LlmRouter: [progress] Sending to UI: 🌐 Fetching content from...`
+
+If logs show progress events but the app doesn't display them, verify the app is running the latest version with `StreamChunkEvent.type` support.
+
+### "Request timed out after 90s" during long tasks
+
+The agent uses a **smart timeout** that resets when progress is being made. The timeout only fires after **90 consecutive seconds of zero activity** (no progress events AND no content chunks).
+
+If you're seeing timeouts despite progress:
+
+1. Check agent logs for progress events: `docker compose logs agent | grep progress`
+2. Verify the agent is actually sending progress messages (look for `[progress] Sending to UI:`)
+3. If progress events are missing, the tool execution may be stalled — check for errors in the tool/MCP logs
+
+If the agent is legitimately taking longer than 90 seconds with no output, you can increase the timeout in `app/lib/services/rpc_service.dart` by changing `static const _callTimeout = Duration(seconds: 90);`.
+
+### Agent responses disappearing after they arrive
+
+This should be fixed as of the late response preservation update. If you still see responses disappearing:
+
+1. Check the app logs for completion handler messages
+2. Verify the 2-second grace period is active (look for delays before conversation completion)
+3. Check if the AtKey has more messages than the streaming buffer (the app will reload from AtKey only if it has MORE messages)
+
+If responses consistently disappear, enable verbose logging and check the `_onConversationCompleted()` handler logic.
 
 ---
 

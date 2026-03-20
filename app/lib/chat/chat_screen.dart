@@ -355,6 +355,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       appBar: AppBar(
         title: const Text('Pembrook'),
         actions: [
+          // New conversation icon
+          IconButton(
+            icon: const Icon(Icons.add_comment),
+            tooltip: 'New conversation',
+            onPressed: _newConversation,
+          ),
           // History icon with badge showing unread background-response count.
           Consumer<RpcService>(
             builder: (context, rpc, _) {
@@ -369,11 +375,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 ),
               );
             },
-          ),
-          IconButton(
-            icon: const Icon(Icons.add_comment),
-            tooltip: 'New conversation',
-            onPressed: _newConversation,
           ),
           PopupMenuButton<_ChatAction>(
             tooltip: 'More options',

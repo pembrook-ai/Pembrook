@@ -15,6 +15,20 @@ See [PHASES.md](PHASES.md) for detailed per-phase implementation status.
 
 ---
 
+## Key Features
+
+- **Real-time Progress Indicators** — See live status updates during multi-step tasks (e.g., "🌐 Fetching content from BBC...", "📧 Sending email...")
+- **Smart Timeout Management** — 90-second timeout resets automatically with each progress update or content chunk
+- **Multi-Device Sync** — Conversations sync across all your devices in real-time via encrypted AtKeys
+- **Tool Call Streaming** — Watch the agent's reasoning and tool invocations as they happen
+- **Urgency-Based Notifications** — Agent can send immediate alerts (critical/high) or queue low-priority updates for daily digest
+- **MCP Integration** — Built-in browser automation, with extensibility for home control, databases, and more
+- **Encrypted Audit Logs** — Immutable audit trail stored on your atServer, viewable in the app
+- **Live Log Viewer** — Web-based development tool at `http://localhost:9090` with service filtering and keyword highlighting
+- **Zero Trust Architecture** — No open ports, cryptographic authentication, E2E encryption on all channels
+
+---
+
 ## Security at a Glance
 
 | Threat | OpenClaw | Pembrook |
@@ -122,7 +136,12 @@ pembrook/
 │   ├── calendar/              # Google Calendar via CalDAV
 │   ├── email/                 # SMTP send + IMAP read/delete  ← implemented
 │   └── web_search/            # SearXNG / Brave Search
-├── docker-compose.yml         # Starts agent + Ollama + MCP servers
+├── tools/                     # Development tools
+│   └── log_viewer/            # Web-based log viewer (http://localhost:9090)
+│       ├── server.py          # Python SSE server
+│       ├── index.html         # Frontend with service filtering
+│       └── Dockerfile         # Containerized version
+├── docker-compose.yml         # Starts agent + Ollama + MCP servers + log viewer
 ├── docker-compose.gpu.yml     # GPU overlay (Linux + NVIDIA)
 ├── Dockerfile.agent           # Compiles and packages the agent (gosu entrypoint)
 └── entrypoint-agent.sh        # chgrp docker.sock then exec gosu pembrook
@@ -181,6 +200,8 @@ Key format: `keyname.pembrook@atsign`
 | `calendar.$eventId.pembrook@owner` | `@owner` | Calendar entries | — |
 | `summary.$period.pembrook@agent` | `@agent` | Compressed conversation summaries | — |
 | `digest.$date.pembrook@owner` | `@owner` | Daily notification digest | 30 days |
+| `notify.{urgency}.{ts}.pembrook@agent` | Shared with `@owner` | Immediate alerts (critical/high) | 3-7 days |
+| `notify.digest.$date.pembrook@agent` | Shared with `@owner` | Daily digest notification | 24 hours |
 
 > `conversation_history.pembrook@owner` is a self-key on `@owner`'s atServer. Because atPlatform sync propagates all self-keys to every authenticated device, this key is the sole source of truth for conversation history on all of an owner's devices.  
 > Audit keys use `Metadata()..immutable = true` — once written, they cannot be modified.  
@@ -206,10 +227,27 @@ Key format: `keyname.pembrook@atsign`
 {
   "conversationId": "conv-uuid-1234",
   "chunk": "You have a team standup at 9am...",
+  "type": "content",
   "done": false,
   "chunkIndex": 3
 }
 ```
+
+### Agent → Flutter App (progress update)
+
+Sent during multi-step tasks to show tool execution status:
+
+```json
+{
+  "conversationId": "conv-uuid-1234",
+  "chunk": "🌐 Fetching content from BBC News...",
+  "type": "progress",
+  "done": false,
+  "chunkIndex": 2
+}
+```
+
+Progress messages appear as ephemeral status indicators in the UI and reset the smart timeout counter.
 
 ### Agent → Flutter App (stream-end sentinel)
 
@@ -223,6 +261,49 @@ Sent once, after all content chunks have been flushed. Every authenticated devic
   "chunkIndex": 12
 }
 ```
+
+### Agent → Flutter App (notification / alert)
+
+The agent can send out-of-band notifications via the `notify_owner` tool. Urgency levels determine delivery:
+
+- **critical/high** → Immediate notification (sent right away)
+- **medium/low** → Queued for daily digest (batched and sent once per day)
+
+Immediate notification:
+
+```json
+{
+  "alertId": "push_1710000000123",
+  "title": "Agent",
+  "message": "Your scheduled backup completed successfully",
+  "urgency": "high",
+  "createdAt": 1710000000123
+}
+```
+
+AtKey pattern: `pembrook.notify.{urgency}.{timestamp}.pembrook@agent` shared with `@owner`
+
+Daily digest (sent once per day):
+
+```json
+{
+  "date": "2026-03-19",
+  "count": 5,
+  "alerts": [
+    {
+      "alertId": "digest_001",
+      "title": "Task Complete",
+      "message": "Weekly report generated",
+      "urgency": "low",
+      "createdAt": 1710000000000
+    }
+  ]
+}
+```
+
+AtKey pattern: `digest.{YYYY-MM-DD}.pembrook@agent` shared with `@owner`
+
+**Note:** Flutter app subscription to `pembrook\.notify\..*` is not yet implemented. The notification system works on the agent side but requires app UI integration to display alerts.
 
 ### Messaging Bridge → Agent (inbound message)
 
@@ -278,13 +359,18 @@ Owner types → Flutter app
         → Orchestrator.processRequest()
           → MemoryService.loadConversation() — AtKey get()
           → LlmRouter.generateResponse() — Ollama streaming (tool-aware)
-              Chunks batched at ~80 chars, sent as AtRpc notifications
-              → all @owner devices receive live tokens
+              [Progress indicators sent for each tool call, e.g.:]
+              → "🌐 Fetching content from CNN..." (type: 'progress')
+              → "📧 Sending email to recipient..." (type: 'progress')
+              Content chunks batched at ~80 chars, sent as AtRpc notifications
+              → all @owner devices receive live tokens + progress updates
+              → Smart timeout (90s) resets on each chunk or progress event
           → [tool calls, up to maxIterations=10]
               → SkillRunner / PolicyEngine / HitlManager
               → result appended; original task re-injected; loop continues
           → After all chunks flushed:
               → done:true sentinel sent → all @owner devices notified
+              → 2-second grace period for late-arriving chunks
           → ConversationStore.save() — writes conversation_history AtKey
           → AuditService.log() — immutable AtKey on @owner
 ```
@@ -326,6 +412,29 @@ Orchestrator identifies skill need
       → AuditService.log(sandbox events)
 ```
 
+## Data Flow: Notifications & Alerts
+
+```
+LLM calls notify_owner tool (or scheduled task triggers NotificationManager)
+  → NotificationManager.sendAlert(Alert)
+    → Urgency routing:
+        critical/high → _sendImmediate()
+          → notificationService.notify(pembrook.notify.{urgency}.{ts}@agent → @owner)
+          → TTL: critical=7d, high=3d
+        medium/low → add to _digestQueue
+          → HeartbeatEngine flushes daily (or on shutdown)
+          → Single digest AtKey: digest.$date.pembrook@owner (TTL 30d)
+          → One notification sent: pembrook.notify.digest.$date@agent → @owner
+    → AuditService.log(notification events)
+
+Owner's Flutter app (when implemented):
+  → notificationService.subscribe(regex: 'pembrook\\.notify\\..*')
+    → Display immediate alerts as push notifications
+    → Daily digest shown as single notification with aggregated count
+```
+
+**Current Status:** Agent-side complete; Flutter app subscription pending implementation.
+
 ---
 
 ## Deployment
@@ -344,11 +453,11 @@ dart run agent/bin/init_config.dart \
   --atsign @youragent \
   --key-file ~/.atsign/keys/@youragent_key.atKeys \
   --owner @you \
-  --ollama-model qwen2.5:7b \
+  --ollama-model qwen3.5:9b \
   --allowed-users @you
 
 # 3. Pull the Ollama model:
-docker compose run --rm ollama ollama pull qwen2.5:7b
+docker compose run --rm ollama ollama pull qwen3.5:9b
 
 # 4. Start (CPU — works on macOS, Windows, Linux):
 docker compose up -d
@@ -358,6 +467,13 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 
 # Tail agent logs:
 docker compose logs -f agent
+
+# Or use the live log viewer (recommended for development):
+# Open http://localhost:9090 in your browser
+# - Filter by service (agent, mcp_*, ollama, skill_*, etc.)
+# - Keyword highlighting for tool calls, errors, iterations
+# - Tree-style display of nested JSON arguments
+# - Auto-scrolling live stream
 ```
 
 > **GPU setup (Linux + NVIDIA):** Install [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html), then run:
@@ -396,7 +512,7 @@ nmap -p- localhost  # should show 0 open ports (Ollama binds loopback only)
 | **Phase 2** | Memory Service + Audit + Policy Engine | ✅ Complete |
 | **Phase 3** | Skill System + Sandbox + Email/Calendar/Search skills | 🚧 In Progress |
 | **Phase 4** | MCP Integration + Home/DB/Browser MCP servers | ✅ Complete |
-| **Phase 5** | Heartbeat + Scheduler + Notifications | 📋 Planned |
+| **Phase 5** | Heartbeat + Scheduler + Notifications | ✅ Complete |
 | **Phase 6** | Messaging Bridges (WhatsApp, Telegram, Discord, Slack) | 📋 Planned |
 
 Phase 3 detail:
@@ -411,6 +527,14 @@ Phase 3 detail:
 | Web search skill (SearXNG / Brave) | 🚧 Stub |
 | Multi-step tool chaining (`tool_call_id`, `maxIterations=10`, task anchoring) | ✅ |
 | Multi-device sync (`conversation_history` AtKey + `done:true` sentinel) | ✅ |
+| Real-time progress indicators (tool execution status with emoji icons) | ✅ |
+| Smart timeout (90s with activity tracking, resets on progress/content) | ✅ |
+| Late response preservation (2s grace period + buffer comparison) | ✅ |
+| Live log viewer (port 9090, service filtering, keyword highlighting) | ✅ |
+| Scheduled tasks (cron + one-shot, `schedule_task`, `cancel_task`, `list_tasks`) | ✅ |
+| Heartbeat (60s tick, agent health check, memory summarization) | ✅ |
+| NotificationManager (urgency-based alerts + daily digest) | ✅ |
+| `notify_owner` tool (immediate out-of-band alerts from agent) | ✅ |
 
 ---
 
