@@ -171,6 +171,36 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         // Content chunks: append to stream buffer
         if (event.conversationId == _conversationId) {
           // Chunk for the currently displayed conversation (ours or remote).
+          //
+          // If this is the FIRST chunk for a REMOTE conversation (passive viewer:
+          // Device B loaded Device A's conversation from history), load the
+          // question from the AtKey now.  Device A saved it at the very start of
+          // _send() so by the time the first stream chunk arrives the write has
+          // had time to propagate.  We capture the convId so a later
+          // conversation switch can't confuse the callback.
+          if (isRemoteOnCurrentConv && _streamBuffer.isEmpty) {
+            final capturedConvId = _conversationId;
+            Future.delayed(const Duration(milliseconds: 800), () async {
+              if (!mounted) return;
+              if (_conversationId != capturedConvId) return; // user switched away
+              await _store?.load();
+              if (!mounted) return;
+              final summary = _store?.get(capturedConvId);
+              // Only update if the AtKey has MORE messages than we currently
+              // show (i.e. the question has landed).
+              if (summary != null && summary.messages.length > _messages.length) {
+                setState(() {
+                  _messages
+                    ..clear()
+                    ..addAll(summary.messages.map((s) => _Message(
+                          text: s.text,
+                          isUser: s.isUser,
+                          timestamp: s.timestamp,
+                        )));
+                });
+              }
+            });
+          }
           setState(() => _streamBuffer += event.chunk);
           _scrollToBottom();
         } else {
@@ -592,6 +622,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // knows to let _send() manage the response rather than trying to load from
     // remote (which would race with the in-flight _persist() write).
     _originatedConvIds.add(_conversationId);
+    // Immediately persist the question to the AtKey so Device B can display it
+    // while the agent is streaming the answer.  _saveCurrentConversation() is
+    // called again at the end of _send() to add the answer; the second save
+    // simply overwrites with the complete exchange.
+    _saveCurrentConversation();
     _scrollToBottom();
 
     final rpcService = context.read<RpcService>();
