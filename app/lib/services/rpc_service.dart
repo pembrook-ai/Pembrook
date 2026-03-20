@@ -52,7 +52,12 @@ class RpcCallResult {
 class StreamChunkEvent {
   final String conversationId;
   final String chunk;
-  const StreamChunkEvent({required this.conversationId, required this.chunk});
+  final String type; // 'content' | 'progress'
+  const StreamChunkEvent({
+    required this.conversationId,
+    required this.chunk,
+    this.type = 'content',
+  });
 }
 
 /// A proactive push message sent by the agent from a scheduled task.
@@ -86,6 +91,9 @@ class RpcService extends ChangeNotifier {
 
   /// How long to wait for an agent response before giving up.
   static const Duration _callTimeout = Duration(seconds: 90);
+
+  /// Track last activity time per conversation for smart timeout.
+  final Map<String, DateTime> _lastActivityTime = {};
 
   // Stream of incremental text chunks from the agent (streaming mode).
   // Each event carries the conversationId it belongs to so individual
@@ -244,14 +252,27 @@ class RpcService extends ChangeNotifier {
     }
 
     try {
-      final result = await _rpcClient!.call({
+      // Initialize activity tracking
+      _lastActivityTime[conversationId] = DateTime.now();
+
+      // Start the RPC call without a fixed timeout
+      final callFuture = _rpcClient!.call({
         'command': command,
         'conversationId': conversationId,
         'platform': _platformName(),
         'streamingEnabled': streamingEnabled,
         'userTimezone': _timezoneString(),
         ...payload,
-      }).timeout(_callTimeout);
+      });
+
+      // Monitor for activity and timeout if idle
+      final result = await Future.any([
+        callFuture,
+        _smartTimeout(conversationId),
+      ]);
+
+      // Clean up activity tracking
+      _lastActivityTime.remove(conversationId);
 
       return RpcCallResult(
         success: result['success'] as bool? ?? true,
@@ -305,22 +326,31 @@ class RpcService extends ChangeNotifier {
       if (notification.value == null) return;
       try {
         // The orchestrator sends stream chunks as plain text, not JSON.
-        // Handle both: plain string and {"chunk": "..."} JSON envelope.
+        // Handle both: plain string and {"chunk": "...", "type": "content|progress"} JSON envelope.
         final value = notification.value!;
         String chunk;
         String convId = '';
+        String type = 'content';
         bool isDone = false;
         if (value.startsWith('{')) {
           final map = _tryDecode(value);
           chunk = map?['chunk'] as String? ?? value;
           convId = map?['conversationId'] as String? ?? '';
+          type = map?['type'] as String? ?? 'content';
           isDone = map?['done'] as bool? ?? false;
         } else {
           chunk = value;
         }
         if (chunk.isNotEmpty) {
-          _streamChunkController
-              .add(StreamChunkEvent(conversationId: convId, chunk: chunk));
+          // Track activity for smart timeout
+          if (convId.isNotEmpty) {
+            _lastActivityTime[convId] = DateTime.now();
+          }
+          _streamChunkController.add(StreamChunkEvent(
+            conversationId: convId,
+            chunk: chunk,
+            type: type,
+          ));
         }
         // Signal completion so other devices can reload conversation history.
         if (isDone && convId.isNotEmpty) {
@@ -388,6 +418,26 @@ class RpcService extends ChangeNotifier {
     final hours = offset.inHours.abs().toString().padLeft(2, '0');
     final mins = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');
     return 'UTC$sign$hours:$mins (${now.timeZoneName})';
+  }
+
+  /// Smart timeout that resets whenever activity is detected.
+  /// Returns a Future that completes with a timeout error if no activity
+  /// for _callTimeout duration.
+  Future<Map<String, dynamic>> _smartTimeout(String conversationId) async {
+    while (true) {
+      await Future.delayed(const Duration(seconds: 5));
+      final lastActivity = _lastActivityTime[conversationId];
+      if (lastActivity == null) {
+        // Activity tracking removed (call completed)
+        return Future.error(StateError('Call completed'));
+      }
+      final elapsed = DateTime.now().difference(lastActivity);
+      if (elapsed >= _callTimeout) {
+        throw TimeoutException(
+          'Request timed out after ${_callTimeout.inSeconds}s',
+        );
+      }
+    }
   }
 
   String _platformName() {

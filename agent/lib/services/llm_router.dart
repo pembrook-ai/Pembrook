@@ -123,6 +123,7 @@ Score:''';
     Future<String> Function(String toolName, Map<String, dynamic> args)?
         toolExecutor,
     Future<void> Function(String chunk)? onChunk,
+    Future<void> Function(String message)? onProgress,
     String userTimezone = '',
   }) async {
     await _maybeRefreshSettings();
@@ -190,6 +191,7 @@ TOOL USE RULES — follow these exactly, every time:
         toolExecutor: toolExecutor,
         maxIterations: 10,
         onChunk: onChunk,
+        onProgress: onProgress,
       );
     }
 
@@ -431,6 +433,7 @@ TOOL USE RULES — follow these exactly, every time:
         toolExecutor,
     int maxIterations = 5,
     Future<void> Function(String chunk)? onChunk,
+    Future<void> Function(String message)? onProgress,
   }) async {
     final history = List<Map<String, dynamic>>.from(messages);
 
@@ -647,6 +650,12 @@ TOOL USE RULES — follow these exactly, every time:
                 : <String, dynamic>{});
 
         _log.info('Tool call: $toolName');
+
+        // Send progress update to UI
+        if (onProgress != null) {
+          await onProgress(_formatToolProgress(toolName, args));
+        }
+
         // Log each argument on its own line for readability in the log viewer.
         for (final entry in args.entries) {
           final val = entry.value.toString();
@@ -956,5 +965,38 @@ TOOL USE RULES — follow these exactly, every time:
       _log.fine('Could not refresh LLM settings (using defaults): $e');
     }
     _settingsLastRefresh = now;
+  }
+
+  /// Format a human-friendly progress message for tool calls.
+  String _formatToolProgress(String toolName, Map<String, dynamic> args) {
+    switch (toolName) {
+      case 'browser.extract_text':
+      case 'browser.fetch':
+        final url = args['url'] as String? ?? 'page';
+        final domain = Uri.tryParse(url)?.host ?? url;
+        return '🌐 Fetching content from $domain...';
+      case 'browser.navigate':
+        final url = args['url'] as String? ?? 'page';
+        return '🌐 Opening $url...';
+      case 'fetch_webpage':
+        final url = args['url'] as String? ?? 'page';
+        return '🌐 Fetching $url...';
+      case 'send_email':
+        final to = args['to'] as String? ?? 'recipient';
+        return '📧 Sending email to $to...';
+      case 'schedule_task':
+        return '⏰ Scheduling task...';
+      case 'list_tasks':
+        return '📋 Checking scheduled tasks...';
+      case 'cancel_task':
+        final taskId = args['taskId'] as String? ?? 'task';
+        return '❌ Cancelling task $taskId...';
+      case 'notify_owner':
+        return '💬 Sending notification...';
+      case 'search_atkeys':
+        return '🔍 Searching atKeys...';
+      default:
+        return '⚙️ Running $toolName...';
+    }
   }
 }

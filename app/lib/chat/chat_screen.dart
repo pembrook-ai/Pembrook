@@ -81,6 +81,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   bool _isLoading = false;
   String _streamBuffer = '';
+  String _progressMessage =
+      ''; // Current progress message (e.g., "🌐 Fetching content...")
   // Mirrors the 'streamingEnabled' SharedPreferences setting.
   // Re-read at the start of every _send() so changes in Settings take effect
   // on the next message without requiring a restart.
@@ -154,14 +156,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       final isOtherRemoteConv = event.conversationId != _conversationId &&
           _activeStreamConvId == null;
       if (!isOurRequest && !isRemoteOnCurrentConv && !isOtherRemoteConv) return;
-      if (event.conversationId == _conversationId) {
-        // Chunk for the currently displayed conversation (ours or remote).
-        setState(() => _streamBuffer += event.chunk);
-        _scrollToBottom();
+
+      if (event.type == 'progress') {
+        // Progress chunks: show as ephemeral status message (only for current conv)
+        if (event.conversationId == _conversationId) {
+          setState(() => _progressMessage = event.chunk);
+          _scrollToBottom();
+        }
       } else {
-        // Buffer chunk for a backgrounded or unknown remote conversation.
-        _bgStreamBuffers[event.conversationId] =
-            (_bgStreamBuffers[event.conversationId] ?? '') + event.chunk;
+        // Content chunks: append to stream buffer
+        if (event.conversationId == _conversationId) {
+          // Chunk for the currently displayed conversation (ours or remote).
+          setState(() => _streamBuffer += event.chunk);
+          _scrollToBottom();
+        } else {
+          // Buffer chunk for a backgrounded or unknown remote conversation.
+          _bgStreamBuffers[event.conversationId] =
+              (_bgStreamBuffers[event.conversationId] ?? '') + event.chunk;
+        }
       }
     });
     // Reload conversation history when any conversation completes anywhere.
@@ -178,20 +190,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
         if (convId == _conversationId) {
           // Completed conversation IS the one currently on screen — refresh messages.
+          // BUT: Only reload from AtKey if we don't have valid streaming content,
+          // or if the AtKey has MORE messages than we do (e.g., from another device).
           final updated = _store?.get(convId);
           if (updated != null) {
-            setState(() {
-              _streamBuffer = '';
-              _conversationId = updated.id;
-              _messages
-                ..clear()
-                ..addAll(updated.messages.map((s) => _Message(
-                      text: s.text,
-                      isUser: s.isUser,
-                      timestamp: s.timestamp,
-                    )));
-            });
-            _scrollToBottom();
+            final currentMsgCount = _messages.length;
+            final atKeyMsgCount = updated.messages.length;
+            // If we have the same or more messages (from streaming), keep them.
+            // Only reload if AtKey has new messages we don't have.
+            if (atKeyMsgCount <= currentMsgCount) {
+              // We already have the messages from streaming — keep them.
+              setState(() => _streamBuffer = '');
+            } else {
+              // AtKey has more messages — reload to get them.
+              setState(() {
+                _streamBuffer = '';
+                _conversationId = updated.id;
+                _messages
+                  ..clear()
+                  ..addAll(updated.messages.map((s) => _Message(
+                        text: s.text,
+                        isUser: s.isUser,
+                        timestamp: s.timestamp,
+                      )));
+              });
+              _scrollToBottom();
+            }
           }
         } else {
           // Completed conversation is a DIFFERENT conversation (Device B used its
@@ -424,13 +448,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // ──────────────────────────────────────────────────────────
 
   Widget _buildMessages() {
+    // Include progress message as an extra item if present
+    final hasProgress = _progressMessage.isNotEmpty;
     return ListView.builder(
       controller: _scrollCtrl,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: _messages.length,
+      itemCount: _messages.length + (hasProgress ? 1 : 0),
       itemBuilder: (context, index) {
-        final msg = _messages[index];
-        return _ChatBubble(message: msg);
+        if (index < _messages.length) {
+          final msg = _messages[index];
+          return _ChatBubble(message: msg);
+        } else {
+          // Progress indicator (last item)
+          return _ProgressIndicator(message: _progressMessage);
+        }
       },
     );
   }
@@ -522,7 +553,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (!mounted) return;
 
-    // Close the streaming window unconditionally — we have the full response.
+    // Grace period: keep the streaming window open for 2 seconds after RPC
+    // returns to allow late chunks to arrive. This handles cases where the
+    // agent signals completion (done: true) but chunks are still in-flight.
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+
+    // Close the streaming window — late chunks have arrived.
     _activeStreamConvId = null;
 
     // Pick up streamed content: from the visible buffer if user stayed in this
@@ -542,6 +579,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       setState(() {
         _isLoading = false;
         _streamBuffer = '';
+        _progressMessage = ''; // Clear progress indicator
         _messages.add(_Message(
           text: responseText,
           isUser: false,
@@ -822,6 +860,62 @@ class _StreamingBubble extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────
+//  PROGRESS INDICATOR (ephemeral status message)
+// ──────────────────────────────────────────────────────────
+
+class _ProgressIndicator extends StatelessWidget {
+  final String message;
+  const _ProgressIndicator({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          // Left-aligned (agent message)
+          Container(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.75,
+            ),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.secondaryContainer.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: theme.colorScheme.secondary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    message,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontStyle: FontStyle.italic,
+                      color: theme.colorScheme.onSecondaryContainer
+                          .withOpacity(0.75),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

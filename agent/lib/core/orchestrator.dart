@@ -578,6 +578,14 @@ class Orchestrator {
           tools: activeTools,
           toolExecutor: _executeTool,
           onChunk: streamingEnabled ? _batchChunk : null,
+          onProgress: streamingEnabled
+              ? (message) => sendProgress(
+                    ownerAtSign: fromAtSign,
+                    reqId: reqId,
+                    message: message,
+                    conversationId: conversationId,
+                  )
+              : null,
           userTimezone: _toolUserTimezone,
         );
         if (streamingEnabled)
@@ -645,6 +653,14 @@ class Orchestrator {
           tools: activeTools,
           toolExecutor: _executeTool,
           onChunk: streamingEnabled ? _batchChunk : null,
+          onProgress: streamingEnabled
+              ? (message) => sendProgress(
+                    ownerAtSign: fromAtSign,
+                    reqId: reqId,
+                    message: message,
+                    conversationId: conversationId,
+                  )
+              : null,
           userTimezone: _toolUserTimezone,
         );
         if (streamingEnabled) await _flushTokenBuf();
@@ -658,6 +674,14 @@ class Orchestrator {
           systemOverride: 'Break this request into steps and execute each one. '
               'Show your reasoning.',
           onChunk: streamingEnabled ? _batchChunk : null,
+          onProgress: streamingEnabled
+              ? (message) => sendProgress(
+                    ownerAtSign: fromAtSign,
+                    reqId: reqId,
+                    message: message,
+                    conversationId: conversationId,
+                  )
+              : null,
         );
         if (streamingEnabled) await _flushTokenBuf();
     }
@@ -761,6 +785,7 @@ class Orchestrator {
     required int chunkIndex,
     required String chunk,
     required String conversationId,
+    String type = 'content', // 'content' | 'progress'
     bool done = false,
   }) async {
     final key = AtKey()
@@ -778,11 +803,35 @@ class Orchestrator {
           'chunk': chunk,
           'chunkIndex': chunkIndex,
           'conversationId': conversationId,
+          'type': type,
           'done': done,
         }),
       ),
     );
   }
+
+  /// Send a progress update to the owner during a multi-step task.
+  ///
+  /// Progress messages are non-intrusive status updates shown in the UI
+  /// (e.g., "Fetching BBC News...", "Analyzing content...").
+  Future<void> sendProgress({
+    required String ownerAtSign,
+    required int reqId,
+    required String message,
+    required String conversationId,
+  }) async {
+    await sendStreamChunk(
+      ownerAtSign: ownerAtSign,
+      reqId: reqId,
+      chunkIndex: _progressIndex++,
+      chunk: message,
+      conversationId: conversationId,
+      type: 'progress',
+    );
+  }
+
+  /// Progress chunk counter (separate from content chunks).
+  int _progressIndex = 0;
 
   // ──────────────────────────────────────────────────────────
   //  PRIVATE HELPERS
