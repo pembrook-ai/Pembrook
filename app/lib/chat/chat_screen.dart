@@ -198,64 +198,81 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           }
 
           // ── Passive viewer ────────────────────────────────────────────────
-          // This device loaded this conversation from history and is watching
-          // a remote conversation complete.  _streamBuffer has the streamed
-          // response (via the isRemoteOnCurrentConv path in _streamSub).
-          // Finalise it into a proper message bubble and persist.
-          if (_streamBuffer.isNotEmpty) {
-            final responseText = _streamBuffer.trim();
+          // This device is watching a remote conversation complete.
+          // _streamBuffer has the streamed *answer* chunks (via isRemoteOnCurrentConv
+          // in _streamSub) but NOT the user's question — question text is only
+          // ever in _messages on the originating device, never in stream notifications.
+          //
+          // Load the full conversation from the remote AtKey (written by the
+          // originating device ~2 s after done: true, so by the time this
+          // 3 s delayed callback fires it should be available).
+          final streamedAnswer = _streamBuffer.trim(); // capture before clear
+          setState(() {
+            _streamBuffer = '';
+            _progressMessage = '';
+          });
+
+          await _store?.load();
+          if (!mounted) return;
+
+          var updated = _store?.get(convId);
+          // Retry if remote write hasn't landed yet or has no user message.
+          if (updated == null || !updated.messages.any((m) => m.isUser)) {
+            await Future.delayed(const Duration(seconds: 2));
+            if (!mounted) return;
+            await _store?.load();
+            if (!mounted) return;
+            updated = _store?.get(convId);
+          }
+
+          if (updated != null && updated.messages.any((m) => m.isUser)) {
+            // Full conversation (question + answer) retrieved from remote.
             setState(() {
-              _streamBuffer = '';
-              _progressMessage = '';
+              _messages
+                ..clear()
+                ..addAll(updated!.messages.map((s) => _Message(
+                      text: s.text,
+                      isUser: s.isUser,
+                      timestamp: s.timestamp,
+                    )));
+            });
+            _scrollToBottom();
+          } else if (streamedAnswer.isNotEmpty) {
+            // Fallback: remote not available — show the streamed answer at
+            // least (question will be missing, but better than nothing).
+            setState(() {
               _messages.add(_Message(
-                text: responseText,
+                text: streamedAnswer,
                 isUser: false,
                 timestamp: DateTime.now(),
               ));
             });
             _saveCurrentConversation();
             _scrollToBottom();
-          } else {
-            // Streaming disabled or chunks were missed — pull the full
-            // conversation from the remote AtKey.
-            await _store?.load();
-            if (!mounted) return;
-            final updated = _store?.get(convId);
-            if (updated != null && updated.messages.length > _messages.length) {
-              setState(() {
-                _streamBuffer = '';
-                _messages
-                  ..clear()
-                  ..addAll(updated.messages.map((s) => _Message(
-                        text: s.text,
-                        isUser: s.isUser,
-                        timestamp: s.timestamp,
-                      )));
-              });
-              _scrollToBottom();
-            }
           }
           return;
         }
 
         // ── Remote device ─────────────────────────────────────────────────
-        // Another device's conversation completed.  Load from remote so this
-        // device's store and UI are updated.
+        // A different conversation (Device B's UUID ≠ this device's current
+        // UUID) completed.  Load from remote to get question + answer.
         _bgStreamBuffers.remove(convId);
 
         await _store?.load();
         if (!mounted) return;
 
-        // If the write is still in-flight on the originating device's slow
-        // network, retry once after an additional 2 s before giving up.
-        if (_store?.get(convId) == null) {
+        // Retry if the originating device's remote write hasn't landed yet
+        // or the conversation has no user message (incomplete write).
+        var _remoteConv = _store?.get(convId);
+        if (_remoteConv == null || !_remoteConv.messages.any((m) => m.isUser)) {
           await Future.delayed(const Duration(seconds: 2));
           if (!mounted) return;
           await _store?.load();
           if (!mounted) return;
+          _remoteConv = _store?.get(convId);
         }
 
-        final completed = _store?.get(convId);
+        final completed = _remoteConv;
         if (completed == null) return;
 
         final hasUserMessages = _messages.any((m) => m.isUser);
