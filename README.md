@@ -184,6 +184,8 @@ Key format: `keyname.pembrook@atsign`
 | Key Pattern | Owner atServer | Purpose | TTL |
 |---|---|---|---|
 | `conversation_history.pembrook@owner` | `@owner` | **Cross-device sync** — full chat history list | — |
+| `conversation_history_deleted.pembrook@owner` | `@owner` | **Tombstones** — deleted conversation IDs | — |
+| `pembrook.conversation_sync.$ts.pembrook@owner` | Shared with `@owner` | **Sync trigger** — instant cross-device reload | 10s |
 | `conversation.$convId.pembrook@owner` | `@owner` | Individual chat exchange (app) | 90 days |
 | `conversation.$convId.pembrook@agent` | `@agent` | Agent-side conversation | 90 days |
 | `context.user_preferences.pembrook@agent` | `@agent` | Owner preferences | — |
@@ -207,7 +209,8 @@ Key format: `keyname.pembrook@atsign`
 | `notify.{urgency}.{ts}.pembrook@agent` | Shared with `@owner` | Immediate alerts (critical/high) | 3-7 days |
 | `notify.digest.$date.pembrook@agent` | Shared with `@owner` | Daily digest notification | 24 hours |
 
-> `conversation_history.pembrook@owner` is a self-key on `@owner`'s atServer. Because atPlatform sync propagates all self-keys to every authenticated device, this key is the sole source of truth for conversation history on all of an owner's devices.  
+> `conversation_history.pembrook@owner` is a self-key on `@owner`'s atServer. All authenticated devices for an owner load this key to display conversation history. When any device modifies conversations (add/delete), it writes both `conversation_history` and `conversation_history_deleted` (tombstones) AtKeys, then sends a `pembrook.conversation_sync` notification to itself. All devices subscribe to this notification pattern and instantly reload when they receive it, ensuring cross-device sync happens within 1-2 seconds.
+> Tombstones prevent deleted conversations from reappearing: when Device A deletes a conversation, the ID is added to `conversation_history_deleted`. Device B loads tombstones first, then filters them out when loading the conversation list.
 > Audit keys use `Metadata()..immutable = true` — once written, they cannot be modified.  
 > Audit keys are stored on `@owner`'s atServer so the agent cannot delete its own logs.
 
@@ -391,6 +394,17 @@ Device A sends chat → agent responds → done:true sentinel broadcast
             → ConversationStore.load() re-reads conversation_history AtKey
             → If Device B was idle: auto-switches to show completed exchange
             → If Device B was active in another chat: SnackBar with [View] button
+
+Device A deletes conversation(s):
+  → ConversationStore.delete() or .deleteMany()
+    → Adds IDs to tombstone set (_deletedIds)
+    → Writes conversation_history_deleted.pembrook@owner AtKey
+    → Writes conversation_history.pembrook@owner AtKey
+    → Sends pembrook.conversation_sync.<timestamp> notification to self
+  → Device B receives sync notification (1-2 seconds)
+    → ConversationStore.load() reloads both AtKeys
+    → Tombstones filter out deleted conversations
+    → UI updates automatically via notifyListeners()
 
 Device A resumes from background:
   → WidgetsBindingObserver.didChangeAppLifecycleState(resumed)

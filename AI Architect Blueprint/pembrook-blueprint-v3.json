@@ -16,31 +16,45 @@
             "description": "The human who owns and controls the agent",
             "notes": "The owner authenticates using a cryptographic identity stored in the device keychain — no passwords. All commands sent to the agent are cryptographically signed, so the agent can verify who sent them before acting.\n\nThe owner defines all policies, approves high-risk actions, and can revoke agent access at any time. The agent always remembers who the owner is, even across restarts.",
             "showNotes": true,
-            "nodeWidth": 300,
-            "nodeHeight": 200,
+            "nodeWidth": 305,
+            "nodeHeight": 352,
             "type": "person"
           },
-          "width": 300,
-          "height": 200
+          "width": 305,
+          "height": 352,
+          "style": {
+            "width": 305,
+            "height": 352
+          }
         },
         {
           "id": "node_flutter_app",
           "type": "custom",
           "position": {
-            "x": 420,
-            "y": 360
+            "x": 427,
+            "y": 423
           },
           "data": {
-            "label": "Flutter Desktop App",
+            "label": "Flutter Desktop and Mobile App",
             "description": "The owner's primary interface: chat, settings, policies, skills, bridges",
-            "notes": "The app runs on macOS, Windows, and Linux. It holds the owner's cryptographic identity and communicates with the agent exclusively through the atPlatform — **no open ports on the device**.\n\n**Key screens:**\n- **Chat** — streaming conversation with the agent\n- **Skills** — install and remove capability modules\n- **Bridges** — configure messaging integrations\n- **Policies** — edit allow/deny rules for agent behaviour\n- **Settings** — local model URL, privacy threshold, owner identity\n\n**Streaming:** The app receives incremental response tokens in real time as the agent generates them. A completion signal at the end of each response allows other devices sharing the same owner identity to silently reload the conversation — no toast notifications pop up on other devices.\n\n**Conversation history** is stored in the owner's personal encrypted cloud storage, so it is available across all devices.",
+            "notes": "The app runs on macOS, Windows, and Linux, IOS and Android. It holds the owner's cryptographic identity and communicates with the agent exclusively through the atPlatform — **no open ports on the device**.\n\n**Key screens:**\n- **Chat** — streaming conversation with the agent\n- **Skills** — install and remove capability modules\n- **Bridges** — configure messaging integrations\n- **Policies** — edit allow/deny rules for agent behaviour\n- **Settings** — local model URL, privacy threshold, owner identity\n\n**Streaming:** The app receives incremental response tokens in real time as the agent generates them. A completion signal at the end of each response allows other devices sharing the same owner identity to silently reload the conversation — no toast notifications pop up on other devices.\n\n**Conversation history** is stored in the owner's personal encrypted cloud storage, so it is available across all devices.\n\nCross-Device Data Sync Pattern (atProtocol)\nProblem: In distributed systems using atProtocol, data modifications on one device don't automatically propagate to other devices. Specifically, deletions can cause \"resurrection\" where deleted items reappear because other devices load stale cached data.\n\nSolution: Tombstone mechanism + self-notification pattern\n\nCore Pattern\nTombstone Tracking: Maintain a separate list of deleted item IDs that persists alongside your main data\n\nStore tombstones in their own AtKey (e.g., {resource}_deleted.{namespace}@owner)\nAlways load tombstones first, then filter main data against the tombstone set\nPrune old tombstones periodically to prevent unbounded growth\nSelf-Notification for Instant Sync: atProtocol self-keys don't trigger cross-device notifications\n\nCritical: Use sharedWith: client.getCurrentAtSign() to send notifications to yourself\nCreate ephemeral notification keys with timestamps and short TTL (e.g., {namespace}.sync.{timestamp})\nAll devices subscribe to a regex pattern matching your sync notifications\nOn notification receipt, devices reload data (tombstones first, then main data)\nTypical sync latency: 1-2 seconds\nImplementation Checklist\n Create tombstone AtKey alongside main data AtKey\n Load tombstones before loading main data\n Filter main data using tombstone set\n Add deleted IDs to tombstone set before persisting\n Send sync notification to self after data changes\n Subscribe to sync notification pattern on all devices\n Add tombstone pruning logic (recommended max: 500)\nWhy This Works\nTombstones: Standard distributed deletion pattern - marks deletions explicitly instead of relying on absence\nSelf-notifications: atProtocol's sharedWith parameter enables cross-device notifications even when sharing with yourself\nSeparate sync key: Ephemeral notifications avoid false triggers and provide explicit sync control vs subscribing to data changes\nApplicable to: Any atProtocol resource that needs instant cross-device sync (conversations, documents, preferences, etc.)",
             "showNotes": true,
             "nodeWidth": 360,
             "nodeHeight": 300,
             "type": "process"
           },
           "width": 360,
-          "height": 300
+          "height": 300,
+          "style": {
+            "width": 360,
+            "height": 300
+          },
+          "selected": false,
+          "positionAbsolute": {
+            "x": 427,
+            "y": 423
+          },
+          "dragging": false
         },
         {
           "id": "node_services",
@@ -59,14 +73,18 @@
             "type": "process"
           },
           "width": 360,
-          "height": 260
+          "height": 260,
+          "style": {
+            "width": 360,
+            "height": 260
+          }
         },
         {
           "id": "node_atplatform",
           "type": "custom",
           "position": {
             "x": 960,
-            "y": 330
+            "y": 260
           },
           "data": {
             "label": "atPlatform Network",
@@ -78,7 +96,17 @@
             "type": "entity"
           },
           "width": 340,
-          "height": 300
+          "height": 300,
+          "style": {
+            "width": 340,
+            "height": 300
+          },
+          "selected": true,
+          "positionAbsolute": {
+            "x": 960,
+            "y": 260
+          },
+          "dragging": false
         },
         {
           "id": "node_agent",
@@ -97,7 +125,11 @@
             "type": "process"
           },
           "width": 380,
-          "height": 320
+          "height": 320,
+          "style": {
+            "width": 380,
+            "height": 320
+          }
         }
       ],
       "edges": [
@@ -297,7 +329,12 @@
           "interactionWidth": 20
         }
       ],
-      "brand": "atPlatform"
+      "brand": "atPlatform",
+      "viewport": {
+        "x": -480.6387931704453,
+        "y": -77.30548548510922,
+        "zoom": 1.0069555500567193
+      }
     },
     {
       "id": 2026031600002,
@@ -320,7 +357,11 @@
             "type": "process"
           },
           "width": 360,
-          "height": 280
+          "height": 280,
+          "style": {
+            "width": 360,
+            "height": 280
+          }
         },
         {
           "id": "node_policy",
@@ -339,7 +380,11 @@
             "type": "process"
           },
           "width": 340,
-          "height": 260
+          "height": 260,
+          "style": {
+            "width": 340,
+            "height": 260
+          }
         },
         {
           "id": "node_orchestrator",
@@ -358,14 +403,18 @@
             "type": "process"
           },
           "width": 380,
-          "height": 380
+          "height": 380,
+          "style": {
+            "width": 380,
+            "height": 380
+          }
         },
         {
           "id": "node_llm",
           "type": "custom",
           "position": {
             "x": 960,
-            "y": 300
+            "y": 340
           },
           "data": {
             "label": "LLM Router",
@@ -377,7 +426,17 @@
             "type": "process"
           },
           "width": 380,
-          "height": 400
+          "height": 400,
+          "style": {
+            "width": 380,
+            "height": 400
+          },
+          "selected": true,
+          "positionAbsolute": {
+            "x": 960,
+            "y": 340
+          },
+          "dragging": false
         },
         {
           "id": "node_memory",
@@ -396,7 +455,11 @@
             "type": "process"
           },
           "width": 340,
-          "height": 260
+          "height": 260,
+          "style": {
+            "width": 340,
+            "height": 260
+          }
         },
         {
           "id": "node_audit",
@@ -415,7 +478,11 @@
             "type": "process"
           },
           "width": 340,
-          "height": 260
+          "height": 260,
+          "style": {
+            "width": 340,
+            "height": 260
+          }
         },
         {
           "id": "node_hitl",
@@ -434,7 +501,11 @@
             "type": "process"
           },
           "width": 340,
-          "height": 240
+          "height": 240,
+          "style": {
+            "width": 340,
+            "height": 240
+          }
         }
       ],
       "edges": [
@@ -673,7 +744,12 @@
           "interactionWidth": 20
         }
       ],
-      "brand": "atPlatform"
+      "brand": "atPlatform",
+      "viewport": {
+        "x": -68,
+        "y": -43,
+        "zoom": 1
+      }
     },
     {
       "id": 2026031600003,
@@ -696,7 +772,11 @@
             "type": "process"
           },
           "width": 380,
-          "height": 380
+          "height": 380,
+          "style": {
+            "width": 380,
+            "height": 380
+          }
         },
         {
           "id": "node_mcp_browser",
@@ -715,7 +795,11 @@
             "type": "process"
           },
           "width": 380,
-          "height": 360
+          "height": 360,
+          "style": {
+            "width": 380,
+            "height": 360
+          }
         },
         {
           "id": "node_mcp_home",
@@ -734,7 +818,11 @@
             "type": "process"
           },
           "width": 380,
-          "height": 280
+          "height": 280,
+          "style": {
+            "width": 380,
+            "height": 280
+          }
         },
         {
           "id": "node_mcp_database",
@@ -753,7 +841,11 @@
             "type": "process"
           },
           "width": 380,
-          "height": 260
+          "height": 260,
+          "style": {
+            "width": 380,
+            "height": 260
+          }
         },
         {
           "id": "node_tool_dispatch",
@@ -772,7 +864,11 @@
             "type": "process"
           },
           "width": 360,
-          "height": 320
+          "height": 320,
+          "style": {
+            "width": 360,
+            "height": 320
+          }
         }
       ],
       "edges": [
@@ -933,7 +1029,12 @@
           "interactionWidth": 20
         }
       ],
-      "brand": "atPlatform"
+      "brand": "atPlatform",
+      "viewport": {
+        "x": 418,
+        "y": -99,
+        "zoom": 1
+      }
     },
     {
       "id": 2026031600004,
@@ -956,7 +1057,11 @@
             "type": "process"
           },
           "width": 360,
-          "height": 280
+          "height": 280,
+          "style": {
+            "width": 360,
+            "height": 280
+          }
         },
         {
           "id": "node_sandbox",
@@ -975,7 +1080,11 @@
             "type": "process"
           },
           "width": 360,
-          "height": 260
+          "height": 260,
+          "style": {
+            "width": 360,
+            "height": 260
+          }
         },
         {
           "id": "node_skill_runner",
@@ -994,7 +1103,11 @@
             "type": "process"
           },
           "width": 360,
-          "height": 260
+          "height": 260,
+          "style": {
+            "width": 360,
+            "height": 260
+          }
         },
         {
           "id": "node_bridge",
@@ -1013,7 +1126,11 @@
             "type": "process"
           },
           "width": 360,
-          "height": 280
+          "height": 280,
+          "style": {
+            "width": 360,
+            "height": 280
+          }
         },
         {
           "id": "node_scheduler",
@@ -1032,7 +1149,11 @@
             "type": "process"
           },
           "width": 360,
-          "height": 280
+          "height": 280,
+          "style": {
+            "width": 360,
+            "height": 280
+          }
         },
         {
           "id": "node_heartbeat",
@@ -1051,7 +1172,11 @@
             "type": "process"
           },
           "width": 360,
-          "height": 220
+          "height": 220,
+          "style": {
+            "width": 360,
+            "height": 220
+          }
         },
         {
           "id": "node_notif",
@@ -1070,7 +1195,11 @@
             "type": "process"
           },
           "width": 360,
-          "height": 260
+          "height": 260,
+          "style": {
+            "width": 360,
+            "height": 260
+          }
         }
       ],
       "edges": [
@@ -1215,7 +1344,11 @@
             "type": "process"
           },
           "width": 380,
-          "height": 360
+          "height": 360,
+          "style": {
+            "width": 380,
+            "height": 360
+          }
         },
         {
           "id": "node_env",
@@ -1234,7 +1367,11 @@
             "type": "process"
           },
           "width": 380,
-          "height": 340
+          "height": 340,
+          "style": {
+            "width": 380,
+            "height": 340
+          }
         },
         {
           "id": "node_dockerfiles",
@@ -1253,7 +1390,11 @@
             "type": "process"
           },
           "width": 380,
-          "height": 320
+          "height": 320,
+          "style": {
+            "width": 380,
+            "height": 320
+          }
         },
         {
           "id": "node_atkeys",
@@ -1272,7 +1413,11 @@
             "type": "process"
           },
           "width": 380,
-          "height": 320
+          "height": 320,
+          "style": {
+            "width": 380,
+            "height": 320
+          }
         },
         {
           "id": "node_ollama",
@@ -1291,7 +1436,11 @@
             "type": "process"
           },
           "width": 380,
-          "height": 340
+          "height": 340,
+          "style": {
+            "width": 380,
+            "height": 340
+          }
         },
         {
           "id": "node_security",
@@ -1310,7 +1459,11 @@
             "type": "process"
           },
           "width": 380,
-          "height": 360
+          "height": 360,
+          "style": {
+            "width": 380,
+            "height": 360
+          }
         }
       ],
       "edges": [
@@ -1475,7 +1628,7 @@
     }
   ],
   "activeBrand": "atPlatform",
-  "currentPageIndex": 0,
-  "timestamp": "2026-03-16T00:00:00.000Z",
+  "currentPageIndex": 1,
+  "timestamp": "2026-03-21T01:48:22.518Z",
   "version": "2.0"
 }

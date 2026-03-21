@@ -9,9 +9,11 @@
 /// SKILL KEY PATTERN (on @owner's atServer, sharedWith @agent):
 ///   skill_meta.<skillId>.pembrook@<owner>  →  JSON-encoded SkillData
 ///
-/// CONVERSATION HISTORY (synced across all owner devices via AtKey):
+/// CONVERSATION HISTORY (synced across all owner devices via AtKey + sync notifications):
 ///   conversation_history.pembrook@<owner>  →  JSON array of ConversationSummary objects
+///   conversation_history_deleted.pembrook@<owner>  →  JSON array of deleted conversation IDs (tombstones)
 ///   SharedPreferences key 'conversations'  →  same JSON (offline / startup cache)
+///   SYNC: pembrook.conversation_sync.<timestamp> notification triggers instant reload on all devices
 ///
 /// Agent atSign: loaded from SharedPreferences 'agentAtSign' (same source as
 /// RpcService so they stay in sync when the user updates Settings).
@@ -481,10 +483,19 @@ class ConversationSummary {
 /// Persists conversation history — synced across all owner devices via AtKey.
 ///
 /// On load: tries the remote AtKey first; falls back to SharedPreferences for
-/// offline / unauthenticated startup.  On save/delete: writes to both stores.
+/// offline / unauthenticated startup.  On save/delete: writes to both stores
+/// AND sends a sync notification to trigger instant reload on all devices.
 ///
-/// AtKey: `conversation_history.pembrook@<owner>` (self-key, owner-only).
+/// AtKeys:
+///   - `conversation_history.pembrook@<owner>` — list of conversations
+///   - `conversation_history_deleted.pembrook@<owner>` — tombstones (deleted IDs)
 /// SharedPreferences key: `'conversations'` (local offline cache).
+/// Sync notifications: `pembrook.conversation_sync.<timestamp>` sent to self,
+/// all devices subscribe and reload instantly when they receive it.
+///
+/// Tombstones ensure deletions propagate correctly: when Device A deletes a
+/// conversation, the ID is added to the tombstone set which is synced via AtKey.
+/// Device B filters out tombstoned IDs when loading, preventing resurrections.
 ///
 /// Stores up to [maxConversations] sessions.  Oldest sessions are pruned
 /// when the limit is exceeded.

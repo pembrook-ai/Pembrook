@@ -168,7 +168,7 @@ The registry is injected into `GatewayCallbacks` so `_sys.skill.install` can reg
 MultiProvider
  ├── AtClientProvider        — authenticated atClient singleton
  ├── RpcService              — AtRpc client wrapper
- ├── ConversationStore       — local chat history (SharedPreferences)
+ ├── ConversationStore       — cross-device chat history (AtKey + sync notifications)
  └── DataService             — AtKey CRUD helpers
 ```
 
@@ -184,7 +184,11 @@ The original `ChatScreen` generated a single `_conversationId` UUID in `initStat
 ### Solution
 
 1. **Per-conversation UUID** — `_newConversation()` now calls `_uuid.v4()` to generate a fresh `_conversationId`
-2. **`ConversationStore`** — saves/loads conversation summaries to `SharedPreferences` as JSON
+2. **`ConversationStore`** — persists conversation history to AtKeys for cross-device sync
+   - `conversation_history.pembrook@owner` — list of all conversations
+   - `conversation_history_deleted.pembrook@owner` — tombstones (deleted IDs)
+   - SharedPreferences used as local offline cache
+   - Sends sync notifications (`pembrook.conversation_sync.<timestamp>`) to trigger instant reload on all devices
 3. **`ChatHistoryScreen`** — lets the user browse, restore, and delete past sessions
 
 ### Data model (`app/lib/services/data_service.dart`)
@@ -204,14 +208,20 @@ class ConversationSummary {
 }
 
 class ConversationStore extends ChangeNotifier {
-  // Backed by SharedPreferences key 'conversations' as JSON list
+  // Backed by AtKeys for cross-device sync:
+  //   - conversation_history.pembrook@owner (JSON array)
+  //   - conversation_history_deleted.pembrook@owner (tombstones)
+  // SharedPreferences 'conversations' used as local offline cache
+  // Subscribes to pembrook.conversation_sync.* notifications for instant reload
   static const int maxConversations = 100;  // oldest pruned on overflow
 
-  Future<void> load();                        // populates _conversations
-  Future<void> save(ConversationSummary s);   // no-op if no user messages
-  Future<void> delete(String id);
+  Future<void> initialise(AtClient);          // called after auth, starts subscription
+  Future<void> load();                        // loads from AtKey (with tombstone filtering)
+  Future<void> save(ConversationSummary s);   // no-op if no user messages, sends sync notification
+  Future<void> delete(String id);             // adds to tombstones, sends sync notification
+  Future<void> deleteMany(Set<String> ids);   // batch delete with tombstones
   ConversationSummary? get(String id);
-  List<ConversationSummary> get all;          // newest first
+  List<ConversationSummary> get conversations; // newest first, tombstones filtered
 }
 ```
 
