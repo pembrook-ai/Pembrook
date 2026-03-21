@@ -107,6 +107,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // watching a remote stream, this timer fires after 15 s of chunk inactivity
   // and force-finalises the streaming buffer so the spinner never hangs.
   Timer? _remoteStreamWatchdog;
+  // Set to the conversationId of a remote stream we are passively watching.
+  // Cleared when that stream finalises (done:true or watchdog).
+  // Used to:
+  //   (a) trigger the question-load on the FIRST notification (progress or content)
+  //       so the question appears before any progress/answer text.
+  //   (b) gate progress display so late/stale notifications arriving after
+  //       finalisation never flash the progress indicator on a completed chat.
+  String? _remoteStreamingConvId;
 
   static const String _welcomeText = 'Hello! I\'m your Pembrook AI assistant. All our communication is '
       'end-to-end encrypted via the atPlatform. How can I help you today?';
@@ -165,48 +173,51 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       final isOtherRemoteConv = event.conversationId != _conversationId && _activeStreamConvId == null;
       if (!isOurRequest && !isRemoteOnCurrentConv && !isOtherRemoteConv) return;
 
+      // ── First event for a remote conversation we're passively viewing ──────
+      // Fires on the first notification (progress OR content), so the question
+      // is fetched from the AtKey before any progress text or answer tokens
+      // appear in the UI.  Device A writes the question to the AtKey at the
+      // very start of _send(), so by the time the first stream notification
+      // arrives the write has had time to propagate.
+      if (isRemoteOnCurrentConv && _remoteStreamingConvId != event.conversationId) {
+        _remoteStreamingConvId = event.conversationId;
+        final capturedConvId = _conversationId;
+        Future.delayed(const Duration(milliseconds: 800), () async {
+          if (!mounted || _conversationId != capturedConvId) return;
+          await _store?.load();
+          if (!mounted) return;
+          final summary = _store?.get(capturedConvId);
+          if (summary != null && summary.messages.length > _messages.length) {
+            setState(() {
+              _messages
+                ..clear()
+                ..addAll(summary.messages.map((s) => _Message(
+                      text: s.text,
+                      isUser: s.isUser,
+                      timestamp: s.timestamp,
+                    )));
+            });
+          }
+        });
+      }
+
       if (event.type == 'progress') {
-        // Progress chunks: show as ephemeral status message (only for current conv)
-        if (event.conversationId == _conversationId) {
+        // Show progress only for an actively in-flight stream:
+        //   • own request   → _activeStreamConvId matches  (_isLoading is true)
+        //   • passive viewer → _remoteStreamingConvId matches
+        // Late / stale notifications arriving after finalisation are discarded
+        // (_remoteStreamingConvId is null once the stream completes).
+        final showForOwn = isOurRequest && event.conversationId == _conversationId;
+        final showForRemote = isRemoteOnCurrentConv && _remoteStreamingConvId == event.conversationId;
+        if (showForOwn || showForRemote) {
           setState(() => _progressMessage = event.chunk);
           _scrollToBottom();
         }
       } else {
         // Content chunks: append to stream buffer
         if (event.conversationId == _conversationId) {
-          // Chunk for the currently displayed conversation (ours or remote).
-          //
-          // If this is the FIRST chunk for a REMOTE conversation (passive viewer:
-          // Device B loaded Device A's conversation from history), load the
-          // question from the AtKey now.  Device A saved it at the very start of
-          // _send() so by the time the first stream chunk arrives the write has
-          // had time to propagate.  We capture the convId so a later
-          // conversation switch can't confuse the callback.
-          if (isRemoteOnCurrentConv && _streamBuffer.isEmpty) {
-            final capturedConvId = _conversationId;
-            Future.delayed(const Duration(milliseconds: 800), () async {
-              if (!mounted) return;
-              if (_conversationId != capturedConvId) return; // user switched away
-              await _store?.load();
-              if (!mounted) return;
-              final summary = _store?.get(capturedConvId);
-              // Only update if the AtKey has MORE messages than we currently
-              // show (i.e. the question has landed).
-              if (summary != null && summary.messages.length > _messages.length) {
-                setState(() {
-                  _messages
-                    ..clear()
-                    ..addAll(summary.messages.map((s) => _Message(
-                          text: s.text,
-                          isUser: s.isUser,
-                          timestamp: s.timestamp,
-                        )));
-                });
-              }
-            });
-          }
-          // Arm (or reset) the watchdog on every remote chunk so that if
-          // done:true is dropped by the network the spinner still clears
+          // Arm (or reset) the watchdog on every remote content chunk so that
+          // if done:true is dropped by the network the spinner still clears
           // after 15 s of inactivity.
           if (isRemoteOnCurrentConv) {
             final watchdogConvId = event.conversationId;
@@ -216,6 +227,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               // done:true was lost — finalise now using the same logic as the
               // passive-viewer branch of _convCompletedSub.
               final answer = _streamBuffer.trim();
+              _remoteStreamingConvId = null; // mark stream as no longer active
               // Keep _streamBuffer alive during the load so there is no gap.
 
               await _store?.load();
@@ -300,6 +312,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           // originating device ~2 s after done: true, so by the time this
           // 3 s delayed callback fires it should be available).
           _remoteStreamWatchdog?.cancel(); // done:true arrived — watchdog not needed
+          _remoteStreamingConvId = null; // stream no longer active — stop stale progress
           final streamedAnswer = _streamBuffer.trim(); // capture before clear
           // Do NOT clear _streamBuffer yet — keep the streaming bubble visible
           // during the async load so the answer never blinks out.
@@ -524,6 +537,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // be in-flight for a different conversation; we keep blocking sends and
       // routing chunks until its response arrives.
       _streamBuffer = '';
+      _progressMessage = '';
+      _remoteStreamingConvId = null; // will be re-set when first chunk for new conv arrives
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
@@ -828,6 +843,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // Do NOT touch _activeStreamConvId or _isLoading — a request may still
       // be in-flight; we keep blocking sends and routing chunks until it lands.
       _streamBuffer = '';
+      _progressMessage = '';
+      _remoteStreamingConvId = null;
     });
   }
 
