@@ -81,7 +81,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   bool _isLoading = false;
   String _streamBuffer = '';
-  String _progressMessage = ''; // Current progress message (e.g., "🌐 Fetching content...")
+  String _progressMessage =
+      ''; // Current progress message (e.g., "🌐 Fetching content...")
   // Mirrors the 'streamingEnabled' SharedPreferences setting.
   // Re-read at the start of every _send() so changes in Settings take effect
   // on the next message without requiring a restart.
@@ -116,7 +117,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   //       finalisation never flash the progress indicator on a completed chat.
   String? _remoteStreamingConvId;
 
-  static const String _welcomeText = 'Hello! I\'m your Pembrook AI assistant. All our communication is '
+  static const String _welcomeText =
+      'Hello! I\'m your Pembrook AI assistant. All our communication is '
       'end-to-end encrypted via the atPlatform. How can I help you today?';
 
   @override
@@ -169,8 +171,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // Also buffer chunks for any OTHER conversation arriving while we are
       // idle (_activeStreamConvId == null) — they will be shown/discarded
       // once the completion signal arrives and we know what to do with them.
-      final isRemoteOnCurrentConv = event.conversationId == _conversationId && _activeStreamConvId == null;
-      final isOtherRemoteConv = event.conversationId != _conversationId && _activeStreamConvId == null;
+      final isRemoteOnCurrentConv = event.conversationId == _conversationId &&
+          _activeStreamConvId == null;
+      final isOtherRemoteConv = event.conversationId != _conversationId &&
+          _activeStreamConvId == null;
       if (!isOurRequest && !isRemoteOnCurrentConv && !isOtherRemoteConv) return;
 
       // ── First event for a remote conversation we're passively viewing ──────
@@ -179,7 +183,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // appear in the UI.  Device A writes the question to the AtKey at the
       // very start of _send(), so by the time the first stream notification
       // arrives the write has had time to propagate.
-      if (isRemoteOnCurrentConv && _remoteStreamingConvId != event.conversationId) {
+      if (isRemoteOnCurrentConv &&
+          _remoteStreamingConvId != event.conversationId) {
         _remoteStreamingConvId = event.conversationId;
         final capturedConvId = _conversationId;
         Future.delayed(const Duration(milliseconds: 800), () async {
@@ -207,8 +212,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         //   • passive viewer → _remoteStreamingConvId matches
         // Late / stale notifications arriving after finalisation are discarded
         // (_remoteStreamingConvId is null once the stream completes).
-        final showForOwn = isOurRequest && event.conversationId == _conversationId;
-        final showForRemote = isRemoteOnCurrentConv && _remoteStreamingConvId == event.conversationId;
+        final showForOwn =
+            isOurRequest && event.conversationId == _conversationId;
+        final showForRemote = isRemoteOnCurrentConv &&
+            _remoteStreamingConvId == event.conversationId;
         if (showForOwn || showForRemote) {
           setState(() => _progressMessage = event.chunk);
           _scrollToBottom();
@@ -222,7 +229,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           if (isRemoteOnCurrentConv) {
             final watchdogConvId = event.conversationId;
             _remoteStreamWatchdog?.cancel();
-            _remoteStreamWatchdog = Timer(const Duration(seconds: 15), () async {
+            _remoteStreamWatchdog =
+                Timer(const Duration(seconds: 15), () async {
               if (!mounted || _streamBuffer.isEmpty) return;
               // done:true was lost — finalise now using the same logic as the
               // passive-viewer branch of _convCompletedSub.
@@ -280,14 +288,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _scrollToBottom();
         } else {
           // Buffer chunk for a backgrounded or unknown remote conversation.
-          _bgStreamBuffers[event.conversationId] = (_bgStreamBuffers[event.conversationId] ?? '') + event.chunk;
+          _bgStreamBuffers[event.conversationId] =
+              (_bgStreamBuffers[event.conversationId] ?? '') + event.chunk;
         }
       }
     });
     // Reload conversation history when any conversation completes anywhere.
     // All @owner devices receive the same stream notifications from @agent.
     _convCompletedSub?.cancel();
-    _convCompletedSub = _rpcService!.conversationCompletedEvents.listen((convId) {
+    _convCompletedSub =
+        _rpcService!.conversationCompletedEvents.listen((convId) {
       Future.delayed(const Duration(seconds: 3), () async {
         if (!mounted) return;
 
@@ -311,8 +321,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           // Load the full conversation from the remote AtKey (written by the
           // originating device ~2 s after done: true, so by the time this
           // 3 s delayed callback fires it should be available).
-          _remoteStreamWatchdog?.cancel(); // done:true arrived — watchdog not needed
-          _remoteStreamingConvId = null; // stream no longer active — stop stale progress
+          _remoteStreamWatchdog
+              ?.cancel(); // done:true arrived — watchdog not needed
+          _remoteStreamingConvId =
+              null; // stream no longer active — stop stale progress
           final streamedAnswer = _streamBuffer.trim(); // capture before clear
           // Do NOT clear _streamBuffer yet — keep the streaming bubble visible
           // during the async load so the answer never blinks out.
@@ -451,7 +463,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _pushSub = _rpcService!.listenToPushMessages(_conversationId, (push) {
       // Only show in this chat if the push belongs to the current conversation
       // (or has no routing). Otherwise the badge is already updated.
-      if (push.conversationId.isNotEmpty && push.conversationId != _conversationId) {
+      if (push.conversationId.isNotEmpty &&
+          push.conversationId != _conversationId) {
         return;
       }
       if (!mounted) return;
@@ -493,8 +506,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (_messages.every((m) => !m.isUser)) return; // nothing to save
 
     final userMessages = _messages.where((m) => m.isUser).toList();
-    final title =
-        userMessages.first.text.length > 80 ? '${userMessages.first.text.substring(0, 77)}…' : userMessages.first.text;
+    final title = userMessages.first.text.length > 80
+        ? '${userMessages.first.text.substring(0, 77)}…'
+        : userMessages.first.text;
 
     _store!.save(ConversationSummary(
       id: _conversationId,
@@ -538,7 +552,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // routing chunks until its response arrives.
       _streamBuffer = '';
       _progressMessage = '';
-      _remoteStreamingConvId = null; // will be re-set when first chunk for new conv arrives
+      _remoteStreamingConvId =
+          null; // will be re-set when first chunk for new conv arrives
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
@@ -623,7 +638,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     'Agent atSign not configured. '
                     'Go to Settings and set your agent atSign.',
                   ),
-                  leading: const Icon(Icons.warning_amber, color: Colors.orange),
+                  leading:
+                      const Icon(Icons.warning_amber, color: Colors.orange),
                   actions: [
                     TextButton(
                       onPressed: () => context.go('/settings'),
@@ -636,8 +652,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             },
           ),
           Expanded(child: _buildMessages()),
-          if (_streamBuffer.isNotEmpty && _streamingEnabled) _StreamingBubble(text: _streamBuffer),
-          _buildInput(),
+          SafeArea(
+            top: false,
+            child: _buildInput(),
+          ),
         ],
       ),
     );
@@ -648,19 +666,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // ──────────────────────────────────────────────────────────
 
   Widget _buildMessages() {
-    // Include progress message as an extra item if present
+    // Include progress message and streaming bubble as extra items if present
     final hasProgress = _progressMessage.isNotEmpty;
+    final hasStreaming = _streamBuffer.isNotEmpty && _streamingEnabled;
+    final extraItems = (hasProgress ? 1 : 0) + (hasStreaming ? 1 : 0);
+
     return ListView.builder(
       controller: _scrollCtrl,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: _messages.length + (hasProgress ? 1 : 0),
+      itemCount: _messages.length + extraItems,
       itemBuilder: (context, index) {
         if (index < _messages.length) {
           final msg = _messages[index];
           return _ChatBubble(message: msg);
-        } else {
-          // Progress indicator (last item)
+        } else if (hasProgress && index == _messages.length) {
+          // Progress indicator (after all messages)
           return _ProgressIndicator(message: _progressMessage);
+        } else {
+          // Streaming bubble (last item)
+          return _StreamingBubble(text: _streamBuffer);
         }
       },
     );
@@ -777,7 +801,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // conversation, or from the background buffer if they switched away.
     // Ignored entirely when streaming is disabled — always use RPC reply.
     final streamedText = _streamingEnabled
-        ? (sendConvId == _conversationId ? _streamBuffer.trim() : (_bgStreamBuffers.remove(sendConvId) ?? '').trim())
+        ? (sendConvId == _conversationId
+            ? _streamBuffer.trim()
+            : (_bgStreamBuffers.remove(sendConvId) ?? '').trim())
         : '';
     final responseText = result.success
         ? (streamedText.isNotEmpty ? streamedText : result.response)
@@ -901,7 +927,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Sign out?'),
-        content: const Text('You will be signed out. Your keys remain on this device '
+        content: const Text(
+            'You will be signed out. Your keys remain on this device '
             'so you can sign back in at any time.'),
         actions: [
           TextButton(
@@ -938,16 +965,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Icon(Icons.security, size: 40, color: Theme.of(context).colorScheme.onPrimaryContainer),
+                Icon(Icons.security,
+                    size: 40,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer),
                 const SizedBox(height: 8),
                 Text('Pembrook',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          color:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
                           fontWeight: FontWeight.bold,
                         )),
                 Text('Secure AI Agent',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          color:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
                         )),
               ],
             ),
@@ -983,7 +1014,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
-Widget _DrawerItem(IconData icon, String label, String route, BuildContext context) {
+Widget _DrawerItem(
+    IconData icon, String label, String route, BuildContext context) {
   return ListTile(
     leading: Icon(icon),
     title: Text(label),
@@ -1035,7 +1067,8 @@ class _ChatBubble extends StatelessWidget {
             child: Container(
               margin: const EdgeInsets.symmetric(vertical: 4),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+              constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.78),
               decoration: BoxDecoration(
                 color: isUser
                     ? Theme.of(context).colorScheme.primary
@@ -1045,6 +1078,7 @@ class _ChatBubble extends StatelessWidget {
               child: isUser
                   ? Text(
                       message.text,
+                      softWrap: true,
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.onPrimary,
                       ),
@@ -1052,6 +1086,7 @@ class _ChatBubble extends StatelessWidget {
                   : MarkdownBody(
                       data: message.text,
                       selectable: false,
+                      softLineBreak: true,
                       onTapLink: (text, href, title) {
                         if (href != null) {
                           launchUrl(
@@ -1060,17 +1095,23 @@ class _ChatBubble extends StatelessWidget {
                           );
                         }
                       },
-                      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                      styleSheet:
+                          MarkdownStyleSheet.fromTheme(Theme.of(context))
+                              .copyWith(
                         p: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: Theme.of(context).colorScheme.onSurface,
                             ),
                         code: Theme.of(context).textTheme.bodySmall?.copyWith(
                               fontFamily: 'monospace',
-                              backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
+                              backgroundColor: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerLow,
                               color: Theme.of(context).colorScheme.onSurface,
                             ),
+                        codeblockPadding: const EdgeInsets.all(12),
                         codeblockDecoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerLow,
+                          color:
+                              Theme.of(context).colorScheme.surfaceContainerLow,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         blockquoteDecoration: BoxDecoration(
@@ -1108,21 +1149,32 @@ class _StreamingBubble extends StatelessWidget {
         child: Container(
           margin: const EdgeInsets.fromLTRB(16, 0, 16, 4),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+          constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.78),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Theme.of(context).colorScheme.primary, width: 1.5),
+            border: Border.all(
+                color: Theme.of(context).colorScheme.primary, width: 1.5),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Flexible(child: Text(text)),
+              Expanded(
+                child: Text(
+                  text,
+                  softWrap: true,
+                ),
+              ),
               const SizedBox(width: 8),
-              const SizedBox(
-                width: 10,
-                height: 10,
-                child: CircularProgressIndicator(strokeWidth: 1.5),
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: SizedBox(
+                  width: 10,
+                  height: 10,
+                  child: CircularProgressIndicator(strokeWidth: 1.5),
+                ),
               ),
             ],
           ),
@@ -1157,28 +1209,35 @@ class _ProgressIndicator extends StatelessWidget {
                 maxWidth: MediaQuery.of(context).size.width * 0.75,
               ),
               decoration: BoxDecoration(
-                color: theme.colorScheme.secondaryContainer.withOpacity(0.5),
+                color:
+                    theme.colorScheme.secondaryContainer.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(16),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: theme.colorScheme.secondary,
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: theme.colorScheme.secondary,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Flexible(
+                  Expanded(
                     child: Text(
                       message,
+                      softWrap: true,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontStyle: FontStyle.italic,
-                        color: theme.colorScheme.onSecondaryContainer.withOpacity(0.75),
+                        color: theme.colorScheme.onSecondaryContainer
+                            .withValues(alpha: 0.75),
                       ),
                     ),
                   ),

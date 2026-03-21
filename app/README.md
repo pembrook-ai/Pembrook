@@ -1,16 +1,57 @@
-# pembrook_app
+# Pembrook Flutter App
 
-A new Flutter project.
+Cross-platform Flutter companion app for the Pembrook secure AI personal agent.
+
+## Supported Platforms
+
+- ✅ macOS
+- ✅ Android (API 24+)
+- ✅ Linux
+- ✅ Windows
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+### Prerequisites
 
-A few resources to get you started if this is your first Flutter project:
+- Flutter SDK ≥ 3.22.0
+- Dart SDK ≥ 3.6.0
+- An atSign provisioned at [my.atsign.com](https://my.atsign.com/dashboard)
+- Running Pembrook agent (see `../README.md`)
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+### Installation
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+# Install dependencies
+flutter pub get
+
+# Run on macOS
+flutter run -d macos
+
+# Run on Android
+flutter run -d android
+
+# Run on Linux
+flutter run -d linux
+
+# Run on Windows
+flutter run -d windows
+```
+
+### Configuration
+
+On first launch, the app will prompt you to:
+
+1. Authenticate with your atSign
+2. Configure the agent atSign (e.g., `@youragent`)
+3. Enable/disable streaming mode
+
+All settings are stored locally and synced via encrypted AtKeys.
+
+## Architecture
+
+- **AtRpc** — Zero-trust RPC calls to the agent via encrypted atPlatform notifications
+- **Multi-device sync** — Conversation history shared across all your devices
+- **Real-time streaming** — Live token-by-token responses with progress indicators
+- **Offline-first** — Local conversation cache with background sync
+
+See the main [README.md](../README.md) for full documentation.

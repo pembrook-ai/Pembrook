@@ -116,8 +116,12 @@ pembrook/
 │       ├── mcp/               # SecureMcpClient
 │       ├── automation/        # Scheduler, Heartbeat, NotificationManager
 │       └── models/            # Policy, Conversation, AuditEntry, SkillMetadata, Task
-├── app/                       # Flutter cross-platform UI
+├── app/                       # Flutter cross-platform UI (macOS, Android, Linux, Windows)
 │   ├── pubspec.yaml
+│   ├── android/               # Android-specific configuration (API 24+)
+│   ├── macos/                 # macOS-specific configuration
+│   ├── linux/                 # Linux-specific configuration
+│   ├── windows/               # Windows-specific configuration
 │   └── lib/
 │       ├── auth/              # AuthScreen + all 4 auth workflows
 │       ├── chat/              # ChatScreen + real-time streaming + multi-device sync

@@ -229,9 +229,25 @@ docker compose down
 
 ## 6. Connect the Flutter App
 
+The Flutter app runs on macOS, Android, Linux, and Windows.
+
 ```bash
 cd app
 flutter pub get
+
+# Run on macOS
+flutter run -d macos
+
+# Run on Android (requires connected device or emulator)
+flutter run -d android
+
+# Run on Linux
+flutter run -d linux
+
+# Run on Windows
+flutter run -d windows
+
+# Or just run on the default device
 flutter run
 ```
 

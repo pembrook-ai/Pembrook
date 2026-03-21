@@ -83,7 +83,9 @@ class AuditItem {
     // The agent writes timestamp as millisecondsSinceEpoch (int).
     // Guard against older entries that may have stored an ISO string.
     final rawTs = json['timestamp'];
-    final DateTime ts = rawTs is int ? DateTime.fromMillisecondsSinceEpoch(rawTs) : DateTime.parse(rawTs as String);
+    final DateTime ts = rawTs is int
+        ? DateTime.fromMillisecondsSinceEpoch(rawTs)
+        : DateTime.parse(rawTs as String);
     return AuditItem(
       timestamp: ts,
       actionType: json['actionType'] as String,
@@ -165,7 +167,8 @@ class SkillData {
         version: json['version'] as String? ?? '1.0.0',
         trustScore: (json['trustScore'] as num?)?.toDouble() ?? 0.0,
         enabled: json['enabled'] as bool? ?? true,
-        config: (json['config'] as Map<String, dynamic>? ?? {}).map((k, v) => MapEntry(k, v.toString())),
+        config: (json['config'] as Map<String, dynamic>? ?? {})
+            .map((k, v) => MapEntry(k, v.toString())),
         requiresNetwork: json['requiresNetwork'] as bool? ?? false,
       );
 }
@@ -215,7 +218,9 @@ class DataService extends ChangeNotifier {
       final raw = (jsonDecode(jsonStr) as List<dynamic>).cast<String>();
       // Strip "cached:" prefix — put() from @agent caches keys on @owner's
       // secondary with this prefix, which AtKey.fromString() cannot parse.
-      return raw.map((k) => k.startsWith('cached:') ? k.substring(7) : k).toList();
+      return raw
+          .map((k) => k.startsWith('cached:') ? k.substring(7) : k)
+          .toList();
     } catch (_) {
       // Fall back to local key scan if remote scan fails.
       return _atClient!.getKeys(regex: regex);
@@ -249,9 +254,11 @@ class DataService extends ChangeNotifier {
       for (final keyStr in keys) {
         try {
           final atKey = AtKey.fromString(keyStr);
-          final v = await _atClient!.get(atKey, getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
+          final v = await _atClient!.get(atKey,
+              getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
           if (v.value != null) {
-            items.add(HitlItem.fromJson(jsonDecode(v.value as String) as Map<String, dynamic>));
+            items.add(HitlItem.fromJson(
+                jsonDecode(v.value as String) as Map<String, dynamic>));
           }
         } catch (_) {}
       }
@@ -306,11 +313,16 @@ class DataService extends ChangeNotifier {
       for (final keyStr in keys.take(200)) {
         try {
           final atKey = AtKey.fromString(keyStr);
-          final v = await _atClient!.get(atKey, getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
+          final v = await _atClient!.get(atKey,
+              getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
           if (v.value != null) {
-            final item = AuditItem.fromJson(jsonDecode(v.value as String) as Map<String, dynamic>);
+            final item = AuditItem.fromJson(
+                jsonDecode(v.value as String) as Map<String, dynamic>);
             final t = item.actionType;
-            if (t.startsWith('mcp.') || t.startsWith('task.run.') || t.startsWith('skill.') || t.startsWith('tool.')) {
+            if (t.startsWith('mcp.') ||
+                t.startsWith('task.run.') ||
+                t.startsWith('skill.') ||
+                t.startsWith('tool.')) {
               items.add(item);
             }
           }
@@ -343,7 +355,8 @@ class DataService extends ChangeNotifier {
       for (final keyStr in keys) {
         try {
           final atKey = AtKey.fromString(keyStr);
-          final v = await _atClient!.get(atKey, getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
+          final v = await _atClient!.get(atKey,
+              getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
           if (v.value != null) {
             final data = jsonDecode(v.value as String) as Map<String, dynamic>;
             items.add(SkillData.fromJson(data));
@@ -422,7 +435,8 @@ class StoredMessage {
   factory StoredMessage.fromJson(Map<String, dynamic> json) => StoredMessage(
         text: json['text'] as String? ?? '',
         isUser: json['isUser'] as bool? ?? false,
-        timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ?? DateTime.now(),
+        timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ??
+            DateTime.now(),
       );
 }
 
@@ -452,10 +466,12 @@ class ConversationSummary {
         'messages': messages.map((m) => m.toJson()).toList(),
       };
 
-  factory ConversationSummary.fromJson(Map<String, dynamic> json) => ConversationSummary(
+  factory ConversationSummary.fromJson(Map<String, dynamic> json) =>
+      ConversationSummary(
         id: json['id'] as String? ?? '',
         title: json['title'] as String? ?? '(untitled)',
-        createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+        createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+            DateTime.now(),
         messages: (json['messages'] as List<dynamic>? ?? [])
             .map((e) => StoredMessage.fromJson(e as Map<String, dynamic>))
             .toList(),
@@ -474,18 +490,28 @@ class ConversationSummary {
 /// when the limit is exceeded.
 class ConversationStore extends ChangeNotifier {
   static const String _prefsKey = 'conversations';
+  static const String _deletedPrefsKey = 'conversations_deleted';
   static const String _atKeyName = 'conversation_history';
+  static const String _deletedAtKeyName = 'conversation_history_deleted';
   static const String _namespace = 'pembrook';
   static const int maxConversations = 100;
+  static const int maxTombstones = 500;
 
   AtClient? _atClient;
   List<ConversationSummary> _conversations = [];
+  // Tombstone set: IDs of deleted conversations that should be filtered out
+  // when merging remote data. Synced across devices to ensure deletions propagate.
+  Set<String> _deletedIds = {};
   // Monotonically-increasing counter used to discard stale load() results.
   // Each load() call captures the epoch at entry; if a newer call has already
   // applied its data by the time this one finishes, we skip the overwrite.
   int _loadEpoch = 0;
+  // Subscription to custom sync notification for instant cross-device updates.
+  // We send notifications to ourselves when conversations change.
+  StreamSubscription<AtNotification>? _syncSubscription;
 
-  List<ConversationSummary> get conversations => List.unmodifiable(_conversations);
+  List<ConversationSummary> get conversations =>
+      List.unmodifiable(_conversations);
 
   /// Call after authentication to enable cross-device AtKey sync.
   ///
@@ -497,11 +523,19 @@ class ConversationStore extends ChangeNotifier {
     // 1. Fast local cache — available offline, shows UI immediately.
     final prefs = await SharedPreferences.getInstance();
     final cached = prefs.getString(_prefsKey);
+    final cachedDeleted = prefs.getString(_deletedPrefsKey);
+    if (cachedDeleted != null && cachedDeleted.isNotEmpty) {
+      _loadDeletedFromJson(cachedDeleted);
+    }
     if (cached != null && cached.isNotEmpty) {
       _loadFromJson(cached); // calls notifyListeners()
     }
     // 2. Remote refresh in the background — updates list when it arrives.
     load().ignore();
+    // 3. Subscribe to conversation sync notifications for instant cross-device updates.
+    debugPrint(
+        '[ConversationStore] Initializing with atClient: ${atClient.getCurrentAtSign()}');
+    _subscribeToSyncNotifications();
   }
 
   /// Load conversations — tries remote AtKey first, then SharedPreferences.
@@ -511,11 +545,33 @@ class ConversationStore extends ChangeNotifier {
   /// load started during login (which fetches a snapshot from before the
   /// originating device's AtKey write) from clobbering the fresh data loaded
   /// by the cross-device sync listener 3 s later.
+  ///
+  /// Also loads the tombstone set (deleted IDs) and filters them out so
+  /// deletions performed on Device A propagate to Device B.
   Future<void> load() async {
     final epoch = ++_loadEpoch;
     final client = _atClient;
     if (client != null) {
       try {
+        // Load tombstones first so we can filter deletions when loading conversations.
+        final deletedKey = AtKey()
+          ..key = _deletedAtKeyName
+          ..namespace = _namespace;
+        try {
+          final deletedValue = await client.get(
+            deletedKey,
+            getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
+          );
+          if (deletedValue.value != null && epoch >= _loadEpoch) {
+            _loadDeletedFromJson(deletedValue.value as String);
+          }
+        } catch (_) {
+          // Tombstone key doesn't exist yet or network error — not fatal.
+        }
+
+        // A newer load() call has already applied its result — discard ours.
+        if (epoch < _loadEpoch) return;
+
         final key = AtKey()
           ..key = _atKeyName
           ..namespace = _namespace;
@@ -531,6 +587,8 @@ class ConversationStore extends ChangeNotifier {
           // Keep local cache in sync so the next offline startup has fresh data.
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(_prefsKey, raw);
+          await prefs.setString(
+              _deletedPrefsKey, jsonEncode(_deletedIds.toList()));
           return;
         }
       } catch (_) {
@@ -543,6 +601,10 @@ class ConversationStore extends ChangeNotifier {
 
     // Offline / unauthenticated fallback.
     final prefs = await SharedPreferences.getInstance();
+    final deletedRaw = prefs.getString(_deletedPrefsKey);
+    if (deletedRaw != null && deletedRaw.isNotEmpty) {
+      _loadDeletedFromJson(deletedRaw);
+    }
     final raw = prefs.getString(_prefsKey);
     if (raw == null || raw.isEmpty) {
       _conversations = [];
@@ -555,12 +617,29 @@ class ConversationStore extends ChangeNotifier {
   void _loadFromJson(String raw) {
     try {
       final list = jsonDecode(raw) as List<dynamic>;
-      _conversations = list.map((e) => ConversationSummary.fromJson(e as Map<String, dynamic>)).toList();
+      _conversations = list
+          .map((e) => ConversationSummary.fromJson(e as Map<String, dynamic>))
+          .where((conv) => !_deletedIds.contains(conv.id)) // Filter tombstones
+          .toList();
       _conversations.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     } catch (_) {
       _conversations = [];
     }
     notifyListeners();
+  }
+
+  void _loadDeletedFromJson(String raw) {
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      _deletedIds = Set<String>.from(list);
+      // Prune old tombstones to prevent unbounded growth.
+      if (_deletedIds.length > maxTombstones) {
+        _deletedIds =
+            _deletedIds.skip(_deletedIds.length - maxTombstones).toSet();
+      }
+    } catch (_) {
+      _deletedIds = {};
+    }
   }
 
   /// Save (or overwrite) a conversation session.
@@ -587,18 +666,28 @@ class ConversationStore extends ChangeNotifier {
   }
 
   /// Delete a conversation by ID.
+  ///
+  /// Adds the ID to the tombstone set so the deletion syncs across devices.
   Future<void> delete(String id) async {
+    debugPrint('[ConversationStore] Deleting conversation: $id');
+    _deletedIds.add(id);
     _conversations.removeWhere((c) => c.id == id);
     await _persist();
     notifyListeners();
+    debugPrint('[ConversationStore] Delete complete, UI notified');
   }
 
   /// Delete multiple conversations by ID in a single batch.
+  ///
+  /// Adds all IDs to the tombstone set so deletions sync across devices.
   Future<void> deleteMany(Set<String> ids) async {
     if (ids.isEmpty) return;
+    debugPrint('[ConversationStore] Deleting ${ids.length} conversations');
+    _deletedIds.addAll(ids);
     _conversations.removeWhere((c) => ids.contains(c.id));
     await _persist();
     notifyListeners();
+    debugPrint('[ConversationStore] Batch delete complete, UI notified');
   }
 
   /// Returns the conversation with [id], or null.
@@ -612,15 +701,29 @@ class ConversationStore extends ChangeNotifier {
 
   Future<void> _persist() async {
     final json = jsonEncode(_conversations.map((c) => c.toJson()).toList());
+    final deletedJson = jsonEncode(_deletedIds.toList());
 
     // 1. Local cache — immediate, offline-safe.
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefsKey, json);
+    await prefs.setString(_deletedPrefsKey, deletedJson);
 
     // 2. Remote AtKey — synced to all owner devices via atPlatform.
     final client = _atClient;
     if (client != null) {
       try {
+        // Persist tombstones first so Device B always has the deletion list
+        // before it processes any conversation updates.
+        final deletedKey = AtKey()
+          ..key = _deletedAtKeyName
+          ..namespace = _namespace
+          ..metadata = (Metadata()..ttr = -1);
+        await client.put(
+          deletedKey,
+          deletedJson,
+          putRequestOptions: PutRequestOptions()..useRemoteAtServer = true,
+        );
+
         final key = AtKey()
           ..key = _atKeyName
           ..namespace = _namespace
@@ -630,9 +733,70 @@ class ConversationStore extends ChangeNotifier {
           json,
           putRequestOptions: PutRequestOptions()..useRemoteAtServer = true,
         );
+
+        // Send a sync notification to all devices (including this one).
+        // Self-key put() doesn't auto-notify, so we send a custom sync signal.
+        try {
+          final syncKey = AtKey()
+            ..key =
+                'pembrook.conversation_sync.${DateTime.now().millisecondsSinceEpoch}'
+            ..namespace = 'pembrook'
+            ..sharedWith = client.getCurrentAtSign()
+            ..metadata = (Metadata()..ttl = 10000); // 10 second TTL
+
+          debugPrint(
+              '[ConversationStore] Sending sync notification to trigger cross-device reload');
+          await client.notificationService.notify(
+            NotificationParams.forUpdate(syncKey, value: 'sync'),
+          );
+          debugPrint('[ConversationStore] Sync notification sent successfully');
+        } catch (e) {
+          debugPrint('[ConversationStore] Sync notification failed: $e');
+          // Notification failure is non-fatal.
+        }
       } catch (_) {
         // AtKey write failure is non-fatal; local cache still saved.
       }
     }
+  }
+
+  /// Subscribe to conversation sync notifications for instant cross-device updates.
+  ///
+  /// When any device modifies conversations, it sends a sync notification to
+  /// all devices (including itself). This triggers an immediate reload.
+  void _subscribeToSyncNotifications() {
+    _syncSubscription?.cancel();
+    final client = _atClient;
+    if (client == null) {
+      debugPrint('[ConversationStore] Cannot subscribe: atClient is null');
+      return;
+    }
+
+    debugPrint(
+        '[ConversationStore] Subscribing to conversation sync notifications...');
+
+    _syncSubscription = client.notificationService
+        .subscribe(
+      regex: r'pembrook\.conversation_sync\..*',
+      shouldDecrypt: true,
+    )
+        .listen((notification) {
+      debugPrint(
+          '[ConversationStore] Received sync notification from ${notification.from}');
+      load().then((_) {
+        debugPrint(
+            '[ConversationStore] Reload complete after sync notification');
+      });
+    }, onError: (error) {
+      debugPrint('[ConversationStore] Sync subscription error: $error');
+    });
+
+    debugPrint('[ConversationStore] Sync subscription active');
+  }
+
+  @override
+  void dispose() {
+    _syncSubscription?.cancel();
+    super.dispose();
   }
 }
