@@ -168,13 +168,12 @@ ollama pull qwen3.5:9b
 ollama serve
 ```
 
-> **Linux only:** Ollama defaults to `127.0.0.1`. The agent container reaches your host via `host.docker.internal`, so Ollama must listen on all interfaces:
+> **Linux only:** Add these lines to your `.env` file to use host networking (allows the agent to access `localhost:11434`):
 > ```bash
-> OLLAMA_HOST=0.0.0.0 ollama serve
-> # Or permanently via systemd:
-> sudo systemctl edit ollama   # add: [Service]\nEnvironment="OLLAMA_HOST=0.0.0.0"
+> AGENT_NETWORK_MODE=host
+> OLLAMA_BASE_URL=http://localhost:11434
 > ```
-> macOS and Windows Docker Desktop route `host.docker.internal` transparently — no change needed.
+> This is more secure than exposing Ollama on `0.0.0.0`. macOS/Windows use bridge networking by default (no changes needed).
 
 Then start the agent:
 
@@ -747,12 +746,16 @@ Each role **must** be a different atSign. Re-run `setup.sh` with distinct atSign
 **Using host Ollama (default):** make sure Ollama is running and reachable:
 ```bash
 curl http://localhost:11434/api/tags          # from host — should return JSON
-curl http://host.docker.internal:11434/api/tags  # from inside a container
 ```
-On Linux, if the second command fails, Ollama is only listening on loopback:
+
+**On Linux:** Ensure your `.env` has:
 ```bash
-OLLAMA_HOST=0.0.0.0 ollama serve
+AGENT_NETWORK_MODE=host
+OLLAMA_BASE_URL=http://localhost:11434
 ```
+Then restart: `docker compose restart agent`
+
+**On macOS/Windows:** Default settings work with `host.docker.internal`
 
 **Using bundled Ollama:** the model must be pulled first:
 ```bash

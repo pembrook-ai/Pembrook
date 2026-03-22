@@ -11,7 +11,9 @@
 ##   Option A — use your host's running Ollama (recommended, simplest):
 ##     1. Start Ollama on your host:  ollama serve
 ##     2. Pull a model:               ollama pull qwen2.5:7b
-##     3. Start the agent:            docker compose up -d
+##     3. LINUX ONLY: Add to .env:    AGENT_NETWORK_MODE=host
+##                                    OLLAMA_BASE_URL=http://localhost:11434
+##     4. Start the agent:            docker compose up -d
 ##
 ##   Option B — bundled Ollama (runs Ollama inside Docker, CPU):
 ##     docker compose --profile bundled-ollama up -d
@@ -77,6 +79,8 @@ services:
     restart: unless-stopped
     # No depends_on — agent retries the Ollama connection at request time.
     # Works whether Ollama runs on the host or via --profile bundled-ollama.
+    # Linux: Set AGENT_NETWORK_MODE=host in .env to access host's localhost:11434 directly
+    network_mode: "${AGENT_NETWORK_MODE:-bridge}"
     command:
       - "--atsign"
       - "${AGENT_AT_SIGN:-@agent}"
@@ -93,9 +97,9 @@ services:
     group_add:
       - "${DOCKER_SOCKET_GID:-1}"
     environment:
-      # Default: host's Ollama via host.docker.internal (macOS/Windows/Linux).
-      # Override in .env with OLLAMA_BASE_URL=http://ollama:11434 when using
-      # --profile bundled-ollama.
+      # macOS/Windows: host.docker.internal:11434 (default)
+      # Linux with host network: http://localhost:11434
+      # Bundled Ollama: http://ollama:11434
       OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
       OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5:7b}"
       OWNER_AT_SIGN: "${OWNER_AT_SIGN:-}"
@@ -110,6 +114,7 @@ services:
       # ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     # host.docker.internal resolves natively on macOS/Windows (Docker Desktop)
     # and via the extra_hosts entry below on Linux (Docker Engine).
+    # Note: extra_hosts is ignored when network_mode=host
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
