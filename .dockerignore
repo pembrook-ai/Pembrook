@@ -30,8 +30,8 @@ keys/
 # NOTE: bridge/ and mcp_servers/ are NOT excluded — their Dockerfiles build
 # from the repo root context (context: . in docker-compose.yml) so they
 # must be available in the build context.
+# NOTE: skills/ is also included — skill Dockerfiles build from repo root.
 app/
-skills/
 # agent/ is included (needed for the build)
 
 # ── IDE / OS ─────────────────────────────────────────────────────────────────
