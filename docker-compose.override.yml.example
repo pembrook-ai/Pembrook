@@ -1,0 +1,19 @@
+## docker-compose.override.yml.example
+##
+## LINUX USERS: Copy this file to docker-compose.override.yml to use host Ollama
+##
+## This enables the agent to access your host's Ollama at localhost:11434
+## without exposing Ollama on 0.0.0.0 (more secure).
+##
+## Usage:
+##   cp docker-compose.override.yml.example docker-compose.override.yml
+##   docker compose up -d
+##
+## Docker Compose automatically merges docker-compose.yml with
+## docker-compose.override.yml when you run `docker compose` commands.
+
+services:
+  agent:
+    network_mode: host
+    environment:
+      OLLAMA_BASE_URL: http://localhost:11434

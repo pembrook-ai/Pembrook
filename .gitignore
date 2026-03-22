@@ -27,6 +27,9 @@ build/
 !.env.example
 *.secret
 
+# Docker local overrides
+docker-compose.override.yml
+
 # IDE
 .idea/
 .vscode/

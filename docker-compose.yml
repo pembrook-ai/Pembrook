@@ -11,8 +11,7 @@
 ##   Option A — use your host's running Ollama (recommended, simplest):
 ##     1. Start Ollama on your host:  ollama serve
 ##     2. Pull a model:               ollama pull qwen2.5:7b
-##     3. LINUX ONLY: Add to .env:    AGENT_NETWORK_MODE=host
-##                                    OLLAMA_BASE_URL=http://localhost:11434
+##     3. LINUX ONLY: Create docker-compose.override.yml (see GETTING_STARTED.md)
 ##     4. Start the agent:            docker compose up -d
 ##
 ##   Option B — bundled Ollama (runs Ollama inside Docker, CPU):
@@ -79,8 +78,7 @@ services:
     restart: unless-stopped
     # No depends_on — agent retries the Ollama connection at request time.
     # Works whether Ollama runs on the host or via --profile bundled-ollama.
-    # Linux: Set AGENT_NETWORK_MODE=host in .env to access host's localhost:11434 directly
-    network_mode: "${AGENT_NETWORK_MODE:-bridge}"
+    # Linux with host Ollama: create docker-compose.override.yml with network_mode: host
     command:
       - "--atsign"
       - "${AGENT_AT_SIGN:-@agent}"
@@ -114,11 +112,8 @@ services:
       # ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     # host.docker.internal resolves natively on macOS/Windows (Docker Desktop)
     # and via the extra_hosts entry below on Linux (Docker Engine).
-    # Note: extra_hosts is ignored when network_mode=host
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    networks:
-      - pembrook_internal
     # The agent opens NO inbound ports — outbound atNetwork + Docker API only.
 
   # ── WhatsApp Bridge (optional) ───────────────────────────────────────────────

@@ -168,12 +168,17 @@ ollama pull qwen3.5:9b
 ollama serve
 ```
 
-> **Linux only:** Add these lines to your `.env` file to use host networking (allows the agent to access `localhost:11434`):
-> ```bash
-> AGENT_NETWORK_MODE=host
-> OLLAMA_BASE_URL=http://localhost:11434
+> **Linux only:** To access host Ollama securely, create `docker-compose.override.yml` in the repo root:
+> ```yaml
+> services:
+>   agent:
+>     network_mode: host
+>     environment:
+>       OLLAMA_BASE_URL: http://localhost:11434
 > ```
-> This is more secure than exposing Ollama on `0.0.0.0`. macOS/Windows use bridge networking by default (no changes needed).
+> This uses host networking so the agent can access `localhost:11434` without exposing Ollama on `0.0.0.0`.
+> 
+> macOS/Windows use bridge networking with `host.docker.internal` (no changes needed).
 
 Then start the agent:
 
@@ -748,14 +753,9 @@ Each role **must** be a different atSign. Re-run `setup.sh` with distinct atSign
 curl http://localhost:11434/api/tags          # from host — should return JSON
 ```
 
-**On Linux:** Ensure your `.env` has:
-```bash
-AGENT_NETWORK_MODE=host
-OLLAMA_BASE_URL=http://localhost:11434
-```
-Then restart: `docker compose restart agent`
+**On Linux:** Create `docker-compose.override.yml` (see setup section above) for host networking.
 
-**On macOS/Windows:** Default settings work with `host.docker.internal`
+**On macOS/Windows:** Default bridge networking with `host.docker.internal` works automatically.
 
 **Using bundled Ollama:** the model must be pulled first:
 ```bash
