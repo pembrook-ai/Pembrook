@@ -2,7 +2,7 @@
 # Multi-stage build: compile to native binary, then copy into minimal runtime.
 #
 # Build (run from repo root):
-#   docker build -t pembrook-skill-web-search:latest skills/web_search/
+#   docker build -t pembrook-skill-web_search:latest -f skills/web_search/Dockerfile .
 #
 # NOTE: This skill requires HTTPS egress to your SearXNG instance or
 # api.search.brave.com. Run with --network=bridge or a custom network profile.
@@ -11,10 +11,10 @@ FROM dart:stable AS builder
 
 WORKDIR /app
 
-COPY pubspec.yaml pubspec.lock* ./
+COPY skills/web_search/pubspec.yaml skills/web_search/pubspec.lock* ./
 RUN dart pub get
 
-COPY . .
+COPY skills/web_search/ .
 RUN dart compile exe bin/main.dart -o /skill
 
 FROM debian:bookworm-slim

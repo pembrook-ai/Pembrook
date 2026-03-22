@@ -2,7 +2,7 @@
 # Multi-stage build: compile to native binary, then copy into minimal runtime.
 #
 # Build (run from repo root):
-#   docker build -t pembrook-skill-calendar:latest skills/calendar/
+#   docker build -t pembrook-skill-calendar:latest -f skills/calendar/Dockerfile .
 #
 # NOTE: This skill requires HTTPS egress to www.googleapis.com.
 # Run with --network=bridge or a custom network profile.
@@ -11,10 +11,10 @@ FROM dart:stable AS builder
 
 WORKDIR /app
 
-COPY pubspec.yaml pubspec.lock* ./
+COPY skills/calendar/pubspec.yaml skills/calendar/pubspec.lock* ./
 RUN dart pub get
 
-COPY . .
+COPY skills/calendar/ .
 RUN dart compile exe bin/main.dart -o /skill
 
 FROM debian:bookworm-slim
