@@ -71,7 +71,8 @@ final _router = GoRouter(
     ),
     // ── Main app shell — persistent NavigationRail on desktop ─────────────
     ShellRoute(
-      builder: (context, state, child) => AppShell(location: state.uri.path, child: child),
+      builder: (context, state, child) =>
+          AppShell(location: state.uri.path, child: child),
       routes: [
         GoRoute(
           path: '/home',
@@ -136,16 +137,42 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   // Ordered list of top-level destinations shown in the NavigationRail.
   static const _dests = [
-    (icon: Icons.chat_outlined, activeIcon: Icons.chat, label: 'Chat', route: '/home'),
-    (icon: Icons.article_outlined, activeIcon: Icons.article, label: 'Audit', route: '/audit'),
-    (icon: Icons.extension_outlined, activeIcon: Icons.extension, label: 'Skills', route: '/skills'),
-    (icon: Icons.pending_actions_outlined, activeIcon: Icons.pending_actions, label: 'Approvals', route: '/hitl'),
-    (icon: Icons.settings_outlined, activeIcon: Icons.settings, label: 'Settings', route: '/settings'),
+    (
+      icon: Icons.chat_outlined,
+      activeIcon: Icons.chat,
+      label: 'Chat',
+      route: '/home'
+    ),
+    (
+      icon: Icons.article_outlined,
+      activeIcon: Icons.article,
+      label: 'Audit',
+      route: '/audit'
+    ),
+    (
+      icon: Icons.extension_outlined,
+      activeIcon: Icons.extension,
+      label: 'Skills',
+      route: '/skills'
+    ),
+    (
+      icon: Icons.pending_actions_outlined,
+      activeIcon: Icons.pending_actions,
+      label: 'Approvals',
+      route: '/hitl'
+    ),
+    (
+      icon: Icons.settings_outlined,
+      activeIcon: Icons.settings,
+      label: 'Settings',
+      route: '/settings'
+    ),
   ];
 
   int get _selectedIndex {
     // /policy and /bridges are accessed from Settings — highlight Settings.
-    if (widget.location.startsWith('/policy') || widget.location.startsWith('/bridges')) {
+    if (widget.location.startsWith('/policy') ||
+        widget.location.startsWith('/bridges')) {
       return 4;
     }
     for (var i = 0; i < _dests.length; i++) {
@@ -159,7 +186,8 @@ class _AppShellState extends State<AppShell> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Sign out?'),
-        content: const Text('You will be signed out. Your keys remain on this device '
+        content: const Text(
+            'You will be signed out. Your keys remain on this device '
             'so you can sign back in at any time.'),
         actions: [
           TextButton(
@@ -239,34 +267,35 @@ class PembrookApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => DataService()),
         ChangeNotifierProvider(create: (_) => ConversationStore()),
       ],
-      child: MaterialApp.router(
-        title: 'Pembrook',
-        debugShowCheckedModeBanner: false,
-        routerConfig: _router,
-        builder: (context, child) {
-          final scale = context.watch<AppSettings>().fontScale;
-          return MediaQuery(
-            data: MediaQuery.of(context).copyWith(
-              textScaler: TextScaler.linear(scale),
+      child: Consumer<AppSettings>(
+        builder: (context, settings, _) => MaterialApp.router(
+          title: 'Pembrook',
+          debugShowCheckedModeBanner: false,
+          routerConfig: _router,
+          builder: (context, child) {
+            return MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(settings.fontScale),
+              ),
+              child: child!,
+            );
+          },
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF1B5E20), // deep green — "claw"
+              brightness: Brightness.light,
             ),
-            child: child!,
-          );
-        },
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF1B5E20), // deep green — "claw"
-            brightness: Brightness.light,
+            useMaterial3: true,
           ),
-          useMaterial3: true,
-        ),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF1B5E20),
-            brightness: Brightness.dark,
+          darkTheme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF1B5E20),
+              brightness: Brightness.dark,
+            ),
+            useMaterial3: true,
           ),
-          useMaterial3: true,
+          themeMode: settings.themeMode,
         ),
-        themeMode: ThemeMode.system,
       ),
     );
   }

@@ -209,6 +209,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // ── UI ───────────────────────────────────────────────
           _SectionHeader('Interface'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Theme'),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: SegmentedButton<ThemeMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: ThemeMode.light,
+                    icon: Icon(Icons.light_mode_outlined),
+                    label: Text('Light'),
+                  ),
+                  ButtonSegment(
+                    value: ThemeMode.system,
+                    icon: Icon(Icons.brightness_auto_outlined),
+                    label: Text('Auto'),
+                  ),
+                  ButtonSegment(
+                    value: ThemeMode.dark,
+                    icon: Icon(Icons.dark_mode_outlined),
+                    label: Text('Dark'),
+                  ),
+                ],
+                selected: {context.watch<AppSettings>().themeMode},
+                onSelectionChanged: (s) =>
+                    context.read<AppSettings>().setThemeMode(s.first),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Streaming responses'),
