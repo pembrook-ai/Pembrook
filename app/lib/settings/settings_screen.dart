@@ -13,6 +13,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../widgets/navigation_drawer.dart';
+
 import '../services/app_settings.dart';
 import '../services/rpc_service.dart';
 
@@ -84,12 +86,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
       );
       if (atValue.value != null) {
-        final data = jsonDecode(atValue.value as String) as Map<String, dynamic>;
+        final data =
+            jsonDecode(atValue.value as String) as Map<String, dynamic>;
         setState(() {
-          _agentAtSignCtrl.text = data['agentAtSign'] as String? ?? _agentAtSignCtrl.text;
-          _privacyThreshold = (data['privacyThreshold'] as num?)?.toDouble() ?? _privacyThreshold;
+          _agentAtSignCtrl.text =
+              data['agentAtSign'] as String? ?? _agentAtSignCtrl.text;
+          _privacyThreshold = (data['privacyThreshold'] as num?)?.toDouble() ??
+              _privacyThreshold;
           _localOnly = data['localOnly'] as bool? ?? _localOnly;
-          _streamingEnabled = data['streamingEnabled'] as bool? ?? _streamingEnabled;
+          _streamingEnabled =
+              data['streamingEnabled'] as bool? ?? _streamingEnabled;
         });
         // Keep SharedPreferences in sync with AtKey values.
         await prefs.setString('agentAtSign', _agentAtSignCtrl.text);
@@ -117,7 +123,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final key = AtKey()
           ..key = _atKeyName
           ..namespace = _namespace
-          ..metadata = (Metadata()..ttr = -1); // no time-to-refresh; always read live
+          ..metadata =
+              (Metadata()..ttr = -1); // no time-to-refresh; always read live
         await client.put(
           key,
           jsonEncode({
@@ -136,7 +143,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     // 3. Notify RpcService so it recreates the AtRpcClient immediately.
     if (mounted) {
-      await context.read<RpcService>().updateAgentAtSign(_agentAtSignCtrl.text.trim());
+      await context
+          .read<RpcService>()
+          .updateAgentAtSign(_agentAtSignCtrl.text.trim());
     }
 
     if (!mounted) return;
@@ -147,6 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final wide = MediaQuery.of(context).size.width >= 600;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
@@ -154,6 +164,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           TextButton(onPressed: _save, child: const Text('Save')),
         ],
       ),
+      drawer: wide ? null : const AppNavigationDrawer(),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -175,7 +186,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Privacy threshold'),
-            subtitle: Text('Queries with privacy score ≥ ${(_privacyThreshold * 100).toInt()}% '
+            subtitle: Text(
+                'Queries with privacy score ≥ ${(_privacyThreshold * 100).toInt()}% '
                 'go to local Ollama only'),
           ),
           Slider(
@@ -209,7 +221,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             title: const Text('Font size'),
             subtitle: Text(
-              _fontScale == 1.0 ? 'Normal (100%)' : '${(_fontScale * 100).round()}%',
+              _fontScale == 1.0
+                  ? 'Normal (100%)'
+                  : '${(_fontScale * 100).round()}%',
             ),
           ),
           Slider(
@@ -239,7 +253,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.hub_outlined),
             title: const Text('Bridges'),
-            subtitle: const Text('Configure WhatsApp, Telegram, Discord, Slack'),
+            subtitle:
+                const Text('Configure WhatsApp, Telegram, Discord, Slack'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/bridges'),
           ),
@@ -263,7 +278,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Sign out?'),
-        content: const Text('You will be signed out. Your keys remain on this device '
+        content: const Text(
+            'You will be signed out. Your keys remain on this device '
             'so you can sign back in at any time.'),
         actions: [
           TextButton(

@@ -21,6 +21,8 @@ import 'package:at_client/at_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../widgets/navigation_drawer.dart';
+
 // ──────────────────────────────────────────────────────────────────────────────
 //  MODEL
 // ──────────────────────────────────────────────────────────────────────────────
@@ -140,8 +142,10 @@ class BridgesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final wide = MediaQuery.of(context).size.width >= 600;
     return Scaffold(
       appBar: AppBar(title: const Text('Bridges')),
+      drawer: wide ? null : const AppNavigationDrawer(),
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [

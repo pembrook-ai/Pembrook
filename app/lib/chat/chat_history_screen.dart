@@ -14,6 +14,7 @@ import 'package:provider/provider.dart';
 
 import '../services/data_service.dart';
 import '../services/rpc_service.dart';
+import '../widgets/navigation_drawer.dart';
 
 class ChatHistoryScreen extends StatefulWidget {
   const ChatHistoryScreen({super.key});
@@ -96,6 +97,7 @@ class _ChatHistoryScreenState extends State<ChatHistoryScreen> {
         final allSelected =
             convs.isNotEmpty && _selected.length == convs.length;
 
+        final wide = MediaQuery.of(context).size.width >= 600;
         return Scaffold(
           appBar: AppBar(
             title: _selectMode
@@ -136,6 +138,7 @@ class _ChatHistoryScreenState extends State<ChatHistoryScreen> {
               ],
             ],
           ),
+          drawer: wide ? null : const AppNavigationDrawer(),
           body: convs.isEmpty
               ? Center(
                   child: Column(

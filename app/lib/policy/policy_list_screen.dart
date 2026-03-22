@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import 'policy_editor_screen.dart';
+import '../widgets/navigation_drawer.dart';
 
 class PolicyListScreen extends StatefulWidget {
   const PolicyListScreen({super.key});
@@ -178,6 +179,7 @@ class _PolicyListScreenState extends State<PolicyListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final wide = MediaQuery.of(context).size.width >= 600;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Policy Rules'),
@@ -189,6 +191,7 @@ class _PolicyListScreenState extends State<PolicyListScreen> {
           ),
         ],
       ),
+      drawer: wide ? null : const AppNavigationDrawer(),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openEditor(),
         icon: const Icon(Icons.add),

@@ -18,6 +18,7 @@ import 'package:provider/provider.dart';
 
 import '../services/data_service.dart';
 import '../services/rpc_service.dart';
+import '../widgets/navigation_drawer.dart';
 
 class SkillsScreen extends StatefulWidget {
   const SkillsScreen({super.key});
@@ -40,6 +41,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final wide = MediaQuery.of(context).size.width >= 600;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Installed Skills'),
@@ -61,6 +63,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
           ),
         ],
       ),
+      drawer: wide ? null : const AppNavigationDrawer(),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddSkillDialog(context),
         tooltip: 'Register skill',
@@ -76,7 +79,9 @@ class _SkillsScreenState extends State<SkillsScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.extension_off_outlined, size: 64, color: Theme.of(context).colorScheme.outlineVariant),
+                  Icon(Icons.extension_off_outlined,
+                      size: 64,
+                      color: Theme.of(context).colorScheme.outlineVariant),
                   const SizedBox(height: 16),
                   Text(
                     'No skills registered.',
@@ -135,7 +140,8 @@ class _SkillsScreenState extends State<SkillsScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Skill ID',
                       hintText: 'e.g. email',
-                      helperText: 'Short name only — maps to pembrook-skill-<id>:latest',
+                      helperText:
+                          'Short name only — maps to pembrook-skill-<id>:latest',
                       prefixIcon: Icon(Icons.extension),
                     ),
                     validator: (v) {
@@ -158,7 +164,8 @@ class _SkillsScreenState extends State<SkillsScreen> {
                       hintText: 'e.g. @myservices',
                       prefixIcon: Icon(Icons.alternate_email),
                     ),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -181,7 +188,8 @@ class _SkillsScreenState extends State<SkillsScreen> {
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Requires network access'),
-                    subtitle: const Text('Enable for email, calendar, web_search'),
+                    subtitle:
+                        const Text('Enable for email, calendar, web_search'),
                     value: requiresNetwork,
                     onChanged: (v) => setState(() => requiresNetwork = v),
                   ),
@@ -212,7 +220,8 @@ class _SkillsScreenState extends State<SkillsScreen> {
         skillId: idCtrl.text.trim(),
         skillAtSign: atSignCtrl.text.trim(),
         description: descCtrl.text.trim(),
-        version: versionCtrl.text.trim().isEmpty ? '1.0.0' : versionCtrl.text.trim(),
+        version:
+            versionCtrl.text.trim().isEmpty ? '1.0.0' : versionCtrl.text.trim(),
         requiresNetwork: requiresNetwork,
       );
       try {
@@ -391,7 +400,8 @@ class _SkillCard extends StatelessWidget {
       _ConfigField('calendarId', 'Calendar ID', 'primary', false),
     ],
     'web_search': [
-      _ConfigField('searchApiUrl', 'SearXNG Base URL', 'https://searx.example.com', false),
+      _ConfigField('searchApiUrl', 'SearXNG Base URL',
+          'https://searx.example.com', false),
       _ConfigField('braveApiKey', 'Brave API Key', '', true),
     ],
   };
@@ -403,7 +413,8 @@ class _SkillCard extends StatelessWidget {
     // Populate from existing config.
     if (fields != null) {
       for (final f in fields) {
-        controllers[f.key] = TextEditingController(text: skill.config[f.key] ?? '');
+        controllers[f.key] =
+            TextEditingController(text: skill.config[f.key] ?? '');
       }
     } else {
       // Generic: display existing key-value pairs.
@@ -457,7 +468,8 @@ class _SkillCard extends StatelessWidget {
                           labelText: f.label,
                           hintText: f.hint,
                           border: const OutlineInputBorder(),
-                          suffixIcon: f.secret ? const Icon(Icons.lock_outline) : null,
+                          suffixIcon:
+                              f.secret ? const Icon(Icons.lock_outline) : null,
                         ),
                       ),
                     ),
@@ -488,7 +500,9 @@ class _SkillCard extends StatelessWidget {
                     if (ctx.mounted) Navigator.pop(ctx);
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Config saved for "${skill.skillId}".')),
+                        SnackBar(
+                            content:
+                                Text('Config saved for "${skill.skillId}".')),
                       );
                     }
                   },

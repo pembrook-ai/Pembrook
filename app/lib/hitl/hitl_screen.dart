@@ -7,12 +7,14 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../services/data_service.dart';
+import '../widgets/navigation_drawer.dart';
 
 class HitlScreen extends StatelessWidget {
   const HitlScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final wide = MediaQuery.of(context).size.width >= 600;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Pending Approvals'),
@@ -23,6 +25,7 @@ class HitlScreen extends StatelessWidget {
           ),
         ],
       ),
+      drawer: wide ? null : const AppNavigationDrawer(),
       body: Consumer<DataService>(
         builder: (context, ds, _) {
           if (ds.loading) {
