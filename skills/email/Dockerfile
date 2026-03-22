@@ -19,7 +19,6 @@ RUN dart pub get
 
 # Copy source and compile to a self-contained native binary.
 COPY skills/email/bin ./bin
-COPY skills/email/lib ./lib
 RUN dart compile exe bin/main.dart -o /skill
 
 # ── Stage 2: minimal runtime ──────────────────────────────────────────────────

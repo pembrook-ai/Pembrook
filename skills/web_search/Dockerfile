@@ -16,7 +16,6 @@ COPY skills/web_search/pubspec.lock* ./
 RUN dart pub get
 
 COPY skills/web_search/bin ./bin
-COPY skills/web_search/lib ./lib
 RUN dart compile exe bin/main.dart -o /skill
 
 FROM debian:bookworm-slim

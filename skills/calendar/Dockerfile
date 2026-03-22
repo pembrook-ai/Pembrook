@@ -16,7 +16,6 @@ COPY skills/calendar/pubspec.lock* ./
 RUN dart pub get
 
 COPY skills/calendar/bin ./bin
-COPY skills/calendar/lib ./lib
 RUN dart compile exe bin/main.dart -o /skill
 
 FROM debian:bookworm-slim
