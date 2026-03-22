@@ -13,11 +13,13 @@ FROM dart:stable AS builder
 WORKDIR /app
 
 # Copy pubspec files and fetch dependencies (layer-cached when unchanged).
-COPY skills/email/pubspec.yaml skills/email/pubspec.lock* ./
+COPY skills/email/pubspec.yaml ./
+COPY skills/email/pubspec.lock* ./
 RUN dart pub get
 
 # Copy source and compile to a self-contained native binary.
-COPY skills/email/ .
+COPY skills/email/bin ./bin
+COPY skills/email/lib ./lib
 RUN dart compile exe bin/main.dart -o /skill
 
 # ── Stage 2: minimal runtime ──────────────────────────────────────────────────

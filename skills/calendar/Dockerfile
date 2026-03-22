@@ -11,10 +11,12 @@ FROM dart:stable AS builder
 
 WORKDIR /app
 
-COPY skills/calendar/pubspec.yaml skills/calendar/pubspec.lock* ./
+COPY skills/calendar/pubspec.yaml ./
+COPY skills/calendar/pubspec.lock* ./
 RUN dart pub get
 
-COPY skills/calendar/ .
+COPY skills/calendar/bin ./bin
+COPY skills/calendar/lib ./lib
 RUN dart compile exe bin/main.dart -o /skill
 
 FROM debian:bookworm-slim

@@ -11,10 +11,12 @@ FROM dart:stable AS builder
 
 WORKDIR /app
 
-COPY skills/web_search/pubspec.yaml skills/web_search/pubspec.lock* ./
+COPY skills/web_search/pubspec.yaml ./
+COPY skills/web_search/pubspec.lock* ./
 RUN dart pub get
 
-COPY skills/web_search/ .
+COPY skills/web_search/bin ./bin
+COPY skills/web_search/lib ./lib
 RUN dart compile exe bin/main.dart -o /skill
 
 FROM debian:bookworm-slim
