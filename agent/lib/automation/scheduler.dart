@@ -91,8 +91,7 @@ class TaskScheduler {
     // 3. Update in-memory cache immediately.
     _taskCache.removeWhere((t) => t.taskId == task.taskId);
     _taskCache.add(task);
-    _log.info(
-        'Task scheduled: ${task.taskId} (${task.cronExpression ?? task.runAt})');
+    _log.info('Task scheduled: ${task.taskId} (${task.cronExpression ?? task.runAt})');
     return task;
   }
 
@@ -118,8 +117,7 @@ class TaskScheduler {
             getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
           );
           if (v.value != null) {
-            tasks.add(TaskDefinition.fromJson(
-                jsonDecode(v.value as String) as Map<String, dynamic>));
+            tasks.add(TaskDefinition.fromJson(jsonDecode(v.value as String) as Map<String, dynamic>));
           } else {
             // Payload missing — remove stale index entry.
             await _removeFromIndex(taskId);
@@ -201,9 +199,7 @@ class TaskScheduler {
       ids = await _readIndex();
     } catch (e) {
       final msg = e.toString();
-      if (msg.contains('key not found') ||
-          msg.contains('does not exist') ||
-          msg.contains('null')) {
+      if (msg.contains('key not found') || msg.contains('does not exist') || msg.contains('null')) {
         ids = []; // No index yet — treat as empty.
       } else {
         rethrow;
@@ -275,12 +271,13 @@ class TaskScheduler {
       final shouldRun = _shouldRunNow(task, now);
       if (!shouldRun) continue;
 
-      // Mark as fired BEFORE any async work so a concurrent tick (if the
-      // guard somehow fails) won't execute the same task twice.
-      _firedTaskIds.add(task.taskId);
-
-      // Remove one-shot tasks before running to prevent double execution.
+      // For one-shot tasks: mark as fired AND delete the key so a transient
+      // delete failure cannot cause a second execution on the next tick.
+      // For cron tasks: do NOT add to _firedTaskIds — the set is never
+      // cleared, so adding would permanently prevent the task from running
+      // more than once per process lifetime.
       if (task.cronExpression == null) {
+        _firedTaskIds.add(task.taskId);
         await cancelTask(task.taskId);
       }
 
@@ -296,8 +293,7 @@ class TaskScheduler {
     // Policy check — use the task's ownerAtSign as initiator, not the agent's
     // own atSign.  Scheduled tasks are always created on behalf of the owner,
     // so the identity check must be against the owner (who IS in the allow list).
-    final initiator =
-        task.ownerAtSign.isNotEmpty ? task.ownerAtSign : _ownerAtSign;
+    final initiator = task.ownerAtSign.isNotEmpty ? task.ownerAtSign : _ownerAtSign;
     final policyReq = PolicyCheckRequest(
       initiatorAtSign: initiator,
       targetResource: 'task:${task.taskId}',
@@ -351,9 +347,7 @@ class TaskScheduler {
         }
       } else if (llmRouter != null) {
         // Run via the local LLM (privacy score 1.0 → always local).
-        final command = task.parameters['command'] as String? ??
-            task.parameters['description'] as String? ??
-            '';
+        final command = task.parameters['command'] as String? ?? task.parameters['description'] as String? ?? '';
         if (command.isNotEmpty) {
           result = await llmRouter!.generateResponse(
             query: command,
@@ -369,8 +363,7 @@ class TaskScheduler {
 
     // ── Push result to owner ───────────────────────────────────────────────
     if (result != null) {
-      final description =
-          task.parameters['description'] as String? ?? task.taskId;
+      final description = task.parameters['description'] as String? ?? task.taskId;
       final convId = task.parameters['conversationId'] as String? ?? '';
       await _pushResultToOwner(task.taskId, description, result, convId);
     }
