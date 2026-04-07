@@ -85,9 +85,7 @@ class AuditItem {
     // The agent writes timestamp as millisecondsSinceEpoch (int).
     // Guard against older entries that may have stored an ISO string.
     final rawTs = json['timestamp'];
-    final DateTime ts = rawTs is int
-        ? DateTime.fromMillisecondsSinceEpoch(rawTs)
-        : DateTime.parse(rawTs as String);
+    final DateTime ts = rawTs is int ? DateTime.fromMillisecondsSinceEpoch(rawTs) : DateTime.parse(rawTs as String);
     return AuditItem(
       timestamp: ts,
       actionType: json['actionType'] as String,
@@ -169,8 +167,7 @@ class SkillData {
         version: json['version'] as String? ?? '1.0.0',
         trustScore: (json['trustScore'] as num?)?.toDouble() ?? 0.0,
         enabled: json['enabled'] as bool? ?? true,
-        config: (json['config'] as Map<String, dynamic>? ?? {})
-            .map((k, v) => MapEntry(k, v.toString())),
+        config: (json['config'] as Map<String, dynamic>? ?? {}).map((k, v) => MapEntry(k, v.toString())),
         requiresNetwork: json['requiresNetwork'] as bool? ?? false,
       );
 }
@@ -220,9 +217,7 @@ class DataService extends ChangeNotifier {
       final raw = (jsonDecode(jsonStr) as List<dynamic>).cast<String>();
       // Strip "cached:" prefix — put() from @agent caches keys on @owner's
       // secondary with this prefix, which AtKey.fromString() cannot parse.
-      return raw
-          .map((k) => k.startsWith('cached:') ? k.substring(7) : k)
-          .toList();
+      return raw.map((k) => k.startsWith('cached:') ? k.substring(7) : k).toList();
     } catch (_) {
       // Fall back to local key scan if remote scan fails.
       return _atClient!.getKeys(regex: regex);
@@ -256,11 +251,9 @@ class DataService extends ChangeNotifier {
       for (final keyStr in keys) {
         try {
           final atKey = AtKey.fromString(keyStr);
-          final v = await _atClient!.get(atKey,
-              getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
+          final v = await _atClient!.get(atKey, getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
           if (v.value != null) {
-            items.add(HitlItem.fromJson(
-                jsonDecode(v.value as String) as Map<String, dynamic>));
+            items.add(HitlItem.fromJson(jsonDecode(v.value as String) as Map<String, dynamic>));
           }
         } catch (_) {}
       }
@@ -315,16 +308,11 @@ class DataService extends ChangeNotifier {
       for (final keyStr in keys.take(200)) {
         try {
           final atKey = AtKey.fromString(keyStr);
-          final v = await _atClient!.get(atKey,
-              getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
+          final v = await _atClient!.get(atKey, getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
           if (v.value != null) {
-            final item = AuditItem.fromJson(
-                jsonDecode(v.value as String) as Map<String, dynamic>);
+            final item = AuditItem.fromJson(jsonDecode(v.value as String) as Map<String, dynamic>);
             final t = item.actionType;
-            if (t.startsWith('mcp.') ||
-                t.startsWith('task.run.') ||
-                t.startsWith('skill.') ||
-                t.startsWith('tool.')) {
+            if (t.startsWith('mcp.') || t.startsWith('task.run.') || t.startsWith('skill.') || t.startsWith('tool.')) {
               items.add(item);
             }
           }
@@ -357,8 +345,7 @@ class DataService extends ChangeNotifier {
       for (final keyStr in keys) {
         try {
           final atKey = AtKey.fromString(keyStr);
-          final v = await _atClient!.get(atKey,
-              getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
+          final v = await _atClient!.get(atKey, getRequestOptions: GetRequestOptions()..useRemoteAtServer = true);
           if (v.value != null) {
             final data = jsonDecode(v.value as String) as Map<String, dynamic>;
             items.add(SkillData.fromJson(data));
@@ -437,8 +424,7 @@ class StoredMessage {
   factory StoredMessage.fromJson(Map<String, dynamic> json) => StoredMessage(
         text: json['text'] as String? ?? '',
         isUser: json['isUser'] as bool? ?? false,
-        timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ??
-            DateTime.now(),
+        timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ?? DateTime.now(),
       );
 }
 
@@ -468,12 +454,10 @@ class ConversationSummary {
         'messages': messages.map((m) => m.toJson()).toList(),
       };
 
-  factory ConversationSummary.fromJson(Map<String, dynamic> json) =>
-      ConversationSummary(
+  factory ConversationSummary.fromJson(Map<String, dynamic> json) => ConversationSummary(
         id: json['id'] as String? ?? '',
         title: json['title'] as String? ?? '(untitled)',
-        createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
-            DateTime.now(),
+        createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
         messages: (json['messages'] as List<dynamic>? ?? [])
             .map((e) => StoredMessage.fromJson(e as Map<String, dynamic>))
             .toList(),
@@ -521,8 +505,7 @@ class ConversationStore extends ChangeNotifier {
   // We send notifications to ourselves when conversations change.
   StreamSubscription<AtNotification>? _syncSubscription;
 
-  List<ConversationSummary> get conversations =>
-      List.unmodifiable(_conversations);
+  List<ConversationSummary> get conversations => List.unmodifiable(_conversations);
 
   /// Call after authentication to enable cross-device AtKey sync.
   ///
@@ -544,8 +527,7 @@ class ConversationStore extends ChangeNotifier {
     // 2. Remote refresh in the background — updates list when it arrives.
     load().ignore();
     // 3. Subscribe to conversation sync notifications for instant cross-device updates.
-    debugPrint(
-        '[ConversationStore] Initializing with atClient: ${atClient.getCurrentAtSign()}');
+    debugPrint('[ConversationStore] Initializing with atClient: ${atClient.getCurrentAtSign()}');
     _subscribeToSyncNotifications();
   }
 
@@ -598,8 +580,7 @@ class ConversationStore extends ChangeNotifier {
           // Keep local cache in sync so the next offline startup has fresh data.
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(_prefsKey, raw);
-          await prefs.setString(
-              _deletedPrefsKey, jsonEncode(_deletedIds.toList()));
+          await prefs.setString(_deletedPrefsKey, jsonEncode(_deletedIds.toList()));
           return;
         }
       } catch (_) {
@@ -645,8 +626,7 @@ class ConversationStore extends ChangeNotifier {
       _deletedIds = Set<String>.from(list);
       // Prune old tombstones to prevent unbounded growth.
       if (_deletedIds.length > maxTombstones) {
-        _deletedIds =
-            _deletedIds.skip(_deletedIds.length - maxTombstones).toSet();
+        _deletedIds = _deletedIds.skip(_deletedIds.length - maxTombstones).toSet();
       }
     } catch (_) {
       _deletedIds = {};
@@ -657,6 +637,42 @@ class ConversationStore extends ChangeNotifier {
   ///
   /// If [messages] contains no user messages the save is skipped so empty
   /// "new conversation" sessions are not cluttered into the list.
+  /// Append a push notification message to an existing conversation (or create
+  /// a placeholder entry so the badge in History points to a visible tile).
+  ///
+  /// Unlike [save], this is allowed on conversations that have no user messages
+  /// (e.g. a task result that arrived after the scheduling conversation was
+  /// navigated away from but not yet persisted).
+  Future<void> appendPushMessage(String convId, String title, StoredMessage msg) async {
+    final idx = _conversations.indexWhere((c) => c.id == convId);
+    if (idx >= 0) {
+      // Append to existing conversation.
+      final existing = _conversations[idx];
+      _conversations[idx] = ConversationSummary(
+        id: existing.id,
+        title: existing.title,
+        createdAt: existing.createdAt,
+        messages: [...existing.messages, msg],
+      );
+    } else {
+      // Create a placeholder so the History list has a visible tile to badge.
+      _conversations.insert(
+        0,
+        ConversationSummary(
+          id: convId,
+          title: title,
+          createdAt: msg.timestamp,
+          messages: [msg],
+        ),
+      );
+    }
+    if (_conversations.length > maxConversations) {
+      _conversations = _conversations.sublist(0, maxConversations);
+    }
+    await _persist();
+    notifyListeners();
+  }
+
   Future<void> save(ConversationSummary summary) async {
     if (summary.messages.every((m) => !m.isUser)) return;
 
@@ -749,14 +765,12 @@ class ConversationStore extends ChangeNotifier {
         // Self-key put() doesn't auto-notify, so we send a custom sync signal.
         try {
           final syncKey = AtKey()
-            ..key =
-                'pembrook.conversation_sync.${DateTime.now().millisecondsSinceEpoch}'
+            ..key = 'pembrook.conversation_sync.${DateTime.now().millisecondsSinceEpoch}'
             ..namespace = 'pembrook'
             ..sharedWith = client.getCurrentAtSign()
             ..metadata = (Metadata()..ttl = 10000); // 10 second TTL
 
-          debugPrint(
-              '[ConversationStore] Sending sync notification to trigger cross-device reload');
+          debugPrint('[ConversationStore] Sending sync notification to trigger cross-device reload');
           await client.notificationService.notify(
             NotificationParams.forUpdate(syncKey, value: 'sync'),
           );
@@ -783,8 +797,7 @@ class ConversationStore extends ChangeNotifier {
       return;
     }
 
-    debugPrint(
-        '[ConversationStore] Subscribing to conversation sync notifications...');
+    debugPrint('[ConversationStore] Subscribing to conversation sync notifications...');
 
     _syncSubscription = client.notificationService
         .subscribe(
@@ -792,11 +805,9 @@ class ConversationStore extends ChangeNotifier {
       shouldDecrypt: true,
     )
         .listen((notification) {
-      debugPrint(
-          '[ConversationStore] Received sync notification from ${notification.from}');
+      debugPrint('[ConversationStore] Received sync notification from ${notification.from}');
       load().then((_) {
-        debugPrint(
-            '[ConversationStore] Reload complete after sync notification');
+        debugPrint('[ConversationStore] Reload complete after sync notification');
       });
     }, onError: (error) {
       debugPrint('[ConversationStore] Sync subscription error: $error');
