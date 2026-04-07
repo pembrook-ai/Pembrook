@@ -120,8 +120,7 @@ Score:''';
     required double privacyScore,
     String? systemOverride,
     List<Map<String, dynamic>> tools = const [],
-    Future<String> Function(String toolName, Map<String, dynamic> args)?
-        toolExecutor,
+    Future<String> Function(String toolName, Map<String, dynamic> args)? toolExecutor,
     Future<void> Function(String chunk)? onChunk,
     Future<void> Function(String message)? onProgress,
     String userTimezone = '',
@@ -133,8 +132,7 @@ Score:''';
         .where((m) =>
             // Filter: never include externally sourced content in full context
             // to prevent memory poisoning. Summarize instead.
-            m.trustLevel == TrustLevel.owner ||
-            m.trustLevel == TrustLevel.verifiedSkill)
+            m.trustLevel == TrustLevel.owner || m.trustLevel == TrustLevel.verifiedSkill)
         .take(20) // last 20 trusted messages
         .toList();
 
@@ -157,15 +155,14 @@ Score:''';
       // Tool calling always runs on the local model (Ollama) regardless of
       // the privacy score — the privacyScore only governs whether to send
       // text to an external LLM.  Never skip tools for low-privacy queries.
-      _log.info(
-          'Using tool-calling loop (${tools.length} tool(s), model=$_localModel)');
+      _log.info('Using tool-calling loop (${tools.length} tool(s), model=$_localModel)');
 
       // Append strict tool-use rules so the model doesn't answer from memory.
       final toolSystemPrompt = '''$systemPrompt
 
 TOOL USE RULES — follow these exactly, every time:
 - schedule_task — use for ANY reminder, alert, or recurring automation:
-  • ONE-SHOT ("remind me in 5 min", "alert me at 3pm"): use the `runAt` field with an ISO-8601 UTC datetime. When the user says a wall-clock time (e.g. "at 3pm" or "14:00") treat it as the local timezone shown above and convert to UTC for `runAt`. Example: if local time is 2026-03-16T07:30:00-0700 and user says "at 8am", set runAt="2026-03-16T15:00:00Z". For relative times ("in 5 minutes") add the offset to the UTC time. NEVER use cronExpression for one-shot tasks. When confirming the schedule to the user ALWAYS state the local time, not UTC.
+  • ONE-SHOT ("remind me in 5 min", "alert me at 3pm"): use the `runAt` field with an ISO-8601 UTC datetime. When the user says a wall-clock time (e.g. "at 3pm" or "14:00") treat it as the local timezone shown above and convert to UTC for `runAt`. Example: if local time is 2026-03-16T07:30:00-0700 and user says "at 8am", set runAt="2026-03-16T15:00:00Z". For relative times ("in X minutes/hours") ALWAYS add the offset to the CURRENT UTC time shown above — the topic of the reminder (e.g. "lunch") NEVER changes when it fires. "Remind me about lunch in 2 minutes" means fire in 2 minutes, not at lunchtime. NEVER use cronExpression for one-shot tasks. When confirming the schedule to the user ALWAYS state the local time, not UTC.
   • RECURRING ("every 30 min", "daily at 8am"): use `cronExpression` with standard cron syntax, e.g. "*/30 * * * *" or "0 8 * * *". WARNING: cron fields are [minute hour day month weekday] — "1 * * * *" means "at minute :01 of every hour", NOT "in 1 minute". Do not confuse cron field values with elapsed time.
   • Once schedule_task returns a Task ID, the task is saved and WILL fire automatically — do NOT call notify_owner afterwards, just confirm to the user in text.
 - notify_owner is ONLY for sending an immediate notification right now. Never call it after schedule_task; the scheduled task delivers its own notification when it fires.
@@ -178,11 +175,7 @@ TOOL USE RULES — follow these exactly, every time:
 
       final messages = <Map<String, dynamic>>[
         {'role': 'system', 'content': toolSystemPrompt},
-        for (final m in contextMessages)
-          {
-            'role': m.role == 'assistant' ? 'assistant' : 'user',
-            'content': m.content
-          },
+        for (final m in contextMessages) {'role': m.role == 'assistant' ? 'assistant' : 'user', 'content': m.content},
         {'role': 'user', 'content': query},
       ];
       return generateResponseWithTools(
@@ -196,17 +189,13 @@ TOOL USE RULES — follow these exactly, every time:
     }
 
     // ── Plain text path (no tools, or privacy-routed to external) ─────────
-    final contextText = contextMessages
-        .map((m) =>
-            '${m.role == 'assistant' ? 'Assistant' : 'User'}: ${m.content}')
-        .join('\n');
+    final contextText =
+        contextMessages.map((m) => '${m.role == 'assistant' ? 'Assistant' : 'User'}: ${m.content}').join('\n');
 
-    final fullPrompt =
-        '$systemPrompt\n\nConversation history:\n$contextText\n\nUser: $query\nAssistant:';
+    final fullPrompt = '$systemPrompt\n\nConversation history:\n$contextText\n\nUser: $query\nAssistant:';
 
     if (useLocal) {
-      _log.fine(
-          'Routing to LOCAL LLM (privacyScore=$privacyScore threshold=$_privacyThreshold localOnly=$_localOnly)');
+      _log.fine('Routing to LOCAL LLM (privacyScore=$privacyScore threshold=$_privacyThreshold localOnly=$_localOnly)');
       return _callOllama(prompt: fullPrompt, onChunk: onChunk);
     } else {
       // Hybrid: try local first, escalate to external if knowledge gap detected
@@ -268,25 +257,15 @@ TOOL USE RULES — follow these exactly, every time:
           .timeout(const Duration(seconds: 120));
 
       if (response.statusCode != 200) {
-        _log.warning(
-            'Ollama chat returned ${response.statusCode}: ${response.body}');
-        return {
-          'role': 'assistant',
-          'content':
-              'I apologize — the local AI model is temporarily unavailable.'
-        };
+        _log.warning('Ollama chat returned ${response.statusCode}: ${response.body}');
+        return {'role': 'assistant', 'content': 'I apologize — the local AI model is temporarily unavailable.'};
       }
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      return (data['message'] as Map<String, dynamic>?) ??
-          {'role': 'assistant', 'content': ''};
+      return (data['message'] as Map<String, dynamic>?) ?? {'role': 'assistant', 'content': ''};
     } catch (e) {
       _log.severe('Ollama chat call failed: $e');
-      return {
-        'role': 'assistant',
-        'content':
-            'I apologize — I could not reach the local AI model. Error: $e'
-      };
+      return {'role': 'assistant', 'content': 'I apologize — I could not reach the local AI model. Error: $e'};
     }
   }
 
@@ -359,24 +338,17 @@ TOOL USE RULES — follow these exactly, every time:
       if (tools.isNotEmpty) body['tools'] = tools;
       request.body = jsonEncode(body);
 
-      final streamedResp =
-          await client.send(request).timeout(const Duration(seconds: 120));
+      final streamedResp = await client.send(request).timeout(const Duration(seconds: 120));
 
       if (streamedResp.statusCode != 200) {
         _log.warning('Ollama streaming returned ${streamedResp.statusCode}');
-        return {
-          'role': 'assistant',
-          'content':
-              'I apologize — the local AI model is temporarily unavailable.'
-        };
+        return {'role': 'assistant', 'content': 'I apologize — the local AI model is temporarily unavailable.'};
       }
 
       final contentChunks = <String>[];
       List<dynamic>? toolCalls;
 
-      await for (final line in streamedResp.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())) {
+      await for (final line in streamedResp.stream.transform(utf8.decoder).transform(const LineSplitter())) {
         if (line.isEmpty) continue;
         try {
           final data = jsonDecode(line) as Map<String, dynamic>;
@@ -407,11 +379,7 @@ TOOL USE RULES — follow these exactly, every time:
       return result;
     } catch (e) {
       _log.severe('Ollama streaming call failed: $e');
-      return {
-        'role': 'assistant',
-        'content':
-            'I apologize — I could not reach the local AI model. Error: $e'
-      };
+      return {'role': 'assistant', 'content': 'I apologize — I could not reach the local AI model. Error: $e'};
     } finally {
       client.close();
     }
@@ -429,8 +397,7 @@ TOOL USE RULES — follow these exactly, every time:
   Future<String> generateResponseWithTools({
     required List<Map<String, dynamic>> messages,
     required List<Map<String, dynamic>> tools,
-    required Future<String> Function(String toolName, Map<String, dynamic> args)
-        toolExecutor,
+    required Future<String> Function(String toolName, Map<String, dynamic> args) toolExecutor,
     int maxIterations = 5,
     Future<void> Function(String chunk)? onChunk,
     Future<void> Function(String message)? onProgress,
@@ -449,8 +416,7 @@ TOOL USE RULES — follow these exactly, every time:
     bool _didExecuteTool = false; // true when a tool ran this iteration
 
     for (var iteration = 0; iteration < maxIterations; iteration++) {
-      _log.info(
-          '[tool-loop] iteration=${iteration + 1}/$maxIterations — calling model');
+      _log.info('[tool-loop] iteration=${iteration + 1}/$maxIterations — calling model');
       _didExecuteTool = false;
 
       // Single streaming call: tokens flow to the app immediately while we
@@ -468,9 +434,7 @@ TOOL USE RULES — follow these exactly, every time:
 
       // Log model's reasoning/content even when tool calls are present.
       final _modelContent = (assistantMsg['content'] as String? ?? '').trim();
-      if (_modelContent.isNotEmpty &&
-          toolCalls != null &&
-          toolCalls.isNotEmpty) {
+      if (_modelContent.isNotEmpty && toolCalls != null && toolCalls.isNotEmpty) {
         _log.info('[model-reasoning] (before tool call):');
         for (final line in _modelContent.split('\n').take(10)) {
           _log.info('  > $line');
@@ -482,8 +446,7 @@ TOOL USE RULES — follow these exactly, every time:
         final content = _modelContent;
         if (content.isEmpty) {
           _consecutiveEmpties++;
-          _log.warning(
-              '[tool-loop] model returned empty content and no tool calls at '
+          _log.warning('[tool-loop] model returned empty content and no tool calls at '
               'iteration ${iteration + 1} (consecutive=$_consecutiveEmpties) — retrying');
           history.removeLast(); // drop the useless empty assistant turn
 
@@ -493,11 +456,9 @@ TOOL USE RULES — follow these exactly, every time:
           // then call send_email via the executor.
           if (_consecutiveEmpties >= 3) {
             final lowerReq = originalUserMsg.toLowerCase();
-            final emailMatch =
-                RegExp(r'[\w.+-]+@[\w.-]+\.\w+').firstMatch(originalUserMsg);
-            final wantsEmail = emailMatch != null ||
-                RegExp(r'email|send.*(to|@)', caseSensitive: false)
-                    .hasMatch(lowerReq);
+            final emailMatch = RegExp(r'[\w.+-]+@[\w.-]+\.\w+').firstMatch(originalUserMsg);
+            final wantsEmail =
+                emailMatch != null || RegExp(r'email|send.*(to|@)', caseSensitive: false).hasMatch(lowerReq);
 
             // Find the last tool result in history.
             final lastToolContent = history.reversed
@@ -518,9 +479,7 @@ TOOL USE RULES — follow these exactly, every time:
                 },
                 {
                   'role': 'user',
-                  'content': lastToolContent.length > 3500
-                      ? lastToolContent.substring(0, 3500)
-                      : lastToolContent
+                  'content': lastToolContent.length > 3500 ? lastToolContent.substring(0, 3500) : lastToolContent
                 },
               ];
               final summaryMsg = await _callOllamaStreamingMsg(
@@ -560,15 +519,10 @@ TOOL USE RULES — follow these exactly, every time:
 
             // Generic compaction for non-email cases.
             history.removeWhere((m) =>
-                m['role'] == 'user' &&
-                (m['content'] as String? ?? '')
-                    .startsWith('Remember the original request:'));
-            history.removeWhere((m) =>
-                m['role'] == 'user' &&
-                (m['content'] as String? ?? '')
-                    .startsWith('The original request was:'));
-            _log.info(
-                '[tool-loop] compacted history after $_consecutiveEmpties '
+                m['role'] == 'user' && (m['content'] as String? ?? '').startsWith('Remember the original request:'));
+            history.removeWhere(
+                (m) => m['role'] == 'user' && (m['content'] as String? ?? '').startsWith('The original request was:'));
+            _log.info('[tool-loop] compacted history after $_consecutiveEmpties '
                 'consecutive empties (${history.length} messages remain)');
             history.add({
               'role': 'user',
@@ -595,39 +549,30 @@ TOOL USE RULES — follow these exactly, every time:
           ).hasMatch(lower);
 
           // Check which expected tools have actually been called.
-          final toolsUsed = history
-              .where((m) => m['role'] == 'tool')
-              .map((m) => m['name'] as String? ?? '')
-              .toSet();
-          final emailMentioned =
-              RegExp(r'email|send.*(to|@)', caseSensitive: false)
-                  .hasMatch(originalUserMsg);
+          final toolsUsed = history.where((m) => m['role'] == 'tool').map((m) => m['name'] as String? ?? '').toSet();
+          final emailMentioned = RegExp(r'email|send.*(to|@)', caseSensitive: false).hasMatch(originalUserMsg);
           final emailSent = toolsUsed.contains('send_email');
 
           if (promisingAction && emailMentioned && !emailSent) {
-            _log.warning(
-                '[incomplete-task] Model said it will send email but never '
+            _log.warning('[incomplete-task] Model said it will send email but never '
                 'called send_email — pushing back into tool loop');
             history.removeLast(); // drop the "I will send" text
             history.add({
               'role': 'user',
-              'content':
-                  'You said you would send the email, but you did NOT call '
-                      'the send_email tool. You MUST call send_email now with '
-                      'the actual summary in the body field and the recipient '
-                      'from the original request. Do not describe what you will '
-                      'do — call the tool.',
+              'content': 'You said you would send the email, but you did NOT call '
+                  'the send_email tool. You MUST call send_email now with '
+                  'the actual summary in the body field and the recipient '
+                  'from the original request. Do not describe what you will '
+                  'do — call the tool.',
             });
             continue;
           }
         }
 
-        _log.info(
-            '[tool-loop] model returned plain text answer after ${iteration + 1} iteration(s)');
+        _log.info('[tool-loop] model returned plain text answer after ${iteration + 1} iteration(s)');
         // Log a preview of what the model is sending to the user.
-        final _answerPreview = content.length > 400
-            ? '${content.substring(0, 400)}… (${content.length} chars)'
-            : content;
+        final _answerPreview =
+            content.length > 400 ? '${content.substring(0, 400)}… (${content.length} chars)' : content;
         _log.info('[final-answer] $_answerPreview');
         return content;
       }
@@ -645,9 +590,7 @@ TOOL USE RULES — follow these exactly, every time:
         final rawArgs = fn['arguments'];
         final args = (rawArgs is Map)
             ? Map<String, dynamic>.from(rawArgs)
-            : (rawArgs is String
-                ? (jsonDecode(rawArgs) as Map<String, dynamic>)
-                : <String, dynamic>{});
+            : (rawArgs is String ? (jsonDecode(rawArgs) as Map<String, dynamic>) : <String, dynamic>{});
 
         _log.info('Tool call: $toolName');
 
@@ -659,9 +602,7 @@ TOOL USE RULES — follow these exactly, every time:
         // Log each argument on its own line for readability in the log viewer.
         for (final entry in args.entries) {
           final val = entry.value.toString();
-          final preview = val.length > 300
-              ? '${val.substring(0, 300)}… (${val.length} chars)'
-              : val;
+          final preview = val.length > 300 ? '${val.substring(0, 300)}… (${val.length} chars)' : val;
           _log.info('  ├─ ${entry.key}: $preview');
         }
 
@@ -670,9 +611,8 @@ TOOL USE RULES — follow these exactly, every time:
         // first, reject the call and tell it to fetch the content.
         if (toolName == 'send_email') {
           final body = (args['body'] as String? ?? '').trim();
-          final hasBrowserResult = history.any((m) =>
-              m['role'] == 'tool' &&
-              ((m['name'] as String?) ?? '').startsWith('browser.'));
+          final hasBrowserResult =
+              history.any((m) => m['role'] == 'tool' && ((m['name'] as String?) ?? '').startsWith('browser.'));
           if (!hasBrowserResult && body.length < 200) {
             _log.warning(
                 '[pre-flight] send_email blocked — body is ${body.length} chars and no browser tool was called. '
@@ -700,8 +640,7 @@ TOOL USE RULES — follow these exactly, every time:
         }
         _log.info('Tool result for $toolName: ${result.length} chars');
         // Log a preview of the actual result content.
-        final _resultPreview =
-            result.length > 500 ? '${result.substring(0, 500)}…' : result;
+        final _resultPreview = result.length > 500 ? '${result.substring(0, 500)}…' : result;
         for (final line in _resultPreview.split('\n').take(12)) {
           _log.info('  │ $line');
         }
@@ -738,15 +677,13 @@ TOOL USE RULES — follow these exactly, every time:
       // (e.g. after browser.extract_text) the short-circuit would eat the real
       // content and return just "Done! Notification sent."
       const _terminalTools = {'schedule_task', 'cancel_task'};
-      final _lastToolWasTerminal = _lastExecutedTool != null &&
-          _terminalTools.contains(_lastExecutedTool);
+      final _lastToolWasTerminal = _lastExecutedTool != null && _terminalTools.contains(_lastExecutedTool);
 
       // Diagnostic: always log what we know at this point.
       final _diagPrefix = (_lastExecutedResult ?? '').length > 120
           ? (_lastExecutedResult ?? '').substring(0, 120)
           : (_lastExecutedResult ?? '');
-      _log.info(
-          '[tools-done] last=$_lastExecutedTool terminal=$_lastToolWasTerminal '
+      _log.info('[tools-done] last=$_lastExecutedTool terminal=$_lastToolWasTerminal '
           'result_start="$_diagPrefix"');
 
       // Short-circuit: for terminal tools we know the outcome from the tool
@@ -754,18 +691,14 @@ TOOL USE RULES — follow these exactly, every time:
       // errors from conversation history.  Build a clean confirmation in code.
       // Use _lastExecutedResult captured directly in the loop (avoids brittle
       // history.lastWhere look-up).
-      if (_lastToolWasTerminal &&
-          _lastExecutedResult != null &&
-          !_lastExecutedResult.startsWith('Error')) {
+      if (_lastToolWasTerminal && _lastExecutedResult != null && !_lastExecutedResult.startsWith('Error')) {
         _log.info('Terminal tool short-circuit: $_lastExecutedTool succeeded '
             '(${_lastExecutedResult.length} chars) — returning synthesised reply');
         switch (_lastExecutedTool) {
           case 'schedule_task':
-            final taskIdMatch =
-                RegExp(r'Task ID: (\S+)').firstMatch(_lastExecutedResult);
+            final taskIdMatch = RegExp(r'Task ID: (\S+)').firstMatch(_lastExecutedResult);
             final taskId = taskIdMatch?.group(1) ?? '';
-            final whenMatch = RegExp(r'I will run ".+?" (.+?) and push')
-                .firstMatch(_lastExecutedResult);
+            final whenMatch = RegExp(r'I will run ".+?" (.+?) and push').firstMatch(_lastExecutedResult);
             final when = whenMatch?.group(1) ?? 'as requested';
             return "Done! I've set a reminder $when. I'll notify you when it fires."
                 "${taskId.isNotEmpty ? ' (Task ID: $taskId)' : ''}";
@@ -774,22 +707,15 @@ TOOL USE RULES — follow these exactly, every time:
         }
       }
 
-      if (originalUserMsg.isNotEmpty &&
-          !_lastToolWasTerminal &&
-          _didExecuteTool) {
+      if (originalUserMsg.isNotEmpty && !_lastToolWasTerminal && _didExecuteTool) {
         // Build a specific hint about pending tools.
-        final toolsUsed = history
-            .where((m) => m['role'] == 'tool')
-            .map((m) => m['name'] as String? ?? '')
-            .toSet();
+        final toolsUsed = history.where((m) => m['role'] == 'tool').map((m) => m['name'] as String? ?? '').toSet();
         final pendingHints = <String>[];
         final lowerReq = originalUserMsg.toLowerCase();
-        if (RegExp(r'email|send.*(to|@)').hasMatch(lowerReq) &&
-            !toolsUsed.contains('send_email')) {
+        if (RegExp(r'email|send.*(to|@)').hasMatch(lowerReq) && !toolsUsed.contains('send_email')) {
           pendingHints.add('call send_email with the REAL content in the body');
         }
-        if (RegExp(r'schedul|remind|alert|recurring').hasMatch(lowerReq) &&
-            !toolsUsed.contains('schedule_task')) {
+        if (RegExp(r'schedul|remind|alert|recurring').hasMatch(lowerReq) && !toolsUsed.contains('schedule_task')) {
           pendingHints.add('call schedule_task');
         }
         final pendingStr = pendingHints.isNotEmpty
@@ -813,13 +739,9 @@ TOOL USE RULES — follow these exactly, every time:
         .firstWhere((s) => s.isNotEmpty, orElse: () => '');
     if (lastContent.isNotEmpty) return lastContent;
 
-    final toolsUsed = history
-        .where((m) => m['role'] == 'tool')
-        .map((m) => m['name'] as String? ?? 'unknown')
-        .toSet()
-        .join(', ');
-    _log.warning(
-        '[tool-loop] exhausted $maxIterations iterations without a final '
+    final toolsUsed =
+        history.where((m) => m['role'] == 'tool').map((m) => m['name'] as String? ?? 'unknown').toSet().join(', ');
+    _log.warning('[tool-loop] exhausted $maxIterations iterations without a final '
         'text answer. Tools used: $toolsUsed');
     return 'I ran into trouble completing this after $maxIterations attempts.'
         '${toolsUsed.isNotEmpty ? ' I tried using: $toolsUsed.' : ''} '
@@ -849,8 +771,7 @@ TOOL USE RULES — follow these exactly, every time:
     }
 
     if (apiKey == null || apiKey.isEmpty) {
-      _log.info(
-          'No API key for $_externalProvider — falling back to local LLM');
+      _log.info('No API key for $_externalProvider — falling back to local LLM');
       return _callOllama(prompt: sanitizedQuery);
     }
 
@@ -884,9 +805,7 @@ TOOL USE RULES — follow these exactly, every time:
           .timeout(const Duration(seconds: 30));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      return (data['choices'] as List<dynamic>)[0]['message']['content']
-              as String? ??
-          '';
+      return (data['choices'] as List<dynamic>)[0]['message']['content'] as String? ?? '';
     } catch (e) {
       _log.warning('OpenAI call failed: $e');
       return _callOllama(prompt: query);
@@ -949,16 +868,10 @@ TOOL USE RULES — follow these exactly, every time:
         getRequestOptions: GetRequestOptions()..useRemoteAtServer = true,
       );
       if (atValue.value != null) {
-        final settings =
-            jsonDecode(atValue.value as String) as Map<String, dynamic>;
-        _localModel = settings['model'] as String? ??
-            settings['localModel'] as String? ??
-            _localModel;
-        _externalProvider =
-            settings['externalProvider'] as String? ?? _externalProvider;
-        _privacyThreshold =
-            (settings['privacyThreshold'] as num?)?.toDouble() ??
-                _privacyThreshold;
+        final settings = jsonDecode(atValue.value as String) as Map<String, dynamic>;
+        _localModel = settings['model'] as String? ?? settings['localModel'] as String? ?? _localModel;
+        _externalProvider = settings['externalProvider'] as String? ?? _externalProvider;
+        _privacyThreshold = (settings['privacyThreshold'] as num?)?.toDouble() ?? _privacyThreshold;
         _localOnly = settings['localOnly'] as bool? ?? _localOnly;
       }
     } catch (e) {

@@ -325,7 +325,9 @@ class TaskScheduler {
       }
     }
 
-    _log.info('Executing task: ${task.taskId}');
+    final taskDesc = task.parameters['description'] as String? ?? task.taskId;
+    final taskSchedule = task.cronExpression ?? task.runAt?.toIso8601String() ?? '?';
+    _log.info('Executing task: ${task.taskId} | "$taskDesc" | schedule=$taskSchedule');
 
     // ── Execute ────────────────────────────────────────────────────────────
     String? result;
@@ -347,9 +349,7 @@ class TaskScheduler {
         }
       } else if (llmRouter != null) {
         // Run via the local LLM (privacy score 1.0 → always local).
-        final command = task.parameters['command'] as String? ??
-            task.parameters['description'] as String? ??
-            '';
+        final command = task.parameters['command'] as String? ?? task.parameters['description'] as String? ?? '';
         if (command.isNotEmpty) {
           result = await llmRouter!.generateResponse(
             query: command,
