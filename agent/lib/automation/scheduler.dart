@@ -347,14 +347,27 @@ class TaskScheduler {
         }
       } else if (llmRouter != null) {
         // Run via the local LLM (privacy score 1.0 → always local).
-        final command = task.parameters['command'] as String? ?? task.parameters['description'] as String? ?? '';
+        final command = task.parameters['command'] as String? ??
+            task.parameters['description'] as String? ??
+            '';
         if (command.isNotEmpty) {
           result = await llmRouter!.generateResponse(
             query: command,
             conversationHistory: const [],
             privacyScore: 1.0,
           );
+        } else {
+          _log.warning(
+            'Task ${task.taskId}: LLM Router skipped — parameters contain '
+            'neither "command" nor "description". Add one of these keys when '
+            'scheduling LLM-based tasks.',
+          );
         }
+      } else {
+        _log.warning(
+          'Task ${task.taskId}: no execution path — skillToInvoke is null '
+          'and llmRouter was not injected.',
+        );
       }
     } catch (e) {
       result = 'Task execution error: $e';
