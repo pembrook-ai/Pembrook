@@ -65,19 +65,19 @@
   1. Deploy a Docker API proxy (e.g. docker-socket-proxy) restricting to create/start/wait/remove only.
   2. Add AppArmor/SELinux profile for the agent container.
   3. Evaluate rootless Docker or Podman for production docs.
-- **Status:** [ ]
+- **Status:** [x] Complete
 
 ### SEC-004: Shared @services Blast Radius (High effort)
 - **Files:** `docker-compose.yml`, `.env.example`, docs
 - **Issue:** All bridges and MCP servers share a single `@services` atSign.
 - **Fix:** Support per-service atSigns (e.g. `WHATSAPP_AT_SIGN`, `MCP_BROWSER_AT_SIGN`). Keep shared atSign as dev-only convenience with bold security warning. Scope PolicyEngine capabilities per-service.
-- **Status:** [ ]
+- **Status:** [x] Complete
 
 ### SEC-007: Rate Limiter Resets on Restart (Medium effort)
 - **File:** `agent/lib/gateway/gateway_callbacks.dart`
 - **Issue:** In-memory `Map<String, List<DateTime>>` resets on container restart.
 - **Fix:** Persist rate-limit state to AtKeys with TTL matching the window. Load existing counters on startup. Consider circuit-breaker pattern.
-- **Status:** [ ]
+- **Status:** [x] Complete
 
 ---
 
