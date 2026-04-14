@@ -30,6 +30,7 @@
 ///   }
 
 import 'dart:convert';
+import 'dart:io';
 import 'package:at_client/at_client.dart';
 import 'package:logging/logging.dart';
 import 'package:uuid/uuid.dart';
@@ -78,10 +79,14 @@ class GatewayCallbacks implements AtRpcCallbacks {
       final command = payload['command'] as String? ?? '';
       final conversationId =
           payload['conversationId'] as String? ?? _generateConversationId();
-      // For bridge messages, the real owner atSign is embedded in the payload.
-      // A compromised bridge cannot forge this — we verify it against the
-      // owner atSign registered in policy.
-      final effectiveSender = payload['senderAtSign'] as String? ?? fromAtSign;
+      // For bridge messages, senderAtSign in the payload carries the claimed
+      // user identity. SEC-009: only honour this override when the
+      // transport-verified sender IS the registered owner — preventing a
+      // compromised bridge/service from escalating to owner privileges.
+      final effectiveSender = _resolveEffectiveSender(
+        fromAtSign: fromAtSign,
+        payloadSenderAtSign: payload['senderAtSign'] as String?,
+      );
       final platform = payload['platform'] as String? ?? 'app';
       final streamingEnabled = payload['streamingEnabled'] as bool? ?? true;
       // Owner's local timezone string sent by the app, e.g. "UTC-07:00 (PDT)".
@@ -336,6 +341,33 @@ class GatewayCallbacks implements AtRpcCallbacks {
 
   String _generateConversationId() =>
       'conv-${DateTime.now().millisecondsSinceEpoch}';
+
+  /// SEC-009: Resolve the effective sender identity safely.
+  ///
+  /// Bridges embed a `senderAtSign` in their payload to relay the real end-user
+  /// identity. We ONLY trust this override when the transport-authenticated
+  /// `fromAtSign` is the registered owner — no bridge or service identity may
+  /// claim to be the owner through a payload field.
+  String _resolveEffectiveSender({
+    required String fromAtSign,
+    required String? payloadSenderAtSign,
+  }) {
+    if (payloadSenderAtSign == null || payloadSenderAtSign == fromAtSign) {
+      return fromAtSign;
+    }
+    final ownerAtSign = Platform.environment['OWNER_AT_SIGN'] ?? '';
+    if (ownerAtSign.isNotEmpty && fromAtSign == ownerAtSign) {
+      // The authenticated sender is the owner — trust the embedded identity.
+      return payloadSenderAtSign;
+    }
+    // Bridge/service identity attempted to claim a different atSign.
+    // Discard the payload field and use the transport-verified identity.
+    _log.warning(
+      'SEC-009: Rejected senderAtSign override from $fromAtSign '
+      '(claimed: $payloadSenderAtSign) — using transport identity.',
+    );
+    return fromAtSign;
+  }
 
   String _hash(String value) {
     return AuditService.contentHash(value);

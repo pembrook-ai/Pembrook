@@ -40,19 +40,19 @@
 - **File:** `bridge/whatsapp/bin/main.dart`
 - **Issue:** HMAC-SHA256 verification is skipped when `appSecret` is empty.
 - **Fix:** Refuse to start or reject all POSTs if `appSecret` is unconfigured. Verify same pattern in Telegram/Discord/Slack bridges.
-- **Status:** [ ]
+- **Status:** [x] Complete
 
 ### SEC-009: Bridge Sender Identity Spoofing (Medium effort)
 - **File:** `agent/lib/gateway/gateway_callbacks.dart`
 - **Issue:** `effectiveSender` from RPC payload is trusted without cross-validation against `fromAtSign`.
 - **Fix:** Validate that service/bridge identities cannot set `effectiveSender` to the owner atSign without explicit authorization. Carry original sender as metadata only.
-- **Status:** [ ]
+- **Status:** [x] Complete
 
 ### SEC-008: Sanitizer Fails Open on Error (Medium effort)
 - **File:** `agent/lib/services/sanitizer.dart`
 - **Issue:** PII sanitizer returns unsanitized query on Ollama failure.
 - **Fix:** Return a `failed` flag so the caller falls back to local-only LLM. Add regex-based pre-filter for common PII patterns as defense-in-depth. Log as security audit event.
-- **Status:** [ ]
+- **Status:** [x] Complete
 
 ---
 
