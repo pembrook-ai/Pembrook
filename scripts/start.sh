@@ -126,22 +126,22 @@ if [[ "$BUILD_SKILLS" == "true" ]]; then
   build_skill() {
     local name="$1"          # human-readable label
     local tag="$2"           # docker image tag
-    local dir="$3"           # path to skill directory (used as build context)
+    local dockerfile="$3"    # path to Dockerfile (relative to PROJECT_ROOT)
 
-    if [[ ! -d "$dir" ]]; then
-      warn "Skill directory not found, skipping: $dir"
+    if [[ ! -f "$PROJECT_ROOT/$dockerfile" ]]; then
+      warn "Skill Dockerfile not found, skipping: $dockerfile"
       return
     fi
 
     info "Building $name  →  $tag"
-    # Build context = skill directory; Dockerfile must sit inside that directory.
-    docker build -t "$tag" "$dir"
+    # Build context = repo root; Dockerfile uses skills/<name>/ paths.
+    docker build -t "$tag" -f "$PROJECT_ROOT/$dockerfile" "$PROJECT_ROOT"
     success "$name image ready: $tag"
   }
 
-  build_skill "Email skill"      "pembrook-skill-email:latest"      "$PROJECT_ROOT/skills/email"
-  build_skill "Calendar skill"   "pembrook-skill-calendar:latest"   "$PROJECT_ROOT/skills/calendar"
-  build_skill "Web Search skill" "pembrook-skill-web-search:latest" "$PROJECT_ROOT/skills/web_search"
+  build_skill "Email skill"      "pembrook-skill-email:latest"      "skills/email/Dockerfile"
+  build_skill "Calendar skill"   "pembrook-skill-calendar:latest"   "skills/calendar/Dockerfile"
+  build_skill "Web Search skill" "pembrook-skill-web-search:latest" "skills/web_search/Dockerfile"
 else
   info "Skipping skill image builds (--no-skills)"
 fi
