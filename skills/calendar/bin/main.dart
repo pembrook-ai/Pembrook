@@ -55,8 +55,18 @@ void main() async {
     (r) => stderr.writeln('[${r.level}] ${r.message}'),
   );
 
-  final line = await stdin.first;
-  final input = jsonDecode(utf8.decode(line)) as Map<String, dynamic>;
+  // SandboxManager passes the payload as a base64-encoded env var to avoid
+  // `docker run --interactive` which requires HTTP hijacking the proxy can't forward.
+  // Fall back to stdin for local testing / legacy callers.
+  final Map<String, dynamic> input;
+  final skillInputEnv = Platform.environment['SKILL_INPUT'];
+  if (skillInputEnv != null && skillInputEnv.isNotEmpty) {
+    input = jsonDecode(utf8.decode(base64.decode(skillInputEnv)))
+        as Map<String, dynamic>;
+  } else {
+    final line = await stdin.first;
+    input = jsonDecode(utf8.decode(line)) as Map<String, dynamic>;
+  }
   final requestId = input['requestId'] as String? ?? '';
   final payload = input['payload'] as Map<String, dynamic>? ?? {};
 
