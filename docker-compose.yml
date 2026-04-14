@@ -73,6 +73,10 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
+    # SEC-010: Ollama is only reachable from the agent via the isolated ollama_net.
+    # No other containers (bridges, MCP servers, skill sandbox escapes) can reach it.
+    networks:
+      - ollama_net
 
   # ── Docker Socket Proxy (SEC-003) ─────────────────────────────────────────
   # Restricts the agent's Docker API access to only the operations it needs:
@@ -89,15 +93,15 @@ services:
     restart: unless-stopped
     environment:
       # Enable only what the agent's SandboxManager requires.
-      CONTAINERS: 1   # create, start, stop, wait, remove, inspect, logs
+      CONTAINERS: 1   # create, start, stop, wait, remove, inspect, logs, attach
       IMAGES: 1       # pull, inspect, list
-      POST: 1         # allow POST (required for create/start/stop)
+      POST: 1         # allow POST (required for create/start/stop/attach)
+      INFO: 1         # required by `docker info` — used by SandboxManager._isDockerAvailable()
       # Everything else defaults to 0 (denied).
       NETWORKS: 0
       VOLUMES: 0
       EXEC: 0
       SWARM: 0
-      INFO: 0
       AUTH: 0
       SECRETS: 0
     volumes:
@@ -156,6 +160,7 @@ services:
     networks:
       - pembrook_internal
       - docker_proxy_net
+      - ollama_net   # SEC-010: agent-to-Ollama traffic on isolated network
 
   # ── WhatsApp Bridge (optional) ───────────────────────────────────────────────
   # Uncomment and set SERVICES_AT_SIGN + SERVICES_KEY_FILE in .env to enable.
@@ -346,3 +351,6 @@ networks:
   docker_proxy_net:
     driver: bridge
     internal: true   # SEC-003: proxy network is internal-only (no internet access needed)
+  ollama_net:
+    driver: bridge
+    internal: true   # SEC-010: Ollama reachable only from the agent container

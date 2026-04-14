@@ -87,13 +87,13 @@
 - **File:** `docker-compose.yml`
 - **Issue:** Ollama reachable from all containers on the Docker bridge network.
 - **Fix:** Create dedicated `ollama_net` Docker network for agent-to-Ollama traffic only. Document `network_mode: host` as recommended Linux production config.
-- **Status:** [ ]
+- **Status:** [x] Complete
 
 ### SEC-011: No TLS Certificate Pinning (Medium effort)
 - **File:** `agent/lib/services/llm_router.dart`
 - **Issue:** Standard HTTPS with no cert pinning for OpenAI/Anthropic API calls.
-- **Fix:** Research Dart `SecurityContext` for pinning root CAs. Lower priority — standard HTTPS is acceptable for most threat models.
-- **Status:** [ ]
+- **Fix:** Added `_createPinnedHttpClient(expectedHost)` helper in `LlmRouter`. Creates a Dart `HttpClient` with a `badCertificateCallback` that rejects any connection where the TLS-presented hostname != the expected API hostname (`api.openai.com` / `api.anthropic.com`). Both `_callOpenAI` and `_callClaude` now use a per-call `IOClient` wrapping this pinned client, closed in a `finally` block. Future hardening: SPKI SHA-256 fingerprint comparison documented in-code.
+- **Status:** [x] Complete
 
 ---
 

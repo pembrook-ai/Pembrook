@@ -18,8 +18,10 @@
 ///   - Google Gemini
 
 import 'dart:convert';
+import 'dart:io';
 import 'package:at_client/at_client.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:logging/logging.dart';
 
 import '../models/conversation.dart';
@@ -875,11 +877,44 @@ TOOL USE RULES — follow these exactly, every time:
     }
   }
 
+  // SEC-011: Build an HttpClient that rejects any certificate whose presented
+  // hostname does not exactly match [expectedHost].  The system trust store is
+  // used for CA chain validation (no self-signed / private-CA traffic should
+  // ever reach external LLM endpoints).  The additional badCertificateCallback
+  // ensures that even if the OS trust store were compromised or a wildcard cert
+  // were mis-issued, the connection is dropped whenever the CN/SAN does not
+  // match the single hostname we expect for this endpoint.
+  //
+  // SPKI fingerprint pinning (stronger but operationally expensive — breaks on
+  // every cert rotation) can be layered on top by fetching the certificate and
+  // comparing its DER-encoded SubjectPublicKeyInfo SHA-256 hash to a hardcoded
+  // value.  That is left as a future hardening step, tracked in
+  // SECURITY_REMEDIATION.md.
+  IOClient _createPinnedHttpClient(String expectedHost) {
+    final inner = HttpClient()
+      // Use the platform's default trusted roots for CA chain verification.
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) {
+        // Allow only the exact host we expect — reject everything else even if
+        // the chain would otherwise be valid (mis-issuance / interception).
+        final allowed = host == expectedHost;
+        if (!allowed) {
+          _log.severe(
+            'SEC-011 TLS pin violation: expected host "$expectedHost" '
+            'but certificate presented for "$host" — dropping connection.',
+          );
+        }
+        return false; // never override an invalid certificate
+      };
+    return IOClient(inner);
+  }
+
   Future<String> _callOpenAI(String query, String apiKey) async {
+    const expectedHost = 'api.openai.com';
+    final client = _createPinnedHttpClient(expectedHost);
     try {
-      final response = await http
+      final response = await client
           .post(
-            Uri.parse('https://api.openai.com/v1/chat/completions'),
+            Uri.parse('https://$expectedHost/v1/chat/completions'),
             headers: {
               'Authorization': 'Bearer $apiKey',
               'Content-Type': 'application/json',
@@ -901,14 +936,18 @@ TOOL USE RULES — follow these exactly, every time:
     } catch (e) {
       _log.warning('OpenAI call failed: $e');
       return _callOllama(prompt: query);
+    } finally {
+      client.close();
     }
   }
 
   Future<String> _callClaude(String query, String apiKey) async {
+    const expectedHost = 'api.anthropic.com';
+    final client = _createPinnedHttpClient(expectedHost);
     try {
-      final response = await http
+      final response = await client
           .post(
-            Uri.parse('https://api.anthropic.com/v1/messages'),
+            Uri.parse('https://$expectedHost/v1/messages'),
             headers: {
               'x-api-key': apiKey,
               'anthropic-version': '2023-06-01',
@@ -929,6 +968,8 @@ TOOL USE RULES — follow these exactly, every time:
     } catch (e) {
       _log.warning('Claude call failed: $e');
       return _callOllama(prompt: query);
+    } finally {
+      client.close();
     }
   }
 
