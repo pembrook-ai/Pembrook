@@ -43,8 +43,14 @@
 ## SECURITY NOTES:
 ##   - The agent container accesses Docker socket ONLY to spawn sandboxed
 ##     skill containers (--network=none --memory=256m --cpus=0.5 --cap-drop=ALL).
+##   - SEC-003: A docker-socket-proxy service restricts the agent to only the
+##     Docker API operations it needs (create/start/wait/remove/logs/images).
+##     The agent connects via tcp://docker_proxy:2375 — NOT the raw host socket.
 ##   - No inbound ports are opened for the agent (zero open ports).
 ##   - atSign keys are mounted read-only.
+##   - SEC-004: For production, assign a separate atSign per service using the
+##     per-service env vars (WHATSAPP_AT_SIGN, MCP_BROWSER_AT_SIGN, etc.).
+##     SERVICES_AT_SIGN is a development convenience — see security note below.
 
 name: pembrook
 
@@ -67,6 +73,42 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
+    # SEC-010: Ollama is only reachable from the agent via the isolated ollama_net.
+    # No other containers (bridges, MCP servers, skill sandbox escapes) can reach it.
+    networks:
+      - ollama_net
+
+  # ── Docker Socket Proxy (SEC-003) ─────────────────────────────────────────
+  # Restricts the agent's Docker API access to only the operations it needs:
+  # spawning and managing sandboxed skill containers.
+  # The proxy intercepts every Docker API call and rejects anything outside
+  # the allowed set — even if the agent process is fully compromised.
+  #
+  # Allowed: containers (create/start/wait/stop/remove/logs/inspect)
+  #          images (pull/inspect/list)
+  # Denied:  everything else (volumes, networks, swarm, exec, etc.)
+  docker_proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:0.2
+    container_name: pembrook-docker-proxy
+    restart: unless-stopped
+    environment:
+      # Enable only what the agent's SandboxManager requires.
+      CONTAINERS: 1   # create, start, stop, wait, remove, inspect, logs, attach
+      IMAGES: 1       # pull, inspect, list
+      POST: 1         # allow POST (required for create/start/stop/attach)
+      INFO: 1         # required by `docker info` — used by SandboxManager._isDockerAvailable()
+      # Everything else defaults to 0 (denied).
+      NETWORKS: 0
+      VOLUMES: 0
+      EXEC: 0
+      SWARM: 0
+      AUTH: 0
+      SECRETS: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker_proxy_net
+    # Never expose the proxy port outside the internal Docker network.
 
   # ── Pembrook Agent ──────────────────────────────────────────────────────────
   agent:
@@ -87,13 +129,9 @@ services:
     volumes:
       # atSign keys — read-only.  Default: ~/.atsign/keys (set KEYS_DIR in .env to override).
       - "${KEYS_DIR:-~/.atsign/keys}:/keys:ro"
-      # Docker socket — allows agent to spawn sandboxed skill containers.
-      - /var/run/docker.sock:/var/run/docker.sock
-    # Grant the pembrook user (uid=1001) access to the Docker socket.
-    # The socket GID is 1 on macOS Docker Desktop; set DOCKER_SOCKET_GID in
-    # .env if your host uses a different GID (common on Linux: 999 or 998).
-    group_add:
-      - "${DOCKER_SOCKET_GID:-1}"
+      # SEC-003: Agent connects to docker_proxy (restricted API) instead of the raw socket.
+      # The proxy allows only the container/image operations needed by SandboxManager.
+    # No docker.sock mount or group_add needed — proxy handles socket access.
     environment:
       # macOS/Windows: host.docker.internal:11434 (default)
       # Linux with host network: http://localhost:11434
@@ -102,11 +140,13 @@ services:
       OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5:7b}"
       OWNER_AT_SIGN: "${OWNER_AT_SIGN:-}"
       ALLOWED_USERS: "${ALLOWED_USERS:-}"
-      # atSign shared by MCP servers / bridges — used for tool discovery
+      # SEC-004: In production use per-service atSigns (WHATSAPP_AT_SIGN etc.).
+      # SERVICES_AT_SIGN is a dev-only convenience — see .env.example.
       SERVICES_AT_SIGN: "${SERVICES_AT_SIGN:-}"
-      # Agent always runs UTC-only. The app sends the owner's local timezone
-      # with every request so the LLM can correctly interpret wall-clock times.
       TZ: "UTC"
+      # SEC-003: Route all Docker CLI calls through the restricted socket proxy.
+      # The proxy allows only container/image operations needed by SandboxManager.
+      DOCKER_HOST: "tcp://docker_proxy:2375"
       # Optional: pass external LLM API keys from the host .env
       # OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       # ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
@@ -114,7 +154,13 @@ services:
     # and via the extra_hosts entry below on Linux (Docker Engine).
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # The agent opens NO inbound ports — outbound atNetwork + Docker API only.
+    # The agent opens NO inbound ports — outbound atNetwork + Docker proxy only.
+    depends_on:
+      - docker_proxy
+    networks:
+      - pembrook_internal
+      - docker_proxy_net
+      - ollama_net   # SEC-010: agent-to-Ollama traffic on isolated network
 
   # ── WhatsApp Bridge (optional) ───────────────────────────────────────────────
   # Uncomment and set SERVICES_AT_SIGN + SERVICES_KEY_FILE in .env to enable.
@@ -283,7 +329,7 @@ services:
     container_name: pembrook-log-viewer
     restart: unless-stopped
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./docker-compose.yml:/compose/docker-compose.yml:ro
@@ -302,3 +348,9 @@ networks:
   pembrook_internal:
     driver: bridge
     internal: false  # agent needs outbound internet for atServer connections
+  docker_proxy_net:
+    driver: bridge
+    internal: true   # SEC-003: proxy network is internal-only (no internet access needed)
+  ollama_net:
+    driver: bridge
+    internal: true   # SEC-010: Ollama reachable only from the agent container

@@ -34,6 +34,7 @@ import '../services/memory_service.dart';
 import '../services/audit_service.dart';
 import '../skills/skill_runner.dart';
 import '../mcp/secure_mcp_client.dart';
+import '../core/url_validator.dart';
 import '../models/conversation.dart';
 import '../models/audit_entry.dart';
 import '../automation/scheduler.dart';
@@ -601,6 +602,14 @@ class Orchestrator {
           _auditSkillId = skillId;
           _auditTarget = 'skill:$skillId';
           final payload = _extractPayload(command);
+          if (streamingEnabled) {
+            await sendProgress(
+              ownerAtSign: fromAtSign,
+              reqId: reqId,
+              message: 'Running skill "$skillId"…',
+              conversationId: conversationId,
+            );
+          }
           final runResult = await skillRunner!.invoke(
             skillId: skillId,
             initiatorAtSign: fromAtSign,
@@ -1173,6 +1182,21 @@ class Orchestrator {
             'https://html.duckduckgo.com/html/?q=${Uri.encodeQueryComponent(q)}');
         _log.info('[fetch_webpage] Rewrote search URL → $uri');
       }
+    }
+
+    // SEC-001: SSRF protection — reject internal/private network targets.
+    final ssrfError = await UrlValidator.validate(uri);
+    if (ssrfError != null) {
+      _log.warning('[fetch_webpage] SSRF blocked: $ssrfError for $uri');
+      await auditService.log(AuditEntry(
+        timestamp: DateTime.now().toUtc(),
+        actionType: 'tool.fetch_webpage',
+        initiatorAtSign: _toolFromAtSign,
+        targetResource: uri.toString(),
+        policyDecision: 'denied',
+        notes: 'SSRF blocked: $ssrfError',
+      ));
+      return 'Error: access to internal network addresses is not allowed';
     }
 
     try {

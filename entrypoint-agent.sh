@@ -1,13 +1,12 @@
 #!/bin/sh
-# entrypoint-agent.sh — fix Docker socket permissions then drop to pembrook.
+# entrypoint-agent.sh — drop privileges then run the agent.
 #
-# The Docker socket (/var/run/docker.sock) is bind-mounted from the host with
-# group=root (GID 0).  To let the non-root pembrook user (GID 1001) access the
-# socket we change its group ownership at startup (runs briefly as root via
-# the ENTRYPOINT then exec's as pembrook).
-
-if [ -S /var/run/docker.sock ]; then
-  chgrp pembrook /var/run/docker.sock
-fi
+# SEC-003: The agent no longer has direct Docker socket access. All Docker API
+# calls are routed through the docker_proxy service (tcp://docker_proxy:2375)
+# which restricts the agent to container create/start/wait/remove/logs and
+# image pull/inspect operations only.
+#
+# The raw socket chgrp that previously appeared here has been removed because
+# /var/run/docker.sock is no longer mounted into this container.
 
 exec gosu pembrook /usr/local/bin/pembrook-agent "$@"

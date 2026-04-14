@@ -299,7 +299,7 @@ On error the container writes `{"status":"error","error":"<message>","requestId"
 docker build -t pembrook-skill-email:latest -f skills/email/Dockerfile .
 ```
 
-The agent accesses Docker via `/var/run/docker.sock` (mounted in `docker-compose.yml`).  
+The agent accesses Docker via the `docker_proxy` service (restricted Docker socket proxy — `tcp://docker_proxy:2375`).  
 The image must be present on the same Docker host as the agent container.
 
 ---

@@ -81,6 +81,17 @@ void main(List<String> args) async {
     'Config loaded — phoneId=${config.phoneNumberId} port=${config.port}',
   );
 
+  // SEC-005: Fail closed — refuse to start without webhook signature verification.
+  if (config.appSecret.isEmpty) {
+    _log.severe(
+      'SECURITY: WHATSAPP_APP_SECRET is not configured. '
+      'Webhook signature verification is required in production. '
+      'Set WHATSAPP_APP_SECRET via environment variable or AtKey '
+      '(bridge.whatsapp.secret.pembrook@bridge_whatsapp). Exiting.',
+    );
+    exit(1);
+  }
+
   await _startWebhookServer(atClient, config);
 }
 
@@ -161,13 +172,11 @@ Future<void> _startWebhookServer(AtClient atClient, _Config config) async {
   router.post('/webhook', (Request req) async {
     final body = await req.readAsString();
 
-    // Verify HMAC-SHA256 signature
-    if (config.appSecret.isNotEmpty) {
-      final sig = req.headers['x-hub-signature-256'] ?? '';
-      if (!_verifySignature(body, config.appSecret, sig)) {
-        _log.warning('Invalid webhook signature');
-        return Response.forbidden('Invalid signature');
-      }
+    // Verify HMAC-SHA256 signature (appSecret guaranteed non-empty — see startup check).
+    final sig = req.headers['x-hub-signature-256'] ?? '';
+    if (!_verifySignature(body, config.appSecret, sig)) {
+      _log.warning('Invalid webhook signature');
+      return Response.forbidden('Invalid signature');
     }
 
     // Handle asynchronously; return 200 immediately
