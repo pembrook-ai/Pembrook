@@ -602,6 +602,14 @@ class Orchestrator {
           _auditSkillId = skillId;
           _auditTarget = 'skill:$skillId';
           final payload = _extractPayload(command);
+          if (streamingEnabled) {
+            await sendProgress(
+              ownerAtSign: fromAtSign,
+              reqId: reqId,
+              message: 'Running skill "$skillId"…',
+              conversationId: conversationId,
+            );
+          }
           final runResult = await skillRunner!.invoke(
             skillId: skillId,
             initiatorAtSign: fromAtSign,
