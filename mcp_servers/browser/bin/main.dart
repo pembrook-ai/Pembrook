@@ -43,6 +43,53 @@ const _maxNotifyFailures = 3;
 const _userAgent =
     'Mozilla/5.0 (compatible; PembrookBot/1.0; +https://github.com/pembrook)';
 
+// ── SEC-001: SSRF protection ────────────────────────────────────────────────
+
+/// Validate a URI before making an HTTP request. Returns null if safe,
+/// or an error message if the URL targets an internal/reserved network.
+Future<String?> _validateUrlForSsrf(Uri uri) async {
+  final host = uri.host.toLowerCase();
+  const blockedHosts = [
+    'localhost',
+    'host.docker.internal',
+    'kubernetes.default',
+    'metadata.google.internal'
+  ];
+  const blockedSuffixes = ['.internal', '.local', '.localhost'];
+
+  if (blockedHosts.contains(host)) return 'blocked host: $host';
+  for (final s in blockedSuffixes) {
+    if (host.endsWith(s)) return 'blocked host: $host';
+  }
+
+  List<InternetAddress> addrs;
+  try {
+    addrs = await InternetAddress.lookup(host);
+  } catch (_) {
+    return 'DNS resolution failed for $host';
+  }
+  for (final addr in addrs) {
+    final ip = addr.address;
+    if (ip == '::1') return 'blocked: loopback';
+    final p = ip.split('.');
+    if (p.length == 4) {
+      final a = int.tryParse(p[0]), b = int.tryParse(p[1]);
+      if (a == null || b == null) continue;
+      if (a == 127) return 'blocked: loopback ($ip)';
+      if (a == 10) return 'blocked: private ($ip)';
+      if (a == 172 && b >= 16 && b <= 31) return 'blocked: private ($ip)';
+      if (a == 192 && b == 168) return 'blocked: private ($ip)';
+      if (a == 169 && b == 254) return 'blocked: link-local ($ip)';
+      if (a == 0) return 'blocked: current network ($ip)';
+    }
+    final lo = ip.toLowerCase();
+    if (lo.startsWith('fc') || lo.startsWith('fd') || lo.startsWith('fe80')) {
+      return 'blocked: private IPv6 ($ip)';
+    }
+  }
+  return null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 void main(List<String> args) async {
@@ -361,8 +408,14 @@ Future<List<Map<String, dynamic>>> _fetchPage(Map<String, dynamic> args) async {
   final url = _req(args, 'url') as String;
   final timeoutMs = (args['timeoutMs'] as int?) ?? 15000;
 
+  final uri = Uri.parse(url);
+  final ssrfError = await _validateUrlForSsrf(uri);
+  if (ssrfError != null) {
+    throw StateError('SSRF blocked: $ssrfError');
+  }
+
   final response = await http.get(
-    Uri.parse(url),
+    uri,
     headers: {'User-Agent': _userAgent, 'Accept': 'text/html,*/*'},
   ).timeout(Duration(milliseconds: timeoutMs));
 
@@ -389,8 +442,14 @@ Future<List<Map<String, dynamic>>> _extractText(
   final url = _req(args, 'url') as String;
   final timeoutMs = (args['timeoutMs'] as int?) ?? 15000;
 
+  final uri = Uri.parse(url);
+  final ssrfError = await _validateUrlForSsrf(uri);
+  if (ssrfError != null) {
+    throw StateError('SSRF blocked: $ssrfError');
+  }
+
   final response = await http.get(
-    Uri.parse(url),
+    uri,
     headers: {'User-Agent': _userAgent, 'Accept': 'text/html,*/*'},
   ).timeout(Duration(milliseconds: timeoutMs));
 

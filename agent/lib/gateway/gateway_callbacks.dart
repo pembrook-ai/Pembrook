@@ -338,8 +338,6 @@ class GatewayCallbacks implements AtRpcCallbacks {
       'conv-${DateTime.now().millisecondsSinceEpoch}';
 
   String _hash(String value) {
-    // Simple hex encoding for audit purposes.
-    // In production, use crypto package for SHA-256.
-    return 'hash:${value.hashCode.toRadixString(16)}';
+    return AuditService.contentHash(value);
   }
 }

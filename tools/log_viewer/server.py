@@ -26,7 +26,12 @@ from pathlib import Path
 # ── Configuration ────────────────────────────────────────────────────────────
 
 DEFAULT_PORT = 9090
+DEFAULT_BIND = "127.0.0.1"  # SEC-002: bind to loopback only
 DEFAULT_SERVICES: list[str] = []  # empty = all services
+
+# Bearer token for authentication (set via LOG_VIEWER_TOKEN env var).
+# If set, all requests must include 'Authorization: Bearer <token>' header.
+AUTH_TOKEN: str = os.environ.get("LOG_VIEWER_TOKEN", "")
 
 # COMPOSE_DIR: directory containing docker-compose.yml.
 # In Docker the COMPOSE_DIR env var points to the mounted compose file.
@@ -152,7 +157,22 @@ class LogViewerHandler(http.server.BaseHTTPRequestHandler):
         except (ConnectionResetError, BrokenPipeError, OSError):
             pass
 
+    def _check_auth(self) -> bool:
+        """SEC-002: Verify bearer token if AUTH_TOKEN is configured."""
+        if not AUTH_TOKEN:
+            return True
+        auth = self.headers.get("Authorization", "")
+        if auth == f"Bearer {AUTH_TOKEN}":
+            return True
+        self.send_response(401)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"Unauthorized")
+        return False
+
     def do_GET(self):
+        if not self._check_auth():
+            return
         if self.path == "/" or self.path == "/index.html":
             self._serve_html()
         elif self.path == "/events":
@@ -240,9 +260,12 @@ def main():
     broadcaster.start()
 
     handler = type("H", (LogViewerHandler,), {"broadcaster": broadcaster})
-    server = http.server.ThreadingHTTPServer(("0.0.0.0", args.port), handler)
+    bind_addr = os.environ.get("LOG_VIEWER_BIND", DEFAULT_BIND)
+    server = http.server.ThreadingHTTPServer((bind_addr, args.port), handler)
     svc_label = ', '.join(services) if services else 'all services'
-    print(f"🔍 Pembrook Log Viewer — http://localhost:{args.port}")
+    if not AUTH_TOKEN:
+        print("⚠️  WARNING: LOG_VIEWER_TOKEN is not set — no authentication enabled!")
+    print(f"🔍 Pembrook Log Viewer — http://{bind_addr}:{args.port}")
     print(f"   Streaming: docker compose logs -f {svc_label}")
     print(f"   Compose dir: {COMPOSE_DIR}")
     print(f"   Press Ctrl+C to stop.\n")

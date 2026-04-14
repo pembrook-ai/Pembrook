@@ -283,7 +283,7 @@ services:
     container_name: pembrook-log-viewer
     restart: unless-stopped
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./docker-compose.yml:/compose/docker-compose.yml:ro
