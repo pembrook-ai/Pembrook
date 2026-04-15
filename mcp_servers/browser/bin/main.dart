@@ -28,6 +28,7 @@ import 'package:at_client/at_client.dart';
 import 'package:html/dom.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:logging/logging.dart';
 
 final _log = Logger('mcp_browser');
@@ -42,6 +43,114 @@ const _maxNotifyFailures = 3;
 
 const _userAgent =
     'Mozilla/5.0 (compatible; PembrookBot/1.0; +https://github.com/pembrook)';
+
+// ── H1+H2: SSRF protection (redirect-aware, IP-pinned) ─────────────────────
+
+const _blockedHosts = [
+  'localhost',
+  'host.docker.internal',
+  'kubernetes.default',
+  'metadata.google.internal',
+];
+const _blockedSuffixes = ['.internal', '.local', '.localhost'];
+const _maxRedirects = 5;
+
+/// Validate [uri], returning the first safe resolved [InternetAddress],
+/// or throwing [ArgumentError] if the host/IP is blocked.
+Future<InternetAddress> _validateForSsrf(Uri uri) async {
+  final host = uri.host.toLowerCase();
+  if (_blockedHosts.contains(host)) {
+    throw ArgumentError('SSRF blocked host: $host');
+  }
+  for (final s in _blockedSuffixes) {
+    if (host.endsWith(s)) throw ArgumentError('SSRF blocked host: $host');
+  }
+
+  List<InternetAddress> addrs;
+  try {
+    addrs = await InternetAddress.lookup(host);
+  } catch (_) {
+    throw ArgumentError('SSRF: DNS resolution failed for $host');
+  }
+  if (addrs.isEmpty) throw ArgumentError('SSRF: no DNS results for $host');
+
+  for (final addr in addrs) {
+    final ip = addr.address;
+    if (ip == '::1') throw ArgumentError('SSRF blocked: loopback');
+    final p = ip.split('.');
+    if (p.length == 4) {
+      final a = int.tryParse(p[0]), b = int.tryParse(p[1]);
+      if (a == null || b == null) continue;
+      if (a == 127) throw ArgumentError('SSRF blocked: loopback ($ip)');
+      if (a == 10) throw ArgumentError('SSRF blocked: private ($ip)');
+      if (a == 172 && b >= 16 && b <= 31) {
+        throw ArgumentError('SSRF blocked: private ($ip)');
+      }
+      if (a == 192 && b == 168) {
+        throw ArgumentError('SSRF blocked: private ($ip)');
+      }
+      if (a == 169 && b == 254) {
+        throw ArgumentError('SSRF blocked: link-local ($ip)');
+      }
+      if (a == 0) throw ArgumentError('SSRF blocked: current network ($ip)');
+    }
+    final lo = ip.toLowerCase();
+    if (lo.startsWith('fc') || lo.startsWith('fd') || lo.startsWith('fe80')) {
+      throw ArgumentError('SSRF blocked: private IPv6 ($ip)');
+    }
+    return addr; // first address passed all checks
+  }
+  throw ArgumentError('SSRF: all resolved addresses for $host are blocked');
+}
+
+/// HTTP GET with SSRF protection:
+///   • Validates initial URL (hostname + IP check).
+///   • Connects via resolved IP to eliminate DNS TOCTTOU window (H2).
+///   • Follows redirects manually, re-validating each hop (H1).
+Future<http.Response> _fetchSafe(
+  Uri uri, {
+  Map<String, String>? headers,
+  Duration timeout = const Duration(seconds: 15),
+}) async {
+  var current = uri;
+  for (var hop = 0; hop <= _maxRedirects; hop++) {
+    if (hop == _maxRedirects) {
+      throw StateError('SSRF guard: too many redirects');
+    }
+    final addr = await _validateForSsrf(current);
+    final ip = addr.type == InternetAddressType.IPv6
+        ? '[${addr.address}]'
+        : addr.address;
+    final pinnedUri = current.replace(host: ip);
+
+    final inner = HttpClient()
+      ..autoUncompress = true
+      ..findProxy = null;
+    (inner as dynamic).followRedirects = false;
+    final client = IOClient(inner);
+
+    try {
+      final response = await client.get(pinnedUri, headers: {
+        ...?headers,
+        'Host': current.host,
+      }).timeout(timeout);
+
+      final status = response.statusCode;
+      if (status >= 300 && status < 400) {
+        final location = response.headers['location'];
+        if (location == null || location.isEmpty) return response;
+        final next = Uri.tryParse(location);
+        if (next == null) return response;
+        current = current.resolveUri(next);
+        continue;
+      }
+      return response;
+    } finally {
+      client.close();
+    }
+  }
+  throw StateError('SSRF guard: redirect loop');
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -361,10 +470,13 @@ Future<List<Map<String, dynamic>>> _fetchPage(Map<String, dynamic> args) async {
   final url = _req(args, 'url') as String;
   final timeoutMs = (args['timeoutMs'] as int?) ?? 15000;
 
-  final response = await http.get(
-    Uri.parse(url),
+  final uri = Uri.parse(url);
+  // H1+H2: redirect-aware fetch with IP pinning — re-validates every redirect hop.
+  final response = await _fetchSafe(
+    uri,
     headers: {'User-Agent': _userAgent, 'Accept': 'text/html,*/*'},
-  ).timeout(Duration(milliseconds: timeoutMs));
+    timeout: Duration(milliseconds: timeoutMs),
+  );
 
   if (response.statusCode != 200) {
     throw StateError('HTTP ${response.statusCode} for $url');
@@ -389,16 +501,25 @@ Future<List<Map<String, dynamic>>> _extractText(
   final url = _req(args, 'url') as String;
   final timeoutMs = (args['timeoutMs'] as int?) ?? 15000;
 
-  final response = await http.get(
-    Uri.parse(url),
+  final uri = Uri.parse(url);
+  // H1+H2: redirect-aware fetch with IP pinning — re-validates every redirect hop.
+  final response = await _fetchSafe(
+    uri,
     headers: {'User-Agent': _userAgent, 'Accept': 'text/html,*/*'},
-  ).timeout(Duration(milliseconds: timeoutMs));
+    timeout: Duration(milliseconds: timeoutMs),
+  );
 
   if (response.statusCode != 200) {
     throw StateError('HTTP ${response.statusCode} for $url');
   }
 
   final contentType = response.headers['content-type'] ?? '';
+  if (!contentType.contains('text/html') &&
+      !contentType.contains('application/xhtml')) {
+    return [
+      {'type': 'text', 'text': response.body},
+    ];
+  }
   if (!contentType.contains('text/html') &&
       !contentType.contains('application/xhtml')) {
     return [

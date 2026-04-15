@@ -81,6 +81,30 @@ void main(List<String> args) async {
     'Config loaded — phoneId=${config.phoneNumberId} port=${config.port}',
   );
 
+  // SEC-005: Fail closed — refuse to start without webhook signature verification.
+  if (config.appSecret.isEmpty) {
+    _log.severe(
+      'SECURITY: WHATSAPP_APP_SECRET is not configured. '
+      'Webhook signature verification is required in production. '
+      'Set WHATSAPP_APP_SECRET via environment variable or AtKey '
+      '(bridge.whatsapp.secret.pembrook@bridge_whatsapp). Exiting.',
+    );
+    exit(1);
+  }
+
+  // L4: Fail closed — refuse to start without a dedicated webhook verify token.
+  // This must be separate from WHATSAPP_TOKEN (the API access token) so that
+  // the verify token cannot be used to make API calls if exposed by Meta.
+  if (config.webhookVerifyToken.isEmpty) {
+    _log.severe(
+      'SECURITY: WHATSAPP_WEBHOOK_VERIFY_TOKEN is not configured. '
+      'Set it via environment variable or AtKey '
+      '(bridge.whatsapp.webhook_verify_token.pembrook@bridge_whatsapp). '
+      'Must be different from WHATSAPP_TOKEN. Exiting.',
+    );
+    exit(1);
+  }
+
   await _startWebhookServer(atClient, config);
 }
 
@@ -92,12 +116,16 @@ class _Config {
   final String token;
   final String appSecret;
   final String phoneNumberId;
+  // L4: separate low-privilege secret for webhook GET verification.
+  // Never expose the high-privilege API token as a verify token.
+  final String webhookVerifyToken;
   final int port;
 
   const _Config({
     required this.token,
     required this.appSecret,
     required this.phoneNumberId,
+    required this.webhookVerifyToken,
     required this.port,
   });
 }
@@ -128,12 +156,18 @@ Future<_Config> _loadConfig(AtClient atClient) async {
   final phoneId = _env('WHATSAPP_PHONE_NUMBER_ID', '').isNotEmpty
       ? _env('WHATSAPP_PHONE_NUMBER_ID', '')
       : await _readAtKey('phone_id') ?? '';
+  // L4: dedicated verify token — separate from the API access token.
+  final webhookVerifyToken =
+      _env('WHATSAPP_WEBHOOK_VERIFY_TOKEN', '').isNotEmpty
+          ? _env('WHATSAPP_WEBHOOK_VERIFY_TOKEN', '')
+          : await _readAtKey('webhook_verify_token') ?? '';
   final port = int.tryParse(_env('PORT', '8080')) ?? 8080;
 
   return _Config(
     token: token,
     appSecret: secret,
     phoneNumberId: phoneId,
+    webhookVerifyToken: webhookVerifyToken,
     port: port,
   );
 }
@@ -150,7 +184,7 @@ Future<void> _startWebhookServer(AtClient atClient, _Config config) async {
     final mode = req.url.queryParameters['hub.mode'];
     final token = req.url.queryParameters['hub.verify_token'];
     final challenge = req.url.queryParameters['hub.challenge'];
-    if (mode == 'subscribe' && token == config.token) {
+    if (mode == 'subscribe' && token == config.webhookVerifyToken) {
       _log.info('Webhook verified');
       return Response.ok(challenge ?? '');
     }
@@ -161,13 +195,11 @@ Future<void> _startWebhookServer(AtClient atClient, _Config config) async {
   router.post('/webhook', (Request req) async {
     final body = await req.readAsString();
 
-    // Verify HMAC-SHA256 signature
-    if (config.appSecret.isNotEmpty) {
-      final sig = req.headers['x-hub-signature-256'] ?? '';
-      if (!_verifySignature(body, config.appSecret, sig)) {
-        _log.warning('Invalid webhook signature');
-        return Response.forbidden('Invalid signature');
-      }
+    // Verify HMAC-SHA256 signature (appSecret guaranteed non-empty — see startup check).
+    final sig = req.headers['x-hub-signature-256'] ?? '';
+    if (!_verifySignature(body, config.appSecret, sig)) {
+      _log.warning('Invalid webhook signature');
+      return Response.forbidden('Invalid signature');
     }
 
     // Handle asynchronously; return 200 immediately

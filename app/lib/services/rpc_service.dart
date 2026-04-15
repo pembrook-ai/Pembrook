@@ -119,6 +119,11 @@ class RpcService extends ChangeNotifier {
   // Suppresses buffering so messages aren't shown twice on remount.
   bool _hasPushListener = false;
 
+  // The conversationId of the currently open ChatScreen, or null when no
+  // ChatScreen is mounted.  Used to avoid buffering pushes that are already
+  // delivered via the live _pushController stream.
+  String? _activeChatConvId;
+
   // Unread counters — tracked so the UI can show badges.
   // Push messages from scheduled tasks bump _unreadPushCount while ChatScreen
   // is unmounted; cleared when listenToPushMessages() is called.
@@ -148,6 +153,7 @@ class RpcService extends ChangeNotifier {
   StreamSubscription<PushMessage> listenToPushMessages(
       String currentConvId, void Function(PushMessage) onMessage) {
     _hasPushListener = true;
+    _activeChatConvId = currentConvId;
     // Clear the unread push badge — user is now viewing the chat.
     if (_unreadPushCount > 0) {
       _unreadPushCount = 0;
@@ -168,7 +174,10 @@ class RpcService extends ChangeNotifier {
   }
 
   /// Call from ChatScreen.dispose() to re-enable buffering.
-  void releasePushListener() => _hasPushListener = false;
+  void releasePushListener() {
+    _hasPushListener = false;
+    _activeChatConvId = null;
+  }
 
   /// Total unread push notifications (scheduled task results) since last visit.
   int get unreadPushCount => _unreadPushCount;
@@ -379,12 +388,17 @@ class RpcService extends ChangeNotifier {
         );
         if (push.result.isNotEmpty) {
           if (push.conversationId.isNotEmpty) {
-            // Store keyed by originating conversation and bump its badge.
-            _pendingPushByConv
-                .putIfAbsent(push.conversationId, () => [])
-                .add(push);
-            _unreadConvIds.add(push.conversationId);
-            notifyListeners();
+            // Only buffer if this conversation isn't currently open.
+            // If ChatScreen is active for this convId, the live stream
+            // already delivers the message — buffering it too would cause
+            // a duplicate on the next remount.
+            if (push.conversationId != _activeChatConvId) {
+              _pendingPushByConv
+                  .putIfAbsent(push.conversationId, () => [])
+                  .add(push);
+              _unreadConvIds.add(push.conversationId);
+              notifyListeners();
+            }
           } else if (!_hasPushListener) {
             // No conversationId: fall back to general buffer when away.
             _pushBuffer.add(push);

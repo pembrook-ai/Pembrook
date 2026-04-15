@@ -104,45 +104,73 @@ class SandboxManager {
           requestId ?? DateTime.now().millisecondsSinceEpoch.toString(),
     });
 
-    // Use --network=bridge when the skill declared network endpoints;
-    // otherwise keep the default --network=none sandbox.
+    // M4: Use pembrook_skill_net instead of the default bridge network.
+    // pembrook_skill_net provides internet access for skills that need it
+    // (email, calendar, web_search) but is NOT connected to pembrook_internal,
+    // so skills cannot reach agent, atsdk, or other internal services.
     final networkFlag = meta.declaredCapabilities.networkEndpoints.isNotEmpty
-        ? '--network=bridge'
+        ? '--network=pembrook_skill_net'
         : '--network=none';
 
-    final args = [
-      'run',
-      '--rm',
-      networkFlag,
-      '--memory=256m',
-      '--cpus=0.5',
-      '--read-only',
-      '--cap-drop=ALL',
-      '--security-opt=no-new-privileges',
-      '--interactive',
-      imageName,
-    ];
+    // Encode the payload as base64 so it can be passed safely as an env var.
+    // Skills read SKILL_INPUT (base64 JSON) in preference to stdin.
+    // This avoids `docker run --interactive` which requires HTTP connection
+    // hijacking — a protocol that the docker-socket-proxy (HAProxy) cannot
+    // forward, causing the docker CLI to hang even after the container exits.
+    final inputB64 = base64.encode(utf8.encode(input));
 
-    _log.info('docker run $imageName ($networkFlag)');
+    _log.info('docker create/start/wait/logs $imageName ($networkFlag)');
 
     final stopwatch = Stopwatch()..start();
+    String? containerId;
     try {
-      final process = await Process.start('docker', args);
-      process.stdin.writeln(input);
-      await process.stdin.close();
+      // 1. Create the container (no --rm so we can read logs after exit).
+      final createResult = await Process.run('docker', [
+        'create',
+        networkFlag,
+        '--memory=256m',
+        '--cpus=0.5',
+        '--read-only',
+        '--cap-drop=ALL',
+        '--security-opt=no-new-privileges',
+        '--env',
+        'SKILL_INPUT=$inputB64',
+        imageName,
+      ]).timeout(const Duration(seconds: 30));
 
-      final stdoutFuture = process.stdout.transform(utf8.decoder).join();
-      final stderrFuture = process.stderr.transform(utf8.decoder).join();
+      if (createResult.exitCode != 0) {
+        stopwatch.stop();
+        _log.warning('docker create failed: ${createResult.stderr}');
+        return SandboxResult(
+          success: false,
+          error: 'Container create failed: ${createResult.stderr}'.trim(),
+          exitCode: createResult.exitCode,
+          duration: stopwatch.elapsed,
+        );
+      }
 
-      final exitCode = await process.exitCode.timeout(timeout);
+      containerId = (createResult.stdout as String).trim();
+
+      // 2. Start the container.
+      await Process.run('docker', ['start', containerId])
+          .timeout(const Duration(seconds: 10));
+
+      // 3. Wait for the container to exit.
+      final waitResult =
+          await Process.run('docker', ['wait', containerId]).timeout(timeout);
       stopwatch.stop();
 
-      final stdout = await stdoutFuture;
-      final stderr = await stderrFuture;
+      final exitCode = int.tryParse((waitResult.stdout as String).trim()) ?? -1;
+
+      // 4. Collect stdout via `docker logs` (plain HTTP — no hijack needed).
+      final logsResult = await Process.run(
+              'docker', ['logs', '--timestamps=false', containerId])
+          .timeout(const Duration(seconds: 10));
+
+      final stdout = logsResult.stdout as String;
+      final stderr = logsResult.stderr as String;
 
       if (exitCode != 0) {
-        // Try to get the real error from the JSON on stdout first;
-        // the skill container writes {status:error,error:...} to stdout then exits 1.
         String? jsonError;
         try {
           final outLines = stdout
@@ -165,7 +193,7 @@ class SandboxManager {
         );
       }
 
-      // Parse last non-empty JSON line from stdout
+      // Parse last non-empty JSON line from stdout.
       final lines = stdout
           .split('\n')
           .map((l) => l.trim())
@@ -203,12 +231,19 @@ class SandboxManager {
     } catch (e) {
       stopwatch.stop();
       _log.severe('Sandbox execution error: $e');
+      // I2: return generic message — detail stays in log only.
       return SandboxResult(
         success: false,
-        error: 'Sandbox error: $e',
+        error: 'Sandbox execution failed.',
         exitCode: -1,
         duration: stopwatch.elapsed,
       );
+    } finally {
+      // Always clean up the container (we skipped --rm to read logs first).
+      if (containerId != null) {
+        await Process.run('docker', ['rm', '--force', containerId])
+            .catchError((_) => ProcessResult(0, 0, '', ''));
+      }
     }
   }
 

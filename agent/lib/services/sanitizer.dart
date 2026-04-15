@@ -28,9 +28,14 @@ class SanitizedResult {
   /// Example: {'[NAME_1]': 'Alice Smith', '[ADDRESS_1]': '123 Main St'}
   final Map<String, String> reversibleMapping;
 
+  /// SEC-008: true when the LLM-based PII scan failed.
+  /// Callers MUST NOT send the query to an external LLM when this is true.
+  final bool sanitizationFailed;
+
   const SanitizedResult({
     required this.sanitizedQuery,
     required this.reversibleMapping,
+    this.sanitizationFailed = false,
   });
 }
 
@@ -42,7 +47,11 @@ class QuerySanitizer {
 
   /// Sanitize a query by replacing all detected PII with numbered placeholders.
   Future<SanitizedResult> sanitize(String query) async {
-    // 1. Ask local LLM to identify PII
+    // Defense-in-depth: apply regex pre-filter first to catch obvious PII
+    // patterns regardless of whether the LLM scan succeeds.
+    final preFiltered = _regexPreFilter(query);
+
+    // 1. Ask local LLM to identify remaining PII
     final identificationPrompt = '''
 Analyze the following text and identify all personally identifiable information (PII).
 
@@ -64,7 +73,7 @@ Return a JSON object with a "pii" array, where each item has:
 
 If no PII is found, return {"pii": []}.
 
-Text to analyze: "$query"
+Text to analyze: "$preFiltered"
 
 JSON response:''';
 
@@ -77,14 +86,22 @@ JSON response:''';
               '{"pii":[]}';
       piiData = jsonDecode(jsonMatch) as Map<String, dynamic>;
     } catch (e) {
-      _log.warning('PII identification failed: $e — returning original query');
-      return SanitizedResult(sanitizedQuery: query, reversibleMapping: {});
+      // SEC-008: Fail closed — do NOT send the (possibly pre-filtered) query to
+      // an external LLM. Signal failure so the caller uses local-only LLM.
+      _log.warning('PII identification failed (Ollama unavailable?): $e');
+      _log.warning(
+          'SEC-008: Returning sanitizationFailed=true — caller must not use external LLM.');
+      return SanitizedResult(
+        sanitizedQuery: preFiltered, // regex layer still applied
+        reversibleMapping: {},
+        sanitizationFailed: true,
+      );
     }
 
     // 2. Build replacement mapping and sanitize
     final piiList = piiData['pii'] as List<dynamic>? ?? [];
     final mapping = <String, String>{};
-    var sanitized = query;
+    var sanitized = preFiltered; // start from regex-pre-filtered version
 
     for (final item in piiList) {
       final original = item['original'] as String? ?? '';
@@ -108,6 +125,39 @@ JSON response:''';
     mapping.forEach((placeholder, original) {
       result = result.replaceAll(placeholder, original);
     });
+    return result;
+  }
+
+  // SEC-008: Regex pre-filter — masks common PII patterns before the LLM scan.
+  // Irreversible but provides a safety floor when Ollama is unavailable.
+  static final _piiRegexes = [
+    // Email addresses
+    (
+      RegExp(r'\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b'),
+      '[EMAIL]'
+    ),
+    // US/international phone numbers
+    (
+      RegExp(r'\b(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b'),
+      '[PHONE]'
+    ),
+    // US Social Security Numbers
+    (RegExp(r'\b\d{3}-\d{2}-\d{4}\b'), '[SSN]'),
+    // Credit card numbers (major networks, 13-16 digits)
+    (
+      RegExp(
+          r'\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b'),
+      '[CARD]'
+    ),
+    // IPv4 addresses
+    (RegExp(r'\b(?:\d{1,3}\.){3}\d{1,3}\b'), '[IP]'),
+  ];
+
+  String _regexPreFilter(String query) {
+    var result = query;
+    for (final (pattern, placeholder) in _piiRegexes) {
+      result = result.replaceAll(pattern, placeholder);
+    }
     return result;
   }
 

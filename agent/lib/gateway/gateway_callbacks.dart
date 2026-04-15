@@ -30,6 +30,7 @@
 ///   }
 
 import 'dart:convert';
+import 'dart:io';
 import 'package:at_client/at_client.dart';
 import 'package:logging/logging.dart';
 import 'package:uuid/uuid.dart';
@@ -50,6 +51,7 @@ class GatewayCallbacks implements AtRpcCallbacks {
   final Orchestrator orchestrator;
   final PolicyEngine policyEngine;
   final AuditService auditService;
+  final AtClient atClient;
 
   /// Optional skill registry — required for _sys.skill.* management commands.
   final SkillRegistry? skillRegistry;
@@ -57,15 +59,71 @@ class GatewayCallbacks implements AtRpcCallbacks {
   final Logger _log = Logger('GatewayCallbacks');
   final Uuid _uuid = const Uuid();
 
-  // In-memory rate limit tracker: atSign → [request timestamps]
+  // SEC-007: Rate limit tracker persisted to AtKeys so counters survive restarts.
+  // In-memory copy kept for speed; AtKey used as durable backing store.
   final Map<String, List<DateTime>> _rateLimitTracker = {};
 
   GatewayCallbacks({
     required this.orchestrator,
     required this.policyEngine,
     required this.auditService,
+    required this.atClient,
     this.skillRegistry,
   });
+
+  /// SEC-007: Load persisted rate-limit counters from AtKeys on startup.
+  /// Call this once after construction before accepting requests.
+  Future<void> loadPersistedRateLimits() async {
+    try {
+      final agentAtSign = atClient.getCurrentAtSign() ?? '';
+      final key = AtKey()
+        ..key = 'ratelimit.counters.pembrook'
+        ..sharedBy = agentAtSign;
+      final result = await atClient.get(key,
+          getRequestOptions: GetRequestOptions()..useRemoteAtServer = false);
+      if (result.value is String && (result.value as String).isNotEmpty) {
+        final raw = jsonDecode(result.value as String) as Map<String, dynamic>;
+        final windowStart = DateTime.now().subtract(kRateLimitWindow);
+        raw.forEach((atSign, timestamps) {
+          final times = (timestamps as List<dynamic>)
+              .map((ms) => DateTime.fromMillisecondsSinceEpoch(ms as int))
+              .where((t) => t.isAfter(windowStart))
+              .toList();
+          if (times.isNotEmpty) _rateLimitTracker[atSign] = times;
+        });
+        _log.info(
+            'Loaded rate-limit state for ${_rateLimitTracker.length} atSign(s)');
+      }
+    } catch (e) {
+      // Non-fatal — start with empty counters rather than blocking startup.
+      _log.warning('Could not load persisted rate-limit state: $e');
+    }
+  }
+
+  /// SEC-007: Persist current rate-limit counters to a local AtKey.
+  Future<void> _persistRateLimits() async {
+    try {
+      final agentAtSign = atClient.getCurrentAtSign() ?? '';
+      final now = DateTime.now();
+      final windowStart = now.subtract(kRateLimitWindow);
+      // Only persist live (in-window) entries.
+      final live = <String, List<int>>{};
+      _rateLimitTracker.forEach((atSign, times) {
+        final inWindow = times
+            .where((t) => t.isAfter(windowStart))
+            .map((t) => t.millisecondsSinceEpoch)
+            .toList();
+        if (inWindow.isNotEmpty) live[atSign] = inWindow;
+      });
+      final key = AtKey()
+        ..key = 'ratelimit.counters.pembrook'
+        ..sharedBy = agentAtSign
+        ..metadata = (Metadata()..ttl = kRateLimitWindow.inMilliseconds);
+      await atClient.put(key, jsonEncode(live));
+    } catch (e) {
+      _log.warning('Could not persist rate-limit state: $e');
+    }
+  }
 
   @override
   Future<AtRpcResp> handleRequest(AtRpcReq request, String fromAtSign) async {
@@ -78,10 +136,14 @@ class GatewayCallbacks implements AtRpcCallbacks {
       final command = payload['command'] as String? ?? '';
       final conversationId =
           payload['conversationId'] as String? ?? _generateConversationId();
-      // For bridge messages, the real owner atSign is embedded in the payload.
-      // A compromised bridge cannot forge this — we verify it against the
-      // owner atSign registered in policy.
-      final effectiveSender = payload['senderAtSign'] as String? ?? fromAtSign;
+      // For bridge messages, senderAtSign in the payload carries the claimed
+      // user identity. SEC-009: only honour this override when the
+      // transport-verified sender IS the registered owner — preventing a
+      // compromised bridge/service from escalating to owner privileges.
+      final effectiveSender = _resolveEffectiveSender(
+        fromAtSign: fromAtSign,
+        payloadSenderAtSign: payload['senderAtSign'] as String?,
+      );
       final platform = payload['platform'] as String? ?? 'app';
       final streamingEnabled = payload['streamingEnabled'] as bool? ?? true;
       // Owner's local timezone string sent by the app, e.g. "UTC-07:00 (PDT)".
@@ -171,7 +233,8 @@ class GatewayCallbacks implements AtRpcCallbacks {
       );
     } catch (e, stack) {
       _log.severe('Unhandled error in handleRequest', e, stack);
-      return _errorResponse(request.reqId, 'Internal error: $e');
+      // I2: return generic message — full detail is in the log, not exposed to caller.
+      return _errorResponse(request.reqId, 'An internal error occurred.');
     }
   }
 
@@ -216,7 +279,8 @@ class GatewayCallbacks implements AtRpcCallbacks {
       }
     } catch (e) {
       _log.warning('Sys command error ($command): $e');
-      return _errorResponse(reqId, 'Sys command failed: $e');
+      // I2: return generic message — detail stays in log only.
+      return _errorResponse(reqId, 'System command failed.');
     }
   }
 
@@ -246,8 +310,18 @@ class GatewayCallbacks implements AtRpcCallbacks {
       signatureHash: 'app-registered-${_uuid.v4()}',
       version: payload['version'] as String? ?? '1.0.0',
       declaredCapabilities: SkillCapabilities(
-        // Grant network access when the owner explicitly requested it.
-        networkEndpoints: requiresNetwork ? const ['*'] : const [],
+        // M4: Grant named endpoint categories instead of a wildcard ['*'].
+        // The actual network isolation is enforced by Docker (pembrook_skill_net
+        // has no access to internal services). These labels exist for audit
+        // trail and policy-engine filtering, not as trusted allow-lists.
+        networkEndpoints: requiresNetwork
+            ? switch (skillId) {
+                'email' => const ['smtp', 'imap'],
+                'calendar' => const ['caldav', 'https'],
+                'web_search' => const ['https'],
+                _ => const ['https'], // safe default for unknown network skills
+              }
+            : const [],
       ),
       trustScore: (payload['trustScore'] as num?)?.toDouble() ?? 0.5,
       installedAt: DateTime.now().toUtc(),
@@ -323,6 +397,8 @@ class GatewayCallbacks implements AtRpcCallbacks {
     history.removeWhere((t) => t.isBefore(windowStart));
     if (history.length >= kRateLimitMaxRequests) return false;
     history.add(now);
+    // SEC-007: Persist asynchronously — don't await to keep the hot path fast.
+    _persistRateLimits();
     return true;
   }
 
@@ -337,9 +413,34 @@ class GatewayCallbacks implements AtRpcCallbacks {
   String _generateConversationId() =>
       'conv-${DateTime.now().millisecondsSinceEpoch}';
 
+  /// SEC-009: Resolve the effective sender identity safely.
+  ///
+  /// Bridges embed a `senderAtSign` in their payload to relay the real end-user
+  /// identity. We ONLY trust this override when the transport-authenticated
+  /// `fromAtSign` is the registered owner — no bridge or service identity may
+  /// claim to be the owner through a payload field.
+  String _resolveEffectiveSender({
+    required String fromAtSign,
+    required String? payloadSenderAtSign,
+  }) {
+    if (payloadSenderAtSign == null || payloadSenderAtSign == fromAtSign) {
+      return fromAtSign;
+    }
+    final ownerAtSign = Platform.environment['OWNER_AT_SIGN'] ?? '';
+    if (ownerAtSign.isNotEmpty && fromAtSign == ownerAtSign) {
+      // The authenticated sender is the owner — trust the embedded identity.
+      return payloadSenderAtSign;
+    }
+    // Bridge/service identity attempted to claim a different atSign.
+    // Discard the payload field and use the transport-verified identity.
+    _log.warning(
+      'SEC-009: Rejected senderAtSign override from $fromAtSign '
+      '(claimed: $payloadSenderAtSign) — using transport identity.',
+    );
+    return fromAtSign;
+  }
+
   String _hash(String value) {
-    // Simple hex encoding for audit purposes.
-    // In production, use crypto package for SHA-256.
-    return 'hash:${value.hashCode.toRadixString(16)}';
+    return AuditService.contentHash(value);
   }
 }

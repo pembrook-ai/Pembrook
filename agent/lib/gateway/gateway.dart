@@ -161,8 +161,11 @@ class Gateway {
       orchestrator: orchestrator,
       policyEngine: policyEngine,
       auditService: auditService,
+      atClient: atClient,
       skillRegistry: skillRegistry,
     );
+    // SEC-007: Restore rate-limit counters persisted before last restart.
+    await callbacks.loadPersistedRateLimits();
 
     // AtRpc server — listens for incoming RPC requests on the notification
     // channel. allowList enforces that only approved atSigns can invoke.
