@@ -396,6 +396,7 @@ networks:
     driver: bridge
     internal: true   # SEC-010: Ollama reachable only from the agent container
   pembrook_skill_net:
+    name: pembrook_skill_net  # M4: explicit name so sandbox_manager `docker create --network=pembrook_skill_net` resolves correctly regardless of compose project name
     driver: bridge
     internal: false  # M4: skills need outbound internet (email/calendar/web_search)
                      # but this network is NOT attached to pembrook_internal so skills
