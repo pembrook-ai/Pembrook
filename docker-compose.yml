@@ -170,7 +170,7 @@ services:
       - pembrook_internal
       - docker_proxy_net
       - ollama_net          # SEC-010: agent-to-Ollama traffic on isolated network
-      - pembrook_skill_net  # M4: agent must reference this network so Compose creates it; skills are spawned onto it by SandboxManager
+      - pembrook_skill_net  # M4: agent references this so Compose creates it; skills are spawned onto it by SandboxManager
 
   # ── WhatsApp Bridge (optional) ───────────────────────────────────────────────
   # Uncomment and set SERVICES_AT_SIGN + SERVICES_KEY_FILE in .env to enable.
