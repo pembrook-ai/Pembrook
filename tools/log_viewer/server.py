@@ -26,7 +26,8 @@ from pathlib import Path
 # ── Configuration ────────────────────────────────────────────────────────────
 
 DEFAULT_PORT = 9090
-DEFAULT_BIND = "127.0.0.1"  # SEC-002: bind to loopback only
+DEFAULT_BIND = "0.0.0.0"  # Inside Docker, listen on all interfaces — the compose ports mapping
+                           # (127.0.0.1:9090:9090) restricts access to the host loopback only.
 DEFAULT_SERVICES: list[str] = []  # empty = all services
 
 # Bearer token for authentication (set via LOG_VIEWER_TOKEN env var).
