@@ -74,41 +74,54 @@ class LogBroadcaster:
         t = threading.Thread(target=self._tail, daemon=True)
         t.start()
 
-    def _tail(self):
-        """Run docker compose logs -f and feed lines to clients."""
+    def _list_containers(self) -> list[str]:
+        """Return running container names (filtered to self.services if set)."""
+        try:
+            result = subprocess.run(
+                ["docker", "ps", "--format", "{{.Names}}"],
+                capture_output=True, text=True, timeout=10,
+            )
+            names = [n.strip() for n in result.stdout.splitlines() if n.strip()]
+            if self.services:
+                # Filter to containers whose name contains any of the service names.
+                names = [n for n in names if any(s in n for s in self.services)]
+            return names
+        except Exception:
+            return []
+
+    def _tail_container(self, container: str):
+        """Tail a single container in its own thread."""
+        service = _container_to_service(container)
         while True:
             try:
-                cmd = ["docker", "compose", "logs", "-f", "--tail=200",
-                       "--timestamps"]
-                cmd.extend(self.services)  # append service names (or none for all)
-                self._process = subprocess.Popen(
-                    cmd,
-                    cwd=str(self.compose_dir),
+                proc = subprocess.Popen(
+                    ["docker", "logs", "--follow", "--tail=200", "--timestamps", container],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
                 )
-                for raw_line in self._process.stdout:
+                for raw_line in proc.stdout:
                     line = raw_line.rstrip("\n")
-                    if not line:
-                        continue
-                    # Extract service name from docker compose prefix.
-                    m = _SERVICE_RE.match(line)
-                    if m:
-                        service = _container_to_service(m.group(1))
-                        content = m.group(2)
-                    else:
-                        service = "unknown"
-                        content = line
-                    self._broadcast(service, content)
-                self._process.wait()
+                    if line:
+                        self._broadcast(service, line)
+                proc.wait()
             except Exception as e:
-                self._broadcast("log_viewer", f"Error: {e}")
-            # If the process exits, wait and retry.
-            svc_label = ', '.join(self.services) if self.services else 'all'
-            time.sleep(3)
-            self._broadcast("log_viewer", f"Reconnecting to {svc_label} logs...")
+                self._broadcast(service, f"[log_viewer] error tailing {container}: {e}")
+            time.sleep(5)
+            self._broadcast(service, f"[log_viewer] reconnecting to {container}...")
+
+    def _tail(self):
+        """Discover containers and start a tail thread per container."""
+        while True:
+            containers = self._list_containers()
+            if containers:
+                for c in containers:
+                    t = threading.Thread(target=self._tail_container, args=(c,), daemon=True)
+                    t.start()
+                return  # threads run indefinitely; this discovery loop exits
+            self._broadcast("log_viewer", "Waiting for containers to start...")
+            time.sleep(5)
 
     def _broadcast(self, service: str, line: str):
         event = {"service": service, "line": line}
@@ -261,24 +274,18 @@ class LogViewerHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(content.encode())
 
     def _serve_services(self):
-        """Return list of running docker compose services."""
+        """Return list of running docker compose services using docker ps."""
         try:
             result = subprocess.run(
-                ["docker", "compose", "ps", "--format", "json"],
-                cwd=str(COMPOSE_DIR),
+                ["docker", "ps", "--format", "{{.Names}}\t{{.Status}}"],
                 capture_output=True, text=True, timeout=10,
             )
             services = []
             for line in result.stdout.strip().splitlines():
-                try:
-                    obj = json.loads(line)
-                    services.append({
-                        "name": obj.get("Service", obj.get("Name", "?")),
-                        "state": obj.get("State", "?"),
-                        "status": obj.get("Status", "?"),
-                    })
-                except json.JSONDecodeError:
-                    pass
+                parts = line.split("\t", 1)
+                name = parts[0].strip() if parts else "?"
+                status = parts[1].strip() if len(parts) > 1 else "?"
+                services.append({"name": _container_to_service(name), "state": "running", "status": status})
             payload = json.dumps(services)
         except Exception as e:
             payload = json.dumps([{"name": "error", "state": str(e)}])
