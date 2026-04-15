@@ -19,7 +19,6 @@ import 'package:logging/logging.dart';
 import 'scheduler.dart';
 import 'notification_manager.dart';
 import '../services/memory_service.dart';
-import '../models/task.dart';
 
 class HeartbeatEngine {
   final AtClient atClient;

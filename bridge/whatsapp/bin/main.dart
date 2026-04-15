@@ -92,6 +92,19 @@ void main(List<String> args) async {
     exit(1);
   }
 
+  // L4: Fail closed — refuse to start without a dedicated webhook verify token.
+  // This must be separate from WHATSAPP_TOKEN (the API access token) so that
+  // the verify token cannot be used to make API calls if exposed by Meta.
+  if (config.webhookVerifyToken.isEmpty) {
+    _log.severe(
+      'SECURITY: WHATSAPP_WEBHOOK_VERIFY_TOKEN is not configured. '
+      'Set it via environment variable or AtKey '
+      '(bridge.whatsapp.webhook_verify_token.pembrook@bridge_whatsapp). '
+      'Must be different from WHATSAPP_TOKEN. Exiting.',
+    );
+    exit(1);
+  }
+
   await _startWebhookServer(atClient, config);
 }
 
@@ -103,12 +116,16 @@ class _Config {
   final String token;
   final String appSecret;
   final String phoneNumberId;
+  // L4: separate low-privilege secret for webhook GET verification.
+  // Never expose the high-privilege API token as a verify token.
+  final String webhookVerifyToken;
   final int port;
 
   const _Config({
     required this.token,
     required this.appSecret,
     required this.phoneNumberId,
+    required this.webhookVerifyToken,
     required this.port,
   });
 }
@@ -139,12 +156,18 @@ Future<_Config> _loadConfig(AtClient atClient) async {
   final phoneId = _env('WHATSAPP_PHONE_NUMBER_ID', '').isNotEmpty
       ? _env('WHATSAPP_PHONE_NUMBER_ID', '')
       : await _readAtKey('phone_id') ?? '';
+  // L4: dedicated verify token — separate from the API access token.
+  final webhookVerifyToken =
+      _env('WHATSAPP_WEBHOOK_VERIFY_TOKEN', '').isNotEmpty
+          ? _env('WHATSAPP_WEBHOOK_VERIFY_TOKEN', '')
+          : await _readAtKey('webhook_verify_token') ?? '';
   final port = int.tryParse(_env('PORT', '8080')) ?? 8080;
 
   return _Config(
     token: token,
     appSecret: secret,
     phoneNumberId: phoneId,
+    webhookVerifyToken: webhookVerifyToken,
     port: port,
   );
 }
@@ -161,7 +184,7 @@ Future<void> _startWebhookServer(AtClient atClient, _Config config) async {
     final mode = req.url.queryParameters['hub.mode'];
     final token = req.url.queryParameters['hub.verify_token'];
     final challenge = req.url.queryParameters['hub.challenge'];
-    if (mode == 'subscribe' && token == config.token) {
+    if (mode == 'subscribe' && token == config.webhookVerifyToken) {
       _log.info('Webhook verified');
       return Response.ok(challenge ?? '');
     }

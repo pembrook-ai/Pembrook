@@ -233,7 +233,8 @@ class GatewayCallbacks implements AtRpcCallbacks {
       );
     } catch (e, stack) {
       _log.severe('Unhandled error in handleRequest', e, stack);
-      return _errorResponse(request.reqId, 'Internal error: $e');
+      // I2: return generic message — full detail is in the log, not exposed to caller.
+      return _errorResponse(request.reqId, 'An internal error occurred.');
     }
   }
 
@@ -278,7 +279,8 @@ class GatewayCallbacks implements AtRpcCallbacks {
       }
     } catch (e) {
       _log.warning('Sys command error ($command): $e');
-      return _errorResponse(reqId, 'Sys command failed: $e');
+      // I2: return generic message — detail stays in log only.
+      return _errorResponse(reqId, 'System command failed.');
     }
   }
 
@@ -308,8 +310,18 @@ class GatewayCallbacks implements AtRpcCallbacks {
       signatureHash: 'app-registered-${_uuid.v4()}',
       version: payload['version'] as String? ?? '1.0.0',
       declaredCapabilities: SkillCapabilities(
-        // Grant network access when the owner explicitly requested it.
-        networkEndpoints: requiresNetwork ? const ['*'] : const [],
+        // M4: Grant named endpoint categories instead of a wildcard ['*'].
+        // The actual network isolation is enforced by Docker (pembrook_skill_net
+        // has no access to internal services). These labels exist for audit
+        // trail and policy-engine filtering, not as trusted allow-lists.
+        networkEndpoints: requiresNetwork
+            ? switch (skillId) {
+                'email' => const ['smtp', 'imap'],
+                'calendar' => const ['caldav', 'https'],
+                'web_search' => const ['https'],
+                _ => const ['https'], // safe default for unknown network skills
+              }
+            : const [],
       ),
       trustScore: (payload['trustScore'] as num?)?.toDouble() ?? 0.5,
       installedAt: DateTime.now().toUtc(),

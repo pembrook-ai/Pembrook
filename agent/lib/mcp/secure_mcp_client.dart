@@ -63,7 +63,6 @@ class SecureMcpClient {
   final Uuid _uuid = const Uuid();
 
   static const String _namespace = 'pembrook';
-  static const String _mcpDomain = 'pembrook.mcp';
 
   SecureMcpClient({
     required this.atClient,
@@ -107,7 +106,7 @@ class SecureMcpClient {
       );
       return McpCallResult(
         success: false,
-        error: decision.reason ?? 'Policy denied',
+        error: decision.reason,
       );
     }
 
