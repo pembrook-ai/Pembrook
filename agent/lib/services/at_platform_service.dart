@@ -59,10 +59,10 @@ class AtPlatformService {
     bool immutable = false,
     int? ttr,
   }) async {
-    key.metadata ??= Metadata();
-    if (ttlMs != null) key.metadata!.ttl = ttlMs;
-    if (immutable) key.metadata!.immutable = true;
-    if (ttr != null) key.metadata!.ttr = ttr;
+    key.metadata = Metadata();
+    if (ttlMs != null) key.metadata.ttl = ttlMs;
+    if (immutable) key.metadata.immutable = true;
+    if (ttr != null) key.metadata.ttr = ttr;
 
     try {
       return await atClient.put(

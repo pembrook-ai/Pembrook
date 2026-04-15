@@ -148,7 +148,7 @@ pembrook/
 ├── docker-compose.yml         # Starts agent + Ollama + MCP servers + log viewer
 ├── docker-compose.gpu.yml     # GPU overlay (Linux + NVIDIA)
 ├── Dockerfile.agent           # Compiles and packages the agent (gosu entrypoint)
-└── entrypoint-agent.sh        # chgrp docker.sock then exec gosu pembrook
+└── entrypoint-agent.sh        # exec gosu pembrook (docker socket handled by proxy)
 ```
 
 ---
@@ -421,12 +421,13 @@ Orchestrator identifies skill need
         → HitlManager.requestApproval() — notify @owner
           → Owner approves in Flutter app → AtRpc response
     → SandboxManager.executeInSandbox()
-        → Docker via unix socket (/var/run/docker.sock)
+        → Docker via docker_proxy (restricted socket proxy — tcp://docker_proxy:2375)
           Network skills (email, calendar, web_search): --network=bridge
           All other skills:                             --network=none
-          → --rm --memory=256m --cpus=0.5
-          → Skill reads payload from stdin, writes JSON result to stdout
-          → Container destroyed after execution
+          → create/start/wait/logs/rm (no --interactive; payload via SKILL_INPUT env)
+          → --memory=256m --cpus=0.5
+          → Skill reads payload from SKILL_INPUT env var, writes JSON result to stdout
+          → Container removed after execution
       → AuditService.log(sandbox events)
 ```
 
