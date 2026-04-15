@@ -159,19 +159,88 @@ class LogViewerHandler(http.server.BaseHTTPRequestHandler):
             pass
 
     def _check_auth(self) -> bool:
-        """SEC-002: Verify bearer token if AUTH_TOKEN is configured."""
+        """SEC-002: Verify bearer token if AUTH_TOKEN is configured.
+
+        Browser requests are checked for a token cookie first (set after the
+        login form is submitted), then the Authorization header (for API/curl).
+        The login page itself (/login and /login POST) are always served.
+        """
         if not AUTH_TOKEN:
             return True
+
+        # Allow the login page through unauthenticated.
+        if self.path in ("/login",):
+            return True
+
+        # Check cookie token (set by the login form).
+        cookies = self.headers.get("Cookie", "")
+        for part in cookies.split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == "lv_token" and v.strip() == AUTH_TOKEN:
+                return True
+
+        # Check Authorization: Bearer <token> header (curl / API).
         auth = self.headers.get("Authorization", "")
         if auth == f"Bearer {AUTH_TOKEN}":
             return True
-        self.send_response(401)
-        self.send_header("Content-Type", "text/plain")
+
+        # Not authenticated — redirect to login page.
+        self.send_response(302)
+        self.send_header("Location", "/login")
         self.end_headers()
-        self.wfile.write(b"Unauthorized")
         return False
 
+    def do_POST(self):
+        """Handle login form submission."""
+        if self.path == "/login":
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length).decode()
+            token = ""
+            for part in body.split("&"):
+                k, _, v = part.partition("=")
+                if k == "token":
+                    from urllib.parse import unquote_plus
+                    token = unquote_plus(v)
+            if token == AUTH_TOKEN:
+                self.send_response(302)
+                self.send_header("Set-Cookie", f"lv_token={AUTH_TOKEN}; Path=/; HttpOnly; SameSite=Strict")
+                self.send_header("Location", "/")
+                self.end_headers()
+            else:
+                self._serve_login(error=True)
+        else:
+            self.send_error(405)
+
+    def _serve_login(self, error: bool = False) -> None:
+        error_msg = '<p style="color:#f85149;margin-bottom:12px">Invalid token — try again.</p>' if error else ""
+        page = f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Pembrook Log Viewer — Login</title>
+<style>
+  body{{background:#0d1117;color:#c9d1d9;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
+  form{{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:32px;min-width:320px;text-align:center}}
+  h1{{color:#58a6ff;margin-bottom:24px;font-size:18px}}
+  input{{width:100%;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:10px;border-radius:6px;font-family:monospace;font-size:14px;box-sizing:border-box;margin-bottom:16px}}
+  button{{width:100%;background:#238636;color:#fff;border:none;padding:10px;border-radius:6px;font-size:14px;cursor:pointer}}
+  button:hover{{background:#2ea043}}
+</style></head>
+<body><form method="POST" action="/login">
+  <h1>Pembrook Log Viewer</h1>
+  {error_msg}
+  <input type="password" name="token" placeholder="Enter LOG_VIEWER_TOKEN" autofocus>
+  <button type="submit">Sign in</button>
+</form></body></html>"""
+        content = page.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(content)))
+        self.end_headers()
+        self.wfile.write(content)
+
     def do_GET(self):
+        if self.path == "/login":
+            self._serve_login()
+            return
         if not self._check_auth():
             return
         if self.path == "/" or self.path == "/index.html":
