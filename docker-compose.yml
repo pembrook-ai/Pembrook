@@ -371,6 +371,7 @@ services:
       COMPOSE_DIR: "/compose"
       # H3: route all Docker API calls through the read-only log proxy.
       DOCKER_HOST: "tcp://log_viewer_proxy:2375"
+      LOG_VIEWER_TOKEN: "${LOG_VIEWER_TOKEN}"
     networks:
       - pembrook_internal
       - log_viewer_proxy_net
