@@ -104,10 +104,12 @@ class SandboxManager {
           requestId ?? DateTime.now().millisecondsSinceEpoch.toString(),
     });
 
-    // Use --network=bridge when the skill declared network endpoints;
-    // otherwise keep the default --network=none sandbox.
+    // M4: Use pembrook_skill_net instead of the default bridge network.
+    // pembrook_skill_net provides internet access for skills that need it
+    // (email, calendar, web_search) but is NOT connected to pembrook_internal,
+    // so skills cannot reach agent, atsdk, or other internal services.
     final networkFlag = meta.declaredCapabilities.networkEndpoints.isNotEmpty
-        ? '--network=bridge'
+        ? '--network=pembrook_skill_net'
         : '--network=none';
 
     // Encode the payload as base64 so it can be passed safely as an env var.
@@ -142,7 +144,7 @@ class SandboxManager {
         return SandboxResult(
           success: false,
           error: 'Container create failed: ${createResult.stderr}'.trim(),
-          exitCode: createResult.exitCode as int,
+          exitCode: createResult.exitCode,
           duration: stopwatch.elapsed,
         );
       }
@@ -229,9 +231,10 @@ class SandboxManager {
     } catch (e) {
       stopwatch.stop();
       _log.severe('Sandbox execution error: $e');
+      // I2: return generic message — detail stays in log only.
       return SandboxResult(
         success: false,
-        error: 'Sandbox error: $e',
+        error: 'Sandbox execution failed.',
         exitCode: -1,
         duration: stopwatch.elapsed,
       );

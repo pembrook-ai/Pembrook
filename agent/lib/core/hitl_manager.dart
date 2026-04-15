@@ -31,9 +31,6 @@ class HitlManager {
   /// Resolved at construction from OWNER_AT_SIGN env var (set by docker-compose).
   final String _ownerAtSign;
 
-  // Default HITL timeout — after this, action is DENIED (fail-closed)
-  static const Duration _defaultTimeout = Duration(minutes: 5);
-
   HitlManager({required this.atClient})
       : _ownerAtSign = Platform.environment['OWNER_AT_SIGN'] ?? '@owner';
 

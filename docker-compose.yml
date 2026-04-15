@@ -73,6 +73,15 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
+    environment:
+      # M5: Restrict CORS/origin access to the agent container only.
+      # This prevents any other service that somehow ends up on ollama_net
+      # from issuing API requests to Ollama.
+      # IMPORTANT: ollama_net is internal:true and attached ONLY to `agent`
+      # and `ollama` — bridges, MCP servers, and skill containers cannot
+      # reach this network. This is the primary isolation; OLLAMA_ORIGINS
+      # is a defence-in-depth backstop.
+      OLLAMA_ORIGINS: "http://pembrook-agent"
     # SEC-010: Ollama is only reachable from the agent via the isolated ollama_net.
     # No other containers (bridges, MCP servers, skill sandbox escapes) can reach it.
     networks:
@@ -160,7 +169,8 @@ services:
     networks:
       - pembrook_internal
       - docker_proxy_net
-      - ollama_net   # SEC-010: agent-to-Ollama traffic on isolated network
+      - ollama_net          # SEC-010: agent-to-Ollama traffic on isolated network
+      - pembrook_skill_net  # M4: agent must reference this network so Compose creates it; skills are spawned onto it by SandboxManager
 
   # ── WhatsApp Bridge (optional) ───────────────────────────────────────────────
   # Uncomment and set SERVICES_AT_SIGN + SERVICES_KEY_FILE in .env to enable.
@@ -319,6 +329,30 @@ services:
     networks:
       - pembrook_internal
 
+  # ── Log Viewer Docker Proxy ─────────────────────────────────────────────────
+  # H3: log_viewer gets its own restricted proxy — read-only container list + logs
+  # only. No POST, no exec, no image ops. Raw docker socket is NOT mounted in the
+  # log_viewer container itself.
+  log_viewer_proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:0.2
+    container_name: pembrook-log-viewer-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1   # GET /containers/json, GET /containers/{id}/logs
+      POST: 0         # no create/start/stop/exec
+      INFO: 1         # docker info (needed by docker compose ps)
+      IMAGES: 0
+      NETWORKS: 0
+      VOLUMES: 0
+      EXEC: 0
+      SWARM: 0
+      AUTH: 0
+      SECRETS: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - log_viewer_proxy_net
+
   # ── Log Viewer (monitor dashboard) ─────────────────────────────────────────
   # Real-time web UI for tailing all container logs via SSE.
   # Open http://localhost:9090 in your browser.
@@ -331,14 +365,19 @@ services:
     ports:
       - "127.0.0.1:9090:9090"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./docker-compose.yml:/compose/docker-compose.yml:ro
       - ./.env:/compose/.env:ro
     environment:
       PYTHONUNBUFFERED: "1"
       COMPOSE_DIR: "/compose"
+      # H3: route all Docker API calls through the read-only log proxy.
+      DOCKER_HOST: "tcp://log_viewer_proxy:2375"
+      LOG_VIEWER_TOKEN: "${LOG_VIEWER_TOKEN}"
     networks:
       - pembrook_internal
+      - log_viewer_proxy_net
+    depends_on:
+      - log_viewer_proxy
 
 volumes:
   ollama_data:
@@ -351,6 +390,15 @@ networks:
   docker_proxy_net:
     driver: bridge
     internal: true   # SEC-003: proxy network is internal-only (no internet access needed)
+  log_viewer_proxy_net:
+    driver: bridge
+    internal: true   # H3: log viewer proxy network — no internet access needed
   ollama_net:
     driver: bridge
     internal: true   # SEC-010: Ollama reachable only from the agent container
+  pembrook_skill_net:
+    name: pembrook_skill_net  # M4: explicit name so sandbox_manager `docker create --network=pembrook_skill_net` resolves correctly regardless of compose project name
+    driver: bridge
+    internal: false  # M4: skills need outbound internet (email/calendar/web_search)
+                     # but this network is NOT attached to pembrook_internal so skills
+                     # cannot reach agent, atsdk, or other internal services

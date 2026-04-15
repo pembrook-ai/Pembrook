@@ -87,7 +87,7 @@ class SkillRunner {
       );
       return SkillRunResult(
         success: false,
-        denialReason: decision.reason ?? 'Policy denied',
+        denialReason: decision.reason,
       );
     }
 

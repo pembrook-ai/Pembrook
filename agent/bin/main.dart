@@ -161,6 +161,15 @@ Ensure you have:
       servicesAtSign.isNotEmpty ? [servicesAtSign] : <String>[];
   if (mcpServerAtSigns.isNotEmpty) {
     log.info('MCP server atSigns: $mcpServerAtSigns');
+    // M3: Shared atSign across bridges AND MCP servers means a compromise of
+    // any one service exposes all services. Warn the operator at startup so
+    // the trade-off is visible in logs, but don't block — this is an accepted
+    // default for self-hosted single-user deployments.
+    log.warning(
+        'M3-NOTICE: SERVICES_AT_SIGN ($servicesAtSign) is shared across all '
+        'bridges and MCP servers. Compromising any one service exposes all '
+        'services that use this atSign. For higher-security deployments, '
+        'assign a separate atSign to each service.');
   }
 
   // ── Automation ────────────────────────────────────────────────────────────

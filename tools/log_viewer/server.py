@@ -264,7 +264,16 @@ def main():
     server = http.server.ThreadingHTTPServer((bind_addr, args.port), handler)
     svc_label = ', '.join(services) if services else 'all services'
     if not AUTH_TOKEN:
-        print("⚠️  WARNING: LOG_VIEWER_TOKEN is not set — no authentication enabled!")
+        print(
+            "FATAL: LOG_VIEWER_TOKEN is not set.\n"
+            "The log viewer streams all container logs and must be protected.\n"
+            "Set LOG_VIEWER_TOKEN to a strong random secret, e.g.:\n"
+            "  openssl rand -hex 32\n"
+            "Then add it to your .env file: LOG_VIEWER_TOKEN=<value>\n"
+            "Refusing to start unauthenticated.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     print(f"🔍 Pembrook Log Viewer — http://{bind_addr}:{args.port}")
     print(f"   Streaming: docker compose logs -f {svc_label}")
     print(f"   Compose dir: {COMPOSE_DIR}")

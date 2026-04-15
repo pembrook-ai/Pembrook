@@ -16,8 +16,6 @@
 
 import 'dart:io';
 
-import 'dart:io';
-
 import 'package:at_auth/at_auth.dart';
 import 'package:at_client_flutter/at_client_flutter.dart';
 import 'package:flutter/material.dart';
@@ -91,7 +89,8 @@ class _AuthScreenState extends State<AuthScreen> {
 
       if (!mounted) return;
       // ignore: use_build_context_synchronously
-      final response = await PkamDialog.show(context, request: request, backupKeys: [KeychainAtKeysIo()]);
+      final response = await PkamDialog.show(context,
+          request: request, backupKeys: [KeychainAtKeysIo()]);
       if (response == null || !response.isSuccessful) return;
 
       await _finishAuth(response);
@@ -135,7 +134,8 @@ class _AuthScreenState extends State<AuthScreen> {
 
       if (!mounted) return;
       // ignore: use_build_context_synchronously
-      final response = await CramDialog.show(context, request: request, cramKey: cramKey);
+      final response =
+          await CramDialog.show(context, request: request, cramKey: cramKey);
       if (response == null || !response.isSuccessful) return;
 
       await _finishAuth(response);
@@ -171,7 +171,8 @@ class _AuthScreenState extends State<AuthScreen> {
 
       if (!mounted) return;
       // ignore: use_build_context_synchronously
-      final response = await PkamDialog.show(context, request: request, backupKeys: [KeychainAtKeysIo()]);
+      final response = await PkamDialog.show(context,
+          request: request, backupKeys: [KeychainAtKeysIo()]);
       if (response == null || !response.isSuccessful) return;
 
       await _finishAuth(response);
@@ -215,7 +216,8 @@ class _AuthScreenState extends State<AuthScreen> {
 
       if (!mounted) return;
       // ignore: use_build_context_synchronously
-      final response = await PkamDialog.show(context, request: request, backupKeys: [KeychainAtKeysIo()]);
+      final response = await PkamDialog.show(context,
+          request: request, backupKeys: [KeychainAtKeysIo()]);
       if (response == null || !response.isSuccessful) return;
 
       await _finishAuth(response);
@@ -236,7 +238,8 @@ class _AuthScreenState extends State<AuthScreen> {
     // cleans up the temp data automatically on reboot.
     final tmp = await getTemporaryDirectory();
     final instanceId = DateTime.now().millisecondsSinceEpoch;
-    final storageDir = Directory('${tmp.path}/pembrook_${response.atSign}_$instanceId');
+    final storageDir =
+        Directory('${tmp.path}/pembrook_${response.atSign}_$instanceId');
     await storageDir.create(recursive: true);
 
     final pref = AtClientPreference()
@@ -350,10 +353,12 @@ class _AuthScreenState extends State<AuthScreen> {
               else
                 Card(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: Row(
                       children: [
-                        Icon(Icons.lock_open, color: Theme.of(context).colorScheme.primary),
+                        Icon(Icons.lock_open,
+                            color: Theme.of(context).colorScheme.primary),
                         const SizedBox(width: 16),
                         Expanded(
                           child: DropdownButtonFormField<String>(
@@ -369,7 +374,9 @@ class _AuthScreenState extends State<AuthScreen> {
                                       child: Text(s),
                                     ))
                                 .toList(),
-                            onChanged: _loading ? null : (v) => setState(() => _selectedAtSign = v),
+                            onChanged: _loading
+                                ? null
+                                : (v) => setState(() => _selectedAtSign = v),
                           ),
                         ),
                         const SizedBox(width: 8),

@@ -24,7 +24,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:at_client/at_client.dart';
-import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 
 import '../core/policy_engine.dart';
@@ -37,6 +36,7 @@ import '../mcp/secure_mcp_client.dart';
 import '../core/url_validator.dart';
 import '../models/conversation.dart';
 import '../models/audit_entry.dart';
+import '../models/policy.dart';
 import '../automation/scheduler.dart';
 import '../automation/notification_manager.dart';
 import '../models/task.dart';
@@ -449,6 +449,11 @@ class Orchestrator {
   String _toolConvId = '';
   String _toolUserTimezone = '';
 
+  // M2: set to true when this request has injected any externally-fetched
+  // content. Used to enforce HITL before high-risk actions (send_email,
+  // schedule_task) that could be triggered by prompt-injected instructions.
+  bool _requestHasExternalContent = false;
+
   Orchestrator({
     required this.atClient,
     required this.llmRouter,
@@ -488,6 +493,8 @@ class Orchestrator {
     _toolFromAtSign = fromAtSign;
     _toolConvId = conversationId;
     _toolUserTimezone = userTimezone;
+    _requestHasExternalContent =
+        false; // M2: reset per-request external-content flag
 
     // ── 1. Load context from Memory Service ───────────────────────────────
     Conversation? conversation;
@@ -970,6 +977,29 @@ class Orchestrator {
         final url = args['url'] as String? ?? '';
         return _fetchWebpage(url);
       case 'schedule_task':
+        // M2: If web-fetched content is in context, require owner approval
+        // before scheduling — prevents prompt-injection-driven automations.
+        if (_requestHasExternalContent) {
+          final decision = await hitlManager.requestApproval(HitlRequest(
+            actionId: 'hitl_schedtask_${DateTime.now().millisecondsSinceEpoch}',
+            actionType: 'tool.schedule_task.webcontext',
+            description: 'schedule_task was triggered while web content is in '
+                'context. A malicious page may be attempting to create an '
+                'automation without your knowledge.\n\n'
+                'Task: ${args['description'] ?? '(no description)'}\n'
+                'Command: ${args['command'] ?? ''}',
+            payload: args,
+            requesterAtSign: _toolFromAtSign,
+          ));
+          if (!decision.approved) {
+            _log.warning('[M2] schedule_task blocked by HITL: '
+                '${decision.reason}');
+            return 'Action blocked: owner did not approve scheduling a task '
+                'while web content is in context '
+                '(${decision.reason ?? "no reason given"}).';
+          }
+          _log.info('[M2] schedule_task approved by owner via HITL');
+        }
         return _toolScheduleTask(args);
       case 'cancel_task':
         return _toolCancelTask(args);
@@ -981,6 +1011,35 @@ class Orchestrator {
         // Check if this is a skill tool call.
         final skillId = _toolToSkillId[toolName];
         if (skillId != null && skillRunner != null) {
+          // M2: Gate send_email on HITL when web content is in context.
+          // Prompt injection via fetched pages can try to exfiltrate data
+          // by crafting a hidden instruction like "send this page to …".
+          if (toolName == 'send_email' && _requestHasExternalContent) {
+            final toAddr = args['to'] as String? ?? '(unknown)';
+            final subject = args['subject'] as String? ?? '(no subject)';
+            final decision = await hitlManager.requestApproval(HitlRequest(
+              actionId: 'hitl_email_${DateTime.now().millisecondsSinceEpoch}',
+              actionType: 'tool.send_email.webcontext',
+              description: 'send_email was triggered while web content is in '
+                  'context. A malicious page may be attempting to exfiltrate '
+                  'data via email.\n\n'
+                  'To: $toAddr\nSubject: $subject',
+              payload: {
+                'to': toAddr,
+                'subject': subject,
+              },
+              requesterAtSign: _toolFromAtSign,
+            ));
+            if (!decision.approved) {
+              _log.warning(
+                  '[M2] send_email blocked by HITL: ${decision.reason}');
+              return 'Action blocked: owner did not approve sending email '
+                  'while web content is in context '
+                  '(${decision.reason ?? "no reason given"}).';
+            }
+            _log.info('[M2] send_email approved by owner via HITL');
+          }
+
           _log.info('[TOOL] Routing $toolName → skill:$skillId');
           final result = await skillRunner!.invoke(
             skillId: skillId,
@@ -1010,6 +1069,14 @@ class Orchestrator {
                 .map((c) => c['text'] as String? ?? c['data']?.toString() ?? '')
                 .where((s) => s.isNotEmpty)
                 .join('\n');
+            // M2: browser.* tools fetch external content — wrap in boundary
+            // markers so the LLM treats the content as untrusted data.
+            if (toolName.startsWith('browser.') && parts.isNotEmpty) {
+              _requestHasExternalContent = true;
+              return '--- UNTRUSTED WEB CONTENT BEGIN ---\n'
+                  '$parts\n'
+                  '--- UNTRUSTED WEB CONTENT END ---';
+            }
             return parts.isNotEmpty ? parts : '(empty MCP response)';
           }
           return 'MCP tool "$toolName" failed: ${result.error ?? "unknown error"}';
@@ -1184,25 +1251,28 @@ class Orchestrator {
       }
     }
 
-    // SEC-001: SSRF protection — reject internal/private network targets.
-    final ssrfError = await UrlValidator.validate(uri);
-    if (ssrfError != null) {
-      _log.warning('[fetch_webpage] SSRF blocked: $ssrfError for $uri');
+    // H1+H2: SSRF protection — validate URL, then use fetchSafe which:
+    //   • Connects via the resolved IP (eliminates DNS TOCTTOU window).
+    //   • Follows redirects manually, re-validating each hop.
+    final ssrfCheck = await UrlValidator.validate(uri);
+    if (!ssrfCheck.isSafe) {
+      _log.warning('[fetch_webpage] SSRF blocked: ${ssrfCheck.error} for $uri');
       await auditService.log(AuditEntry(
         timestamp: DateTime.now().toUtc(),
         actionType: 'tool.fetch_webpage',
         initiatorAtSign: _toolFromAtSign,
         targetResource: uri.toString(),
         policyDecision: 'denied',
-        notes: 'SSRF blocked: $ssrfError',
+        notes: 'SSRF blocked: ${ssrfCheck.error}',
       ));
       return 'Error: access to internal network addresses is not allowed';
     }
 
     try {
       _log.info('[fetch_webpage] GET $uri');
-      final resp = await http.get(uri, headers: {
+      final resp = await UrlValidator.fetchSafe(uri, headers: {
         // Use a real browser UA so sites don't serve bot-blocking pages.
+        // I1: intentional — without this many sites return unusable content.
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
             'AppleWebKit/537.36 (KHTML, like Gecko) '
             'Chrome/124.0.0.0 Safari/537.36',
@@ -1244,7 +1314,16 @@ class Orchestrator {
         policyDecision: 'allowed',
         notes: '${text.length} chars',
       ));
-      return text.isEmpty ? '(page had no readable text)' : text;
+
+      // M2: mark that external content is now in context and wrap in boundary
+      // markers so the LLM treats it as data, not instructions.
+      _requestHasExternalContent = true;
+      final wrapped = text.isEmpty
+          ? '(page had no readable text)'
+          : '--- UNTRUSTED WEB CONTENT BEGIN ---\n'
+              '$text\n'
+              '--- UNTRUSTED WEB CONTENT END ---';
+      return wrapped;
     } on TimeoutException {
       _log.warning('[fetch_webpage] Timed out fetching $uri');
       await auditService.log(AuditEntry(
@@ -1264,9 +1343,10 @@ class Orchestrator {
         initiatorAtSign: _toolFromAtSign,
         targetResource: uri.toString(),
         policyDecision: 'denied',
+        // I2: log full exception detail internally; don't expose to LLM context.
         notes: 'error: $e',
       ));
-      return 'Error fetching $uri: $e';
+      return 'Error: failed to retrieve content from $uri';
     }
   }
 }
