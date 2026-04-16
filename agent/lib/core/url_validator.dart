@@ -117,16 +117,19 @@ class UrlValidator {
         throw ArgumentError('SSRF guard blocked URL "$current": ${result.error}');
       }
 
-      // Connect via resolved IP to pin the address (H2 fix).
-      final pinnedUri = _buildPinnedUri(current, result.resolvedAddress!);
+      // Pin the IP only for plain HTTP.  For HTTPS the TLS certificate is
+      // bound to the hostname; replacing the host with an IP causes
+      // CERTIFICATE_VERIFY_FAILED.  TLS itself prevents DNS-rebinding.
+      final useIpPinning = current.scheme == 'http';
+      final connectUri = useIpPinning ? _buildPinnedUri(current, result.resolvedAddress!) : current;
       final client = _buildNoRedirectClient();
 
       try {
-        final request = http.Request('GET', pinnedUri)
+        final request = http.Request('GET', connectUri)
           ..followRedirects = false
           ..headers.addAll({
             ...?headers,
-            'Host': current.host, // preserve original Host header
+            if (useIpPinning) 'Host': current.host,
           });
         final response = await http.Response.fromStream(
           await client.send(request),

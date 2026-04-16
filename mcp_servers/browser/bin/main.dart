@@ -112,8 +112,14 @@ Future<http.Response> _fetchSafe(
       throw StateError('SSRF guard: too many redirects');
     }
     final addr = await _validateForSsrf(current);
-    final ip = addr.type == InternetAddressType.IPv6 ? '[${addr.address}]' : addr.address;
-    final pinnedUri = current.replace(host: ip);
+
+    // Only pin the IP for plain HTTP. For HTTPS the TLS certificate is
+    // bound to the hostname, so replacing the host with an IP causes
+    // CERTIFICATE_VERIFY_FAILED. TLS itself prevents DNS-rebinding.
+    final useIpPinning = current.scheme == 'http';
+    final connectUri = useIpPinning
+        ? current.replace(host: addr.type == InternetAddressType.IPv6 ? '[${addr.address}]' : addr.address)
+        : current;
 
     final inner = HttpClient()
       ..autoUncompress = true
@@ -121,9 +127,9 @@ Future<http.Response> _fetchSafe(
     final client = IOClient(inner);
 
     try {
-      final request = http.Request('GET', pinnedUri)
+      final request = http.Request('GET', connectUri)
         ..followRedirects = false
-        ..headers.addAll({...?headers, 'Host': current.host});
+        ..headers.addAll({...?headers, if (useIpPinning) 'Host': current.host});
       final response = await http.Response.fromStream(await client.send(request).timeout(timeout));
 
       final status = response.statusCode;
