@@ -83,8 +83,7 @@ class UrlValidator {
     }
 
     if (addresses.isEmpty) {
-      return UrlValidationResult(
-          error: 'DNS resolution returned no addresses for $host');
+      return UrlValidationResult(error: 'DNS resolution returned no addresses for $host');
     }
 
     for (final addr in addresses) {
@@ -115,8 +114,7 @@ class UrlValidator {
 
       final result = await validate(current);
       if (!result.isSafe) {
-        throw ArgumentError(
-            'SSRF guard blocked URL "$current": ${result.error}');
+        throw ArgumentError('SSRF guard blocked URL "$current": ${result.error}');
       }
 
       // Connect via resolved IP to pin the address (H2 fix).
@@ -124,12 +122,14 @@ class UrlValidator {
       final client = _buildNoRedirectClient();
 
       try {
-        final response = await client.get(
-          pinnedUri,
-          headers: {
+        final request = http.Request('GET', pinnedUri)
+          ..followRedirects = false
+          ..headers.addAll({
             ...?headers,
             'Host': current.host, // preserve original Host header
-          },
+          });
+        final response = await http.Response.fromStream(
+          await client.send(request),
         );
 
         final status = response.statusCode;
@@ -160,18 +160,13 @@ class UrlValidator {
       ..autoUncompress = true
       ..findProxy = null
       ..maxConnectionsPerHost = 1;
-    // followRedirects must be false so we can intercept each hop.
-    // ignore: avoid_dynamic_calls — dart:io HttpClient sets this via inner.
-    (inner as dynamic).followRedirects = false;
     return IOClient(inner);
   }
 
   /// Rewrite [uri] to connect directly to [addr] (IP pinning).
   /// The original host is preserved as the `Host` header by the caller.
   static Uri _buildPinnedUri(Uri uri, InternetAddress addr) {
-    final ip = addr.type == InternetAddressType.IPv6
-        ? '[${addr.address}]'
-        : addr.address;
+    final ip = addr.type == InternetAddressType.IPv6 ? '[${addr.address}]' : addr.address;
     return uri.replace(host: ip);
   }
 
