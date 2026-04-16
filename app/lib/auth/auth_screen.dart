@@ -423,7 +423,7 @@ class _AuthScreenState extends State<AuthScreen> {
               const Spacer(),
 
               Text(
-                'You need a provisioned @owner atSign.\nGet one free at my.atsign.com',
+                'If you need an Atsign.\nGet one at my.atsign.com',
                 style: Theme.of(context).textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
