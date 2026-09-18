@@ -120,6 +120,15 @@ Ensure you have:
   final ollamaModel = Platform.environment['OLLAMA_MODEL'] ?? 'qwen2.5:7b';
   log.info('Ollama model: $ollamaModel');
 
+  // Human-friendly name for THIS agent instance.  Sent back with every answer
+  // so the app can show which agent replied — useful when several agents
+  // share one atSign for redundancy (the AtRpc request mutex picks exactly
+  // one responder per request).  Defaults to the machine / container hostname.
+  final agentNameEnv = (Platform.environment['AGENT_NAME'] ?? '').trim();
+  final agentName =
+      agentNameEnv.isNotEmpty ? agentNameEnv : Platform.localHostname;
+  log.info('Agent name: $agentName');
+
   final auditService = AuditService(atClient: atClient);
   final sanitizer = QuerySanitizer(ollamaBaseUrl: ollamaBaseUrl);
   final llmRouter = LlmRouter(
@@ -203,6 +212,7 @@ Ensure you have:
     taskScheduler: scheduler,
     notificationManager: notificationManager,
     mcpServerAtSigns: mcpServerAtSigns,
+    agentName: agentName,
   );
 
   final heartbeat = HeartbeatEngine(

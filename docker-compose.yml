@@ -147,6 +147,9 @@ services:
       # Bundled Ollama: http://ollama:11434
       OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
       OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5:7b}"
+      # Display name for this agent instance — shown in the app under every
+      # answer together with the model used.  Defaults to the container hostname.
+      AGENT_NAME: "${AGENT_NAME:-}"
       OWNER_AT_SIGN: "${OWNER_AT_SIGN:-}"
       ALLOWED_USERS: "${ALLOWED_USERS:-}"
       # SEC-004: In production use per-service atSigns (WHATSAPP_AT_SIGN etc.).

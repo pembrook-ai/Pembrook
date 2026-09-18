@@ -39,11 +39,35 @@ class RpcCallResult {
   final String conversationId;
   final String? error;
 
+  /// Name of the agent instance that answered (null if the agent predates
+  /// attribution support).
+  final String? agentName;
+
+  /// Model(s) that produced the answer, e.g. "qwen2.5:7b".
+  final String? model;
+
   const RpcCallResult({
     required this.success,
     required this.response,
     required this.conversationId,
     this.error,
+    this.agentName,
+    this.model,
+  });
+}
+
+/// Who produced a reply: which agent instance, on which atSign, with which
+/// model.  Recorded per conversation from the stream chunk envelope so that
+/// passive viewers (other devices) can attribute replies they did not request.
+class ResponseMeta {
+  final String agentName;
+  final String model;
+  final String agentAtSign;
+
+  const ResponseMeta({
+    required this.agentName,
+    required this.model,
+    required this.agentAtSign,
   });
 }
 
@@ -53,10 +77,18 @@ class StreamChunkEvent {
   final String conversationId;
   final String chunk;
   final String type; // 'content' | 'progress'
+
+  /// Agent instance / model that is producing this stream (from the chunk
+  /// envelope).  Null when the agent predates attribution support.
+  final String? agentName;
+  final String? model;
+
   const StreamChunkEvent({
     required this.conversationId,
     required this.chunk,
     this.type = 'content',
+    this.agentName,
+    this.model,
   });
 }
 
@@ -214,6 +246,15 @@ class RpcService extends ChangeNotifier {
   bool get isAuthenticated => _atClient != null;
   String get agentAtSign => _agentAtSign;
 
+  // Latest reply attribution per conversation, captured from stream chunk
+  // envelopes.  Lets ChatScreen label replies it did not originate (passive
+  // viewer on another device) and label the streaming bubble live.
+  final Map<String, ResponseMeta> _metaByConv = {};
+
+  /// Attribution (agent name / model / atSign) for the most recent reply
+  /// streamed in [conversationId], or null if none has been seen.
+  ResponseMeta? metaFor(String conversationId) => _metaByConv[conversationId];
+
   /// Called by auth walkthrough after a successful login.
   Future<void> initialise(AtClient atClient) async {
     _atClient = atClient;
@@ -283,11 +324,22 @@ class RpcService extends ChangeNotifier {
       // Clean up activity tracking
       _lastActivityTime.remove(conversationId);
 
+      final replyAgentName = result['agentName'] as String?;
+      final replyModel = result['model'] as String?;
+      if (replyAgentName != null || replyModel != null) {
+        _metaByConv[conversationId] = ResponseMeta(
+          agentName: replyAgentName ?? '',
+          model: replyModel ?? '',
+          agentAtSign: _agentAtSign,
+        );
+      }
       return RpcCallResult(
         success: result['success'] as bool? ?? true,
         response: result['response'] as String? ?? '',
         conversationId: result['conversationId'] as String? ?? conversationId,
         error: result['error'] as String?,
+        agentName: replyAgentName,
+        model: replyModel,
       );
     } on TimeoutException {
       return RpcCallResult(
@@ -341,14 +393,28 @@ class RpcService extends ChangeNotifier {
         String convId = '';
         String type = 'content';
         bool isDone = false;
+        String? agentName;
+        String? model;
         if (value.startsWith('{')) {
           final map = _tryDecode(value);
           chunk = map?['chunk'] as String? ?? value;
           convId = map?['conversationId'] as String? ?? '';
           type = map?['type'] as String? ?? 'content';
           isDone = map?['done'] as bool? ?? false;
+          agentName = map?['agentName'] as String?;
+          model = map?['model'] as String?;
         } else {
           chunk = value;
+        }
+        // Remember who is answering this conversation.  notification.from is
+        // the transport-verified sender atSign, so it cannot be spoofed by
+        // the payload.
+        if (convId.isNotEmpty && (agentName != null || model != null)) {
+          _metaByConv[convId] = ResponseMeta(
+            agentName: agentName ?? '',
+            model: model ?? '',
+            agentAtSign: notification.from,
+          );
         }
         if (chunk.isNotEmpty) {
           // Track activity for smart timeout
@@ -359,6 +425,8 @@ class RpcService extends ChangeNotifier {
             conversationId: convId,
             chunk: chunk,
             type: type,
+            agentName: agentName,
+            model: model,
           ));
         }
         // Signal completion so other devices can reload conversation history.

@@ -275,6 +275,23 @@ Once the app is connected:
 2. **Audit tab** → you should see a `command` entry with `policyDecision: allowed`
 3. **Settings tab** → should show the agent atSign as `@myagent` and status as `online`
 
+### Which agent answered?
+
+Every agent reply carries a small caption — **agent name • model** — showing
+which agent instance produced it and which model(s) it used (for example
+`pembrook-1 • qwen2.5:7b`, or `qwen2.5:7b + claude-3-haiku-20240307` when the
+hybrid path escalated to an external LLM). Toggle it under
+**Settings → Show agent details**.
+
+Set the name with `AGENT_NAME` in `.env` (defaults to the container hostname).
+
+**Redundancy demo:** run two or more agents with the *same* atSign and keys
+(for example one per machine), each with a different `AGENT_NAME`. Every agent
+receives every request, they race for an immutable per-request mutex key on
+the atServer, and exactly one wins and replies — the others stay silent. The
+caption tells you which one answered. Stop an agent and the others keep
+serving without any client change.
+
 ### Progress Indicators
 
 For multi-step tasks (e.g., "fetch latest news from BBC"), you'll see real-time progress indicators in the chat UI:

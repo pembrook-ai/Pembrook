@@ -44,11 +44,41 @@ class _Message {
   final bool isUser;
   final DateTime timestamp;
 
+  /// Which agent instance produced this reply (agent messages only).
+  final String? agentName;
+
+  /// Which model(s) produced this reply (agent messages only).
+  final String? model;
+
   _Message({
     required this.text,
     required this.isUser,
     DateTime? timestamp,
+    this.agentName,
+    this.model,
   }) : timestamp = timestamp ?? DateTime.now();
+
+  /// Convert a persisted message back into a display message.
+  factory _Message.fromStored(StoredMessage s) => _Message(
+        text: s.text,
+        isUser: s.isUser,
+        timestamp: s.timestamp,
+        agentName: s.agentName,
+        model: s.model,
+      );
+
+  StoredMessage toStored() => StoredMessage(
+        text: text,
+        isUser: isUser,
+        timestamp: timestamp,
+        agentName: agentName,
+        model: model,
+      );
+
+  /// True when there is something to show in the attribution caption.
+  bool get hasAttribution =>
+      !isUser &&
+      ((agentName?.isNotEmpty ?? false) || (model?.isNotEmpty ?? false));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,6 +116,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // Re-read at the start of every _send() so changes in Settings take effect
   // on the next message without requiring a restart.
   bool _streamingEnabled = true;
+  // Mirrors the 'showAgentInfo' SharedPreferences setting: label every agent
+  // reply with the agent instance + model that produced it.
+  bool _showAgentInfo = true;
   // Explicitly tracks which conversationId is currently streaming.
   // Set just before rpcService.call(), cleared when the response arrives.
   // NOT cleared on conversation switch — stays alive so backgrounded responses
@@ -133,11 +166,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _store = context.read<ConversationStore>();
     });
-    // Read streaming pref so the initial state mirrors Settings.
+    // Read display prefs so the initial state mirrors Settings.
     SharedPreferences.getInstance().then((prefs) {
       if (mounted) {
         setState(() {
           _streamingEnabled = prefs.getBool('streamingEnabled') ?? true;
+          _showAgentInfo = prefs.getBool('showAgentInfo') ?? true;
         });
       }
     });
@@ -191,11 +225,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             setState(() {
               _messages
                 ..clear()
-                ..addAll(summary.messages.map((s) => _Message(
-                      text: s.text,
-                      isUser: s.isUser,
-                      timestamp: s.timestamp,
-                    )));
+                ..addAll(summary.messages.map(_Message.fromStored));
             });
           }
         });
@@ -246,11 +276,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   _progressMessage = '';
                   _messages
                     ..clear()
-                    ..addAll(summary!.messages.map((s) => _Message(
-                          text: s.text,
-                          isUser: s.isUser,
-                          timestamp: s.timestamp,
-                        )));
+                    ..addAll(summary!.messages.map(_Message.fromStored));
                 });
               } else if (answer.isNotEmpty) {
                 final currentMsgs = List<_Message>.from(_messages);
@@ -263,6 +289,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ..add(_Message(
                       text: answer,
                       isUser: false,
+                      agentName: _rpcService?.metaFor(watchdogConvId)?.agentName,
+                      model: _rpcService?.metaFor(watchdogConvId)?.model,
                       timestamp: DateTime.now(),
                     ));
                 });
@@ -340,11 +368,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               _progressMessage = '';
               _messages
                 ..clear()
-                ..addAll(updated!.messages.map((s) => _Message(
-                      text: s.text,
-                      isUser: s.isUser,
-                      timestamp: s.timestamp,
-                    )));
+                ..addAll(updated!.messages.map(_Message.fromStored));
             });
             _scrollToBottom();
           } else if (streamedAnswer.isNotEmpty) {
@@ -361,6 +385,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 ..add(_Message(
                   text: streamedAnswer,
                   isUser: false,
+                  agentName: _rpcService?.metaFor(convId)?.agentName,
+                  model: _rpcService?.metaFor(convId)?.model,
                   timestamp: DateTime.now(),
                 ));
             });
@@ -410,11 +436,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               _conversationId = _remoteConv!.id;
               _messages
                 ..clear()
-                ..addAll(_remoteConv.messages.map((s) => _Message(
-                      text: s.text,
-                      isUser: s.isUser,
-                      timestamp: s.timestamp,
-                    )));
+                ..addAll(_remoteConv.messages.map(_Message.fromStored));
             });
             _scrollToBottom();
           } else if (_remoteConv != null && bufferedAnswer.isNotEmpty) {
@@ -424,14 +446,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               _conversationId = _remoteConv!.id;
               _messages
                 ..clear()
-                ..addAll(_remoteConv.messages.map((s) => _Message(
-                      text: s.text,
-                      isUser: s.isUser,
-                      timestamp: s.timestamp,
-                    )))
+                ..addAll(_remoteConv.messages.map(_Message.fromStored))
                 ..add(_Message(
                   text: bufferedAnswer,
                   isUser: false,
+                  agentName: _rpcService?.metaFor(convId)?.agentName,
+                  model: _rpcService?.metaFor(convId)?.model,
                   timestamp: DateTime.now(),
                 ));
             });
@@ -511,13 +531,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       id: _conversationId,
       title: title,
       createdAt: _messages.first.timestamp,
-      messages: _messages
-          .map((m) => StoredMessage(
-                text: m.text,
-                isUser: m.isUser,
-                timestamp: m.timestamp,
-              ))
-          .toList(),
+      messages: _messages.map((m) => m.toStored()).toList(),
     ));
   }
 
@@ -530,11 +544,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _conversationId = summary.id;
       _messages
         ..clear()
-        ..addAll(summary.messages.map((s) => _Message(
-              text: s.text,
-              isUser: s.isUser,
-              timestamp: s.timestamp,
-            )));
+        ..addAll(summary.messages.map(_Message.fromStored));
       // Append any push notifications that arrived while this conv was away.
       for (final push in pendingPushes) {
         _messages.add(_Message(
@@ -673,13 +683,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       itemBuilder: (context, index) {
         if (index < _messages.length) {
           final msg = _messages[index];
-          return _ChatBubble(message: msg);
+          return _ChatBubble(message: msg, showAttribution: _showAgentInfo);
         } else if (hasProgress && index == _messages.length) {
           // Progress indicator (after all messages)
           return _ProgressIndicator(message: _progressMessage);
         } else {
           // Streaming bubble (last item)
-          return _StreamingBubble(text: _streamBuffer);
+          final meta = _showAgentInfo ? _rpcService?.metaFor(_conversationId) : null;
+          return _StreamingBubble(
+            text: _streamBuffer,
+            agentName: meta?.agentName,
+            model: meta?.model,
+          );
         }
       },
     );
@@ -746,6 +761,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // Re-read pref on every send so Settings changes take effect immediately.
     final prefs = await SharedPreferences.getInstance();
     _streamingEnabled = prefs.getBool('streamingEnabled') ?? true;
+    _showAgentInfo = prefs.getBool('showAgentInfo') ?? true;
 
     _inputCtrl.clear();
     setState(() {
@@ -801,6 +817,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final responseText = result.success
         ? (streamedText.isNotEmpty ? streamedText : result.response)
         : '⚠️ ${result.error ?? "Unknown error"}';
+    // Attribution: prefer the RPC reply; fall back to what the stream
+    // envelope told us.  Older agents send neither → null → no caption.
+    final meta = rpcService.metaFor(sendConvId);
+    final replyAgent =
+        result.success ? (result.agentName ?? meta?.agentName) : null;
+    final replyModel = result.success ? (result.model ?? meta?.model) : null;
 
     if (sendConvId == _conversationId) {
       // Response arrived for the conversation currently on screen.
@@ -812,6 +834,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           text: responseText,
           isUser: false,
           timestamp: DateTime.now(),
+          agentName: replyAgent,
+          model: replyModel,
         ));
       });
       _scrollToBottom();
@@ -834,6 +858,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               text: responseText,
               isUser: false,
               timestamp: DateTime.now(),
+              agentName: replyAgent,
+              model: replyModel,
             ),
           ],
         );
@@ -1018,7 +1044,10 @@ Widget _DrawerItem(IconData icon, String label, String route, BuildContext conte
 class _ChatBubble extends StatelessWidget {
   final _Message message;
 
-  const _ChatBubble({required this.message});
+  /// Show the "agent • model" caption above agent replies.
+  final bool showAttribution;
+
+  const _ChatBubble({required this.message, this.showAttribution = true});
 
   void _copyToClipboard(BuildContext context) {
     Clipboard.setData(ClipboardData(text: message.text));
@@ -1069,7 +1098,18 @@ class _ChatBubble extends StatelessWidget {
                         color: Theme.of(context).colorScheme.onPrimary,
                       ),
                     )
-                  : MarkdownBody(
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (showAttribution && message.hasAttribution) ...[
+                          _AttributionCaption(
+                            agentName: message.agentName,
+                            model: message.model,
+                          ),
+                          const SizedBox(height: 4),
+                        ],
+                        MarkdownBody(
                       data: message.text,
                       selectable: false,
                       softLineBreak: true,
@@ -1105,6 +1145,8 @@ class _ChatBubble extends StatelessWidget {
                         ),
                       ),
                     ),
+                      ],
+                    ),
             ),
           ),
         ),
@@ -1113,10 +1155,58 @@ class _ChatBubble extends StatelessWidget {
   }
 }
 
+/// Small "agent • model" line shown above an agent reply so the owner can see
+/// which agent instance (several may share one atSign) and which model
+/// produced the answer.
+class _AttributionCaption extends StatelessWidget {
+  final String? agentName;
+  final String? model;
+
+  const _AttributionCaption({this.agentName, this.model});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = theme.textTheme.labelSmall ?? const TextStyle(fontSize: 11);
+    final hasAgent = agentName?.isNotEmpty ?? false;
+    final hasModel = model?.isNotEmpty ?? false;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.smart_toy_outlined, size: 12, color: theme.colorScheme.primary),
+        const SizedBox(width: 4),
+        if (hasAgent)
+          Text(
+            agentName!,
+            style: style.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        if (hasAgent && hasModel)
+          Text(' • ', style: style.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        if (hasModel)
+          Flexible(
+            child: Text(
+              model!,
+              style: style.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontStyle: FontStyle.italic,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _StreamingBubble extends StatelessWidget {
   final String text;
+  final String? agentName;
+  final String? model;
 
-  const _StreamingBubble({required this.text});
+  const _StreamingBubble({required this.text, this.agentName, this.model});
 
   @override
   Widget build(BuildContext context) {
@@ -1141,9 +1231,20 @@ class _StreamingBubble extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(
-                  text,
-                  softWrap: true,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if ((agentName?.isNotEmpty ?? false) ||
+                        (model?.isNotEmpty ?? false)) ...[
+                      _AttributionCaption(agentName: agentName, model: model),
+                      const SizedBox(height: 4),
+                    ],
+                    Text(
+                      text,
+                      softWrap: true,
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 8),
