@@ -39,6 +39,40 @@ class LlmRouter {
   String _externalProvider = 'none';
   double _privacyThreshold = 0.7;
   bool _localOnly = false;
+
+  // ── Per-request model attribution ─────────────────────────────────────────
+  // Records every model that contributed to the current request so the
+  // orchestrator can tell the owner what produced the answer — e.g.
+  // "qwen2.5:7b", or "qwen2.5:7b + claude-3-haiku-20240307" in hybrid mode.
+  // Reset by the orchestrator at the start of every request.
+  final List<String> _modelsUsed = [];
+  final List<String> _providersUsed = [];
+
+  static const String _openAiModel = 'gpt-4o-mini';
+  static const String _claudeModel = 'claude-3-haiku-20240307';
+
+  /// Forget the models recorded for the previous request.
+  void resetUsage() {
+    _modelsUsed.clear();
+    _providersUsed.clear();
+  }
+
+  /// The configured local (Ollama) model name.
+  String get localModel => _localModel;
+
+  /// Human-readable list of models that contributed to the current request.
+  String get modelUsed =>
+      _modelsUsed.isEmpty ? _localModel : _modelsUsed.join(' + ');
+
+  /// Providers that contributed to the current request, e.g. "ollama" or
+  /// "ollama+claude".
+  String get providerUsed =>
+      _providersUsed.isEmpty ? 'ollama' : _providersUsed.join('+');
+
+  void _recordUsage(String provider, String model) {
+    if (!_modelsUsed.contains(model)) _modelsUsed.add(model);
+    if (!_providersUsed.contains(provider)) _providersUsed.add(provider);
+  }
   DateTime _settingsLastRefresh = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _settingsCacheTtl = Duration(minutes: 5);
 
@@ -271,6 +305,7 @@ TOOL USE RULES — follow these exactly, every time:
     double temperature = 0.7,
   }) async {
     try {
+      _recordUsage('ollama', _localModel);
       final body = <String, dynamic>{
         'model': _localModel,
         'messages': messages,
@@ -365,6 +400,7 @@ TOOL USE RULES — follow these exactly, every time:
   }) async {
     final client = http.Client();
     try {
+      _recordUsage('ollama', _localModel);
       final request = http.Request(
         'POST',
         Uri.parse('$ollamaBaseUrl/api/chat'),
@@ -930,7 +966,7 @@ TOOL USE RULES — follow these exactly, every time:
               'Content-Type': 'application/json',
             },
             body: jsonEncode({
-              'model': 'gpt-4o-mini',
+              'model': _openAiModel,
               'messages': [
                 {'role': 'user', 'content': query},
               ],
@@ -940,6 +976,7 @@ TOOL USE RULES — follow these exactly, every time:
           .timeout(const Duration(seconds: 30));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+      _recordUsage('openai', _openAiModel);
       return (data['choices'] as List<dynamic>)[0]['message']['content']
               as String? ??
           '';
@@ -964,7 +1001,7 @@ TOOL USE RULES — follow these exactly, every time:
               'Content-Type': 'application/json',
             },
             body: jsonEncode({
-              'model': 'claude-3-haiku-20240307',
+              'model': _claudeModel,
               'max_tokens': 1024,
               'messages': [
                 {'role': 'user', 'content': query},
@@ -974,6 +1011,7 @@ TOOL USE RULES — follow these exactly, every time:
           .timeout(const Duration(seconds: 30));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+      _recordUsage('claude', _claudeModel);
       return (data['content'] as List<dynamic>)[0]['text'] as String? ?? '';
     } catch (e) {
       _log.warning('Claude call failed: $e');

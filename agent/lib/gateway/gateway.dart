@@ -22,9 +22,12 @@
 ///   Env var fallback: ALLOWED_USERS=@owner,@services (comma-separated)
 ///   Owner atSign from: settings.owner_atsign.pembrook@agent OR OWNER_AT_SIGN env var
 ///
-/// Multi-instance horizontal scaling:
-///   Use ServiceFactoryWithNoOpSyncService() + unique hive paths per instance,
-///   OR use the immutable mutex race pattern (see AtPlatformService).
+/// Multi-instance redundancy:
+///   Several agent processes may share one atSign (each with its own temp
+///   hive path — see bin/main.dart).  AtRpc's request mutex
+///   (enableRequestMutex) makes them race for an immutable per-request key
+///   on the atServer; exactly one wins and replies.  Each instance reports
+///   its AGENT_NAME with the reply so the app can show which one answered.
 
 import 'dart:async';
 import 'dart:convert';
@@ -176,6 +179,12 @@ class Gateway {
       domainNameSpace: 'pembrook',
       callbacks: callbacks,
       allowList: _allowList,
+      // Multi-instance redundancy: when several agent processes share this
+      // atSign they all receive every request notification.  AtRpc races
+      // for an immutable per-request mutex key on the atServer; only the
+      // winner runs handleRequest and replies, the others stay silent.
+      // (Same pattern as personalagent / sshnpd.)
+      enableRequestMutex: true,
     );
 
     _rpc.start();

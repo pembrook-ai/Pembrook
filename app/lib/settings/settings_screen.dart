@@ -30,6 +30,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _privacyThreshold = 0.7;
   bool _localOnly = false;
   bool _streamingEnabled = true;
+  bool _showAgentInfo = true;
   double _fontScale = 1.0;
 
   static const String _namespace = 'pembrook';
@@ -72,6 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _privacyThreshold = prefs.getDouble('privacyThreshold') ?? 0.7;
       _localOnly = prefs.getBool('localOnly') ?? false;
       _streamingEnabled = prefs.getBool('streamingEnabled') ?? true;
+      _showAgentInfo = prefs.getBool('showAgentInfo') ?? true;
     });
 
     // 2. Try to override from AtKey (survives reinstall; syncs across devices).
@@ -96,12 +98,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _localOnly = data['localOnly'] as bool? ?? _localOnly;
           _streamingEnabled =
               data['streamingEnabled'] as bool? ?? _streamingEnabled;
+          _showAgentInfo = data['showAgentInfo'] as bool? ?? _showAgentInfo;
         });
         // Keep SharedPreferences in sync with AtKey values.
         await prefs.setString('agentAtSign', _agentAtSignCtrl.text);
         await prefs.setDouble('privacyThreshold', _privacyThreshold);
         await prefs.setBool('localOnly', _localOnly);
         await prefs.setBool('streamingEnabled', _streamingEnabled);
+        await prefs.setBool('showAgentInfo', _showAgentInfo);
       }
     } catch (_) {
       // AtKey not available yet (e.g. first run) — SharedPreferences values stand.
@@ -115,6 +119,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await prefs.setDouble('privacyThreshold', _privacyThreshold);
     await prefs.setBool('localOnly', _localOnly);
     await prefs.setBool('streamingEnabled', _streamingEnabled);
+    await prefs.setBool('showAgentInfo', _showAgentInfo);
 
     // 2. Sync to AtKey on owner's atServer (survives reinstall; cross-device).
     final client = _atClient;
@@ -132,6 +137,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'privacyThreshold': _privacyThreshold,
             'localOnly': _localOnly,
             'streamingEnabled': _streamingEnabled,
+            'showAgentInfo': _showAgentInfo,
             'savedAt': DateTime.now().toUtc().toIso8601String(),
           }),
           putRequestOptions: PutRequestOptions()..useRemoteAtServer = true,
@@ -245,6 +251,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: const Text('Show tokens as they arrive'),
             value: _streamingEnabled,
             onChanged: (v) => setState(() => _streamingEnabled = v),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Show agent details'),
+            subtitle: const Text(
+                'Label each reply with the agent instance and model that produced it'),
+            value: _showAgentInfo,
+            onChanged: (v) => setState(() => _showAgentInfo = v),
           ),
           const SizedBox(height: 8),
           ListTile(

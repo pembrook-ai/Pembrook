@@ -20,6 +20,7 @@ See [PHASES.md](PHASES.md) for detailed per-phase implementation status.
 - **Real-time Progress Indicators** — See live status updates during multi-step tasks (e.g., "🌐 Fetching content from BBC...", "📧 Sending email...")
 - **Smart Timeout Management** — 90-second timeout resets automatically with each progress update or content chunk
 - **Multi-Device Sync** — Conversations sync across all your devices in real-time via encrypted AtKeys
+- **Reply Attribution** — Every answer is labelled with the agent instance and model that produced it. Run several agents on one atSign for redundancy; they race for a per-request mutex, exactly one replies, and the app shows you which
 - **Tool Call Streaming** — Watch the agent's reasoning and tool invocations as they happen
 - **Urgency-Based Notifications** — Agent can send immediate alerts (critical/high) or queue low-priority updates for daily digest
 - **MCP Integration** — Built-in browser automation, with extensibility for home control, databases, and more

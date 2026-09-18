@@ -57,6 +57,13 @@ class Orchestrator {
   /// e.g. ['@ai6bh'] — the services atSign running mcp_browser, mcp_home, etc.
   final List<String> mcpServerAtSigns;
 
+  /// Human-friendly name of THIS agent instance (AGENT_NAME env var, or the
+  /// hostname).  Returned with every reply and stamped on every stream chunk
+  /// so the app can show which agent — and which model — produced an answer.
+  /// Matters when several agents share one atSign: the AtRpc request mutex
+  /// picks exactly one responder per request and this tells the owner which.
+  final String agentName;
+
   /// Lazily populated on first `_buildTools()` call.
   /// toolName → atSign that provides it.
   final Map<String, String> _mcpToolToAtSign = {};
@@ -466,7 +473,16 @@ class Orchestrator {
     this.taskScheduler,
     this.notificationManager,
     this.mcpServerAtSigns = const [],
+    this.agentName = '',
   });
+
+  /// Attribution fields attached to every reply and stream chunk.
+  Map<String, dynamic> get _attribution => {
+        'agentName': agentName,
+        'agentAtSign': atClient.getCurrentAtSign() ?? '',
+        'model': llmRouter.modelUsed,
+        'provider': llmRouter.providerUsed,
+      };
 
   /// Process a single request from the Gateway.
   ///
@@ -476,6 +492,10 @@ class Orchestrator {
   ///     'response': 'full response text (or empty if streaming)',
   ///     'streaming': bool,
   ///     'conversationId': 'string',
+  ///     'agentName': 'which agent instance answered',
+  ///     'agentAtSign': '@agent',
+  ///     'model': 'model(s) that produced the answer',
+  ///     'provider': 'ollama | openai | claude | ollama+claude …',
   ///   }
   Future<Map<String, dynamic>> processRequest({
     required String command,
@@ -495,6 +515,8 @@ class Orchestrator {
     _toolUserTimezone = userTimezone;
     _requestHasExternalContent =
         false; // M2: reset per-request external-content flag
+    // Start a fresh model-attribution record for this request.
+    llmRouter.resetUsage();
 
     // ── 1. Load context from Memory Service ───────────────────────────────
     Conversation? conversation;
@@ -786,6 +808,7 @@ class Orchestrator {
       'response': responseText,
       'streaming': false,
       'conversationId': conversationId,
+      ..._attribution,
     };
   }
 
@@ -821,6 +844,10 @@ class Orchestrator {
           'conversationId': conversationId,
           'type': type,
           'done': done,
+          // Attribution rides on every chunk so passive viewers (other
+          // devices sharing @owner) and the live streaming bubble can show
+          // which agent / model is answering without waiting for the RPC reply.
+          ..._attribution,
         }),
       ),
     );

@@ -409,22 +409,35 @@ class StoredMessage {
   final bool isUser;
   final DateTime timestamp;
 
+  /// Name of the agent instance that produced this reply (agent messages only).
+  /// Several agents may share one atSign; this records which one answered.
+  final String? agentName;
+
+  /// Model(s) that produced this reply, e.g. "qwen2.5:7b" (agent messages only).
+  final String? model;
+
   const StoredMessage({
     required this.text,
     required this.isUser,
     required this.timestamp,
+    this.agentName,
+    this.model,
   });
 
   Map<String, dynamic> toJson() => {
         'text': text,
         'isUser': isUser,
         'timestamp': timestamp.toIso8601String(),
+        if (agentName != null) 'agentName': agentName,
+        if (model != null) 'model': model,
       };
 
   factory StoredMessage.fromJson(Map<String, dynamic> json) => StoredMessage(
         text: json['text'] as String? ?? '',
         isUser: json['isUser'] as bool? ?? false,
         timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ?? DateTime.now(),
+        agentName: json['agentName'] as String?,
+        model: json['model'] as String?,
       );
 }
 
