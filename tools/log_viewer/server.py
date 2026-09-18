@@ -111,17 +111,32 @@ class LogBroadcaster:
             time.sleep(5)
             self._broadcast(service, f"[log_viewer] reconnecting to {container}...")
 
+    # How often to re-run container discovery.
+    _discovery_interval_s = 10
+
     def _tail(self):
-        """Discover containers and start a tail thread per container."""
+        """Discover containers and start a tail thread per container.
+
+        Discovery runs forever, not just once: with `docker compose up` the
+        viewer often starts before the agent / MCP containers are running, and
+        a one-shot snapshot would silently miss them.  Each container name gets
+        exactly one tail thread (that thread reconnects by name on its own if
+        the container is recreated).
+        """
+        tailed: set[str] = set()
+        announced_waiting = False
         while True:
             containers = self._list_containers()
-            if containers:
-                for c in containers:
-                    t = threading.Thread(target=self._tail_container, args=(c,), daemon=True)
-                    t.start()
-                return  # threads run indefinitely; this discovery loop exits
-            self._broadcast("log_viewer", "Waiting for containers to start...")
-            time.sleep(5)
+            new = [c for c in containers if c not in tailed]
+            for c in new:
+                tailed.add(c)
+                self._broadcast("log_viewer", f"Now tailing {c}")
+                t = threading.Thread(target=self._tail_container, args=(c,), daemon=True)
+                t.start()
+            if not containers and not announced_waiting:
+                self._broadcast("log_viewer", "Waiting for containers to start...")
+                announced_waiting = True
+            time.sleep(self._discovery_interval_s)
 
     def _broadcast(self, service: str, line: str):
         event = {"service": service, "line": line}
